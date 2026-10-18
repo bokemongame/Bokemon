@@ -113,7 +113,9 @@ function r5(){
     sottoBeaten:false,      // …the Sottocapo beaten at the villa's door: it is yours, and he has gone ahead to his master
     villa:false,            // …in, the first time: the calm
     madrinaMet:false, madrinaGone:false,   // …the Madrina's photograph, and her going down to her brother
-    cellarSeen:false,       // …the stair down, under the villa: the top of the catacombs, still to come
+    cellarSeen:false,       // …the stair down, under the villa, its word said: (3.18) down into the floors under it
+    watch:{},               // (3.18) the Watch's chiefs beaten there — black, purple, consigliere: each one's lock on the gate open
+    jaxBeaten:false,        // (3.18) Jax beaten at the vault's door: he has gone in ahead
   };
   const g = p.region5;
   g.reached = g.reached || []; g.said = g.said || {};
@@ -131,6 +133,10 @@ const R5_FLOORS = ['cata_landing', 'cata_cistern', 'cata_bones', 'cata_stair'];
 const R5_FLOORS_T2 = ['cata_garrison', 'cata_quarry', 'cata_cellars', 'cata_pit'];
 /* The gate is open when the story opens it — or always, for the developer. */
 function r5Tier2Open(){ return !!r5().tier2Open || (typeof isDev === 'function' && isDev()); }
+/* (3.18) The top tier: under the villa, down its cellar stair — once the
+   Madrina has gone down ahead of you (its finds count from then on). */
+const R5_FLOORS_T3 = ['cata_deep', 'cata_watch', 'cata_crypt'];
+function r5Tier3Open(){ return !!r5().madrinaMet; }
 
 /* ============================================================
    THE PLACES
@@ -152,6 +158,24 @@ const R5_T2_RARE = { tricerarmor:2, lizardape:2, sumo:2, physical_starter:1 };
 function r5T2Table(more){
   return R5_T2_WILD.map(sp=> Object.assign({ sp, w:(more && more[sp]) || (R5_T2_RARE[sp] ? 1 : 2) },
                                            R5_T2_RARE[sp] ? { plus:R5_T2_RARE[sp] } : {}));
+}
+/* (3.18) The top tier's wild ones: the hill's psychics — the ones the
+   exorcists brought in to keep the dead down, living in the dark under the
+   villa (3.15's seven wild psychics and the Tapir, weight 2; its eight elites,
+   rarer and a little stronger; and once in a long while the Fox, or a Raven —
+   part 6 §12b, "its wild psychics with the Fox and the Raven rare").
+   (3.24) The Ram is one of the wild ones now, and the Ladybird one of the
+   eight elites in its place. (3.26) "squid goes to villa, max level 98":
+   the Squid, an elite only trainers had, is one of the rarer ones here too
+   (+2 levels; met at 98 at most, as everything wild — CATCH_LEVEL_CAP). */
+const R5_T3_WILD = ['leopard','puffball','polygon','quetzal','nurse','hermit_sloth','unicorn','ram','tapir',
+                    'hydra','ladybird','mime','firefox','seadragon','plasma_manta','sylph','steelcrab','squid',
+                    'psychic_starter','flying_starter'];
+const R5_T3_RARE = { hydra:2, ladybird:2, mime:2, firefox:2, seadragon:2, plasma_manta:2, sylph:2, steelcrab:2, squid:2,
+                     psychic_starter:1, flying_starter:1 };
+function r5T3Table(more){
+  return R5_T3_WILD.map(sp=> Object.assign({ sp, w:(more && more[sp]) || (R5_T3_RARE[sp] ? 1 : 2) },
+                                           R5_T3_RARE[sp] ? { plus:R5_T3_RARE[sp] } : {}));
 }
 const CATA_PRIZE_LINES = [
   `Something glints between the bones.`,
@@ -280,14 +304,15 @@ const R5_DECKS = {
       first:`<b>"Their lanterns shine a long way here. There is nothing down here to stop the light."</b><br><br>` +
             `<b>"Keep to the edges, where it is darkest."</b>`,
       guards:[
-        { id:'capo', kind:'capo', x:12, y:16, face:'d', clock:700, roster:'capo_black', sprite:'capo_black' },
+        /* (3.18) once the villa's door is broken he has gone down to the Watch, under the villa */
+        { id:'capo', kind:'capo', x:12, y:16, face:'d', clock:700, roster:'capo_black', sprite:'capo_black', when:()=> !r5().sottoBeaten },
         { id:'a', kind:'soldato', path:[[23,24],[23,16]], face:'u', clock:560, pause:3, roster:'cistern_a', sprite:'soldato2' },
         { id:'b', kind:'soldato', path:[[4,7],[19,7]], face:'r', clock:620, pause:3, roster:'cistern_b', sprite:'soldato1' },
         { id:'c', kind:'soldato', path:[[1,22],[1,16]], face:'u', clock:600, pause:3, roster:'cistern_c', sprite:'soldato1' },
         { id:'l', kind:'lookout', x:19, y:11, face:'u', spin:'ccw', clock:660, pause:4, roster:'cistern_l', sprite:'soldato2' },
       ],
       wild:{ rate:0.04, size:3, lv:[78,84],
-        table:[{sp:'crow',w:2},{sp:'ghost',w:3},{sp:'cyclops',w:2},{sp:'ghost_flame',w:2},{sp:'puppet',w:1,plus:1},{sp:'tapir',w:1}] } },
+        table:[{sp:'crow',w:2},{sp:'ghost',w:3},{sp:'cyclops',w:2},{sp:'ghost_flame',w:2},{sp:'puppet',w:1,plus:1},{sp:'goblin',w:1,plus:1}] } },
     paint:(d)=> paintCatacomb(d),
     onRender:(world, d)=> r5FloorRender(world, d),
     onStep:(p, d)=> stealthStep(p, d),
@@ -379,7 +404,7 @@ const R5_DECKS = {
       ],
       wild:{ rate:0.04, size:3, lv:[80,86],
         table:[{sp:'ghost',w:2},{sp:'cyclops',w:2},{sp:'ghost_flame',w:2},{sp:'crow',w:1},
-               {sp:'goblin_knight',w:1,plus:2},{sp:'horned_lynx',w:1,plus:2},{sp:'puppet',w:1,plus:1},{sp:'tapir',w:1},{sp:'tailed_cat',w:1,plus:2}] } },
+               {sp:'goblin_knight',w:1,plus:2},{sp:'horned_lynx',w:1,plus:2},{sp:'puppet',w:1,plus:1},{sp:'tailed_cat',w:1,plus:2},{sp:'goblin',w:1,plus:1},{sp:'firehound',w:1,plus:2}] } },
     paint:(d)=> paintCatacomb(d),
     onRender:(world, d)=> r5FloorRender(world, d),
     onStep:(p, d)=> stealthStep(p, d),
@@ -417,7 +442,7 @@ const R5_DECKS = {
         { id:'l', kind:'lookout', x:4, y:6, face:'d', spin:'ccw', clock:620, pause:4, roster:'lr1_l', sprite:'soldato2' },
       ],
       wild:{ rate:0.035, size:2, lv:[80,86],
-        table:[{sp:'crow',w:3},{sp:'ghost',w:3},{sp:'cyclops',w:2},{sp:'ghost_flame',w:1},{sp:'tapir',w:1}] } },
+        table:[{sp:'crow',w:3},{sp:'ghost',w:3},{sp:'cyclops',w:2},{sp:'ghost_flame',w:1}] } },
     paint:(d)=> paintCatacomb(d),
     onRender:(world, d)=> r5FloorRender(world, d),
     onStep:(p, d)=> stealthStep(p, d),
@@ -447,7 +472,7 @@ const R5_DECKS = {
         { id:'l', kind:'lookout', x:8, y:5, face:'u', spin:'cw', clock:600, pause:4, roster:'lr2_l', sprite:'soldato2' },
       ],
       wild:{ rate:0.035, size:2, lv:[82,88],
-        table:[{sp:'crow',w:3},{sp:'ghost',w:3},{sp:'cyclops',w:2},{sp:'ghost_flame',w:1},{sp:'tapir',w:1}] } },
+        table:[{sp:'crow',w:3},{sp:'ghost',w:3},{sp:'cyclops',w:2},{sp:'ghost_flame',w:1}] } },
     paint:(d)=> paintCatacomb(d),
     onRender:(world, d)=> r5FloorRender(world, d),
     onStep:(p, d)=> stealthStep(p, d),
@@ -478,7 +503,7 @@ const R5_DECKS = {
         { id:'l', kind:'lookout', x:9, y:9, face:'u', spin:'ccw', clock:620, pause:4, roster:'cr1_l', sprite:'soldato2' },
       ],
       wild:{ rate:0.035, size:2, lv:[82,88],
-        table:[{sp:'crow',w:2},{sp:'ghost',w:3},{sp:'cyclops',w:2},{sp:'ghost_flame',w:2},{sp:'puppet',w:1,plus:1},{sp:'tapir',w:1}] } },
+        table:[{sp:'crow',w:2},{sp:'ghost',w:3},{sp:'cyclops',w:2},{sp:'ghost_flame',w:2},{sp:'puppet',w:1,plus:1},{sp:'goblin',w:1,plus:1}] } },
     paint:(d)=> paintCatacomb(d),
     onRender:(world, d)=> r5FloorRender(world, d),
     onStep:(p, d)=> stealthStep(p, d),
@@ -508,7 +533,7 @@ const R5_DECKS = {
         { id:'l', kind:'lookout', x:10, y:6, face:'l', spin:'cw', clock:600, pause:4, roster:'cr2_l', sprite:'soldato2' },
       ],
       wild:{ rate:0.035, size:2, lv:[84,90],
-        table:[{sp:'crow',w:2},{sp:'ghost',w:3},{sp:'cyclops',w:2},{sp:'ghost_flame',w:2},{sp:'puppet',w:1,plus:1},{sp:'tapir',w:1}] } },
+        table:[{sp:'crow',w:2},{sp:'ghost',w:3},{sp:'cyclops',w:2},{sp:'ghost_flame',w:2},{sp:'puppet',w:1,plus:1},{sp:'goblin',w:1,plus:1}] } },
     paint:(d)=> paintCatacomb(d),
     onRender:(world, d)=> r5FloorRender(world, d),
     onStep:(p, d)=> stealthStep(p, d),
@@ -539,7 +564,7 @@ const R5_DECKS = {
         { id:'l', kind:'lookout', x:8, y:7, face:'d', spin:'ccw', clock:620, pause:4, roster:'br1_l', sprite:'soldato2' },
       ],
       wild:{ rate:0.035, size:2, lv:[84,90],
-        table:[{sp:'ghost',w:3},{sp:'crow',w:2},{sp:'cyclops',w:2},{sp:'ghost_flame',w:2},{sp:'puppet',w:1,plus:1},{sp:'goblin_knight',w:1,plus:2},{sp:'tapir',w:1},{sp:'tailed_cat',w:1,plus:2}] } },
+        table:[{sp:'ghost',w:3},{sp:'crow',w:2},{sp:'cyclops',w:2},{sp:'ghost_flame',w:2},{sp:'puppet',w:1,plus:1},{sp:'goblin_knight',w:1,plus:2},{sp:'tailed_cat',w:1,plus:2},{sp:'goblin',w:1,plus:1},{sp:'firehound',w:1,plus:2}] } },
     paint:(d)=> paintCatacomb(d),
     onRender:(world, d)=> r5FloorRender(world, d),
     onStep:(p, d)=> stealthStep(p, d),
@@ -568,7 +593,7 @@ const R5_DECKS = {
         { id:'l', kind:'lookout', x:15, y:5, face:'l', spin:'cw', clock:600, pause:4, roster:'br2_l', sprite:'soldato2' },
       ],
       wild:{ rate:0.035, size:2, lv:[86,92],
-        table:[{sp:'ghost',w:3},{sp:'crow',w:2},{sp:'cyclops',w:2},{sp:'ghost_flame',w:2},{sp:'puppet',w:1,plus:1},{sp:'goblin_knight',w:1,plus:2},{sp:'tapir',w:1},{sp:'tailed_cat',w:1,plus:2}] } },
+        table:[{sp:'ghost',w:3},{sp:'crow',w:2},{sp:'cyclops',w:2},{sp:'ghost_flame',w:2},{sp:'puppet',w:1,plus:1},{sp:'goblin_knight',w:1,plus:2},{sp:'tailed_cat',w:1,plus:2},{sp:'goblin',w:1,plus:1},{sp:'firehound',w:1,plus:2}] } },
     paint:(d)=> paintCatacomb(d),
     onRender:(world, d)=> r5FloorRender(world, d),
     onStep:(p, d)=> stealthStep(p, d),
@@ -599,7 +624,7 @@ const R5_DECKS = {
         { id:'l', kind:'lookout', x:3, y:2, face:'r', spin:'ccw', clock:620, pause:4, roster:'sr1_l', sprite:'soldato2' },
       ],
       wild:{ rate:0.035, size:2, lv:[86,92],
-        table:[{sp:'ghost',w:2},{sp:'cyclops',w:2},{sp:'ghost_flame',w:2},{sp:'crow',w:1},{sp:'goblin_knight',w:1,plus:2},{sp:'horned_lynx',w:1,plus:2},{sp:'puppet',w:1,plus:1},{sp:'tapir',w:2},{sp:'tailed_cat',w:1,plus:2}] } },
+        table:[{sp:'ghost',w:2},{sp:'cyclops',w:2},{sp:'ghost_flame',w:2},{sp:'crow',w:1},{sp:'goblin_knight',w:1,plus:2},{sp:'horned_lynx',w:1,plus:2},{sp:'puppet',w:1,plus:1},{sp:'tailed_cat',w:1,plus:2},{sp:'goblin',w:1,plus:1},{sp:'firehound',w:1,plus:2}] } },
     paint:(d)=> paintCatacomb(d),
     onRender:(world, d)=> r5FloorRender(world, d),
     onStep:(p, d)=> stealthStep(p, d),
@@ -639,7 +664,7 @@ const R5_DECKS = {
         { id:'l', kind:'lookout', x:6, y:6, face:'l', spin:'cw', clock:600, pause:4, roster:'sr2_l', sprite:'soldato2', when:()=> !r5GPHaunts() },
       ],
       wild:{ rate:0.035, size:2, lv:[88,94],
-        table:[{sp:'ghost',w:2},{sp:'cyclops',w:2},{sp:'ghost_flame',w:2},{sp:'crow',w:1},{sp:'goblin_knight',w:1,plus:2},{sp:'horned_lynx',w:1,plus:2},{sp:'puppet',w:1,plus:1},{sp:'tapir',w:2},{sp:'tailed_cat',w:1,plus:2}] } },
+        table:[{sp:'ghost',w:2},{sp:'cyclops',w:2},{sp:'ghost_flame',w:2},{sp:'crow',w:1},{sp:'goblin_knight',w:1,plus:2},{sp:'horned_lynx',w:1,plus:2},{sp:'puppet',w:1,plus:1},{sp:'tailed_cat',w:1,plus:2},{sp:'goblin',w:1,plus:1},{sp:'firehound',w:1,plus:2}] } },
     paint:(d)=> paintCatacomb(d),
     onRender:(world, d)=> r5FloorRender(world, d),
     /* (2.92) while the ghost phoenix (or its orb) is here, you and the
@@ -852,6 +877,200 @@ const R5_DECKS = {
   },
 
   /* ============================================================
+     UNDER THE VILLA (3.18) — THE TOP TIER
+     Down the villa's cellar stair: three floors, each the town's size
+     (26×39), up the page as up the hill — so you come in at the top of each
+     and go down the page. No ghost comes down here (`under`: Nino keeps the
+     dead away from his brother's house, so nobody on watch is busy with
+     them — 14-stealth.js) and the Padrino's own men know every face (no
+     disguise works). Nino leads: R5_LEAD. His chalk drawings are on the
+     walls (`h`, 13-walkmap.js), each with a Drawing to look at.
+     ============================================================ */
+
+  /* ---- 1. THE DEEP CELLARS: the villa's own cellars, older and deeper than
+     the house — the long wine vault, the hall of pillars, the old ice house
+     (its pit full of black water now), the store room; the Padrino's men on
+     watch. ---- */
+  cata_deep: {
+    key:'cata_deep', region:5, title:'The Deep Cellars', bg:'catacombs', music:'zone_catacombs', tier:3, under:true,
+    bx:0, by:0, bs:1/32, nat:[26*32, 39*32], art:'catacombs3_deep', entry:'top',
+    rows:[
+"##########################","############..############","############..############","#########*......*#########",
+"########h........#########","#########........#########","###########....###########","###########....###########",
+"##*....................*##","##......................##","##..wwwwww......wwwwww..##","##......................##",
+"##..wwwwww......wwwwww..##","#h......................##","##..wwwwww......wwwwww..##","##......................##",
+"##..wwwwww......wwwwww..##","##......................##","###########....###########","###########....###########",
+"###....................###","###...o............o...###","###....................###","###...o............o...###",
+"###....................###","###########....###########","##,......##....##cc...cc##","##.......##....##......c##",
+"##..~~~..##....##.......##","##..~~~..............bb.##","#h..~~~..##....##.......##","##.......##....##....bbb##",
+"##......,##....##cc.....##","###########....###########","#########*......*#########","#########........#########",
+"#########........#########","############..############","##########################",
+    ],
+    spawn:[12,1],
+    arrive:{ top:[12,1], bottom:[12,37] },
+    arriveSay:{ top:'the stair down from the villa, at the top of The Deep Cellars', bottom:'the stair at the bottom of The Deep Cellars' },
+    prizes:[[22,27],[7,32]],
+    things:[
+      { x:12, y:1,  walk:true, verb:'Up', where:'The villa', act:()=> goFloor('villa','cellar') },
+      { x:12, y:37, walk:true, verb:'Down', where:'The Watch', act:()=> goFloor('cata_watch','top') },
+      { x:8,  y:4,  verb:'Drawing', act:()=> r5Chalk(1) },
+      { x:1,  y:13, verb:'Drawing', act:()=> r5Chalk(2) },
+      { x:1,  y:30, verb:'Drawing', act:()=> r5Chalk(3) },
+    ],
+    stealth:{ kind:'fight', sense:2, feel:4,
+      first:`<b>"No ghosts down here. Not one. He is keeping every one of them away."</b><br><br>` +
+            `<b>"So the Padrino's men will see us — and they know your face. Keep to the dark."</b>`,
+      guards:[
+        { id:'a', kind:'soldato', path:[[3,9],[22,9]],   face:'r', clock:600, pause:3, roster:'deep_a', sprite:'soldato1' },
+        { id:'b', kind:'soldato', path:[[22,17],[3,17]], face:'l', clock:620, pause:3, roster:'deep_b', sprite:'soldato2' },
+        { id:'l', kind:'lookout', x:12, y:22, face:'d', spin:'cw', clock:660, pause:4, roster:'deep_l', sprite:'soldato2' },
+        { id:'c', kind:'soldato', path:[[17,28],[22,28]], face:'r', clock:640, pause:3, roster:'deep_c', sprite:'soldato1' },
+        { id:'d', kind:'soldato', path:[[10,35],[15,35]], face:'r', clock:600, pause:3, roster:'deep_d', sprite:'soldato2' },
+      ],
+      /* more of the quick ones here: Leopards, Puffballs */
+      wild:{ rate:0.03, size:3, lv:[92,98], t3:true, more:{ leopard:3, puffball:3 } } },
+    paint:(d)=> paintCatacomb(d),
+    onRender:(world, d)=> r5FloorRender(world, d),
+    onStep:(p, d)=> stealthStep(p, d),
+    ghostChat:(id)=> r5GhostChat(id),
+  },
+
+  /* ---- 2. THE WATCH: the Family's old guard hall — the Black Capo's wing to
+     the west, the Purple Capo's to the east, the gallery of pillars between
+     them, the Consigliere's long hall below, and the iron gate with three
+     locks. Each of them, beaten, unlocks his lock and goes down ahead to his
+     master. ---- */
+  cata_watch: {
+    key:'cata_watch', region:5, title:'The Watch', bg:'catacombs', music:'zone_catacombs', tier:3, under:true,
+    bx:0, by:0, bs:1/32, nat:[26*32, 39*32], art:'catacombs3_watch', entry:'top',
+    rows:[
+"##########################","############..############","############..############","########*........*########",
+"########..........########","########..........########","########..........########","##########......##########",
+"##########......##########","##*....*##o....o##*....*##","##.ttt..##......##..ttt.##","##......##......##......##",
+"##......................##","##........o....o........##","##......##......##......##","##......##......##......##",
+"##.ttt..##......##..ttt.##","##......##o....o##......##","##########......##########","#########h......##########",
+"##########......##########","##########o....o##########","##########......##########","##########......h#########",
+"##########......##########","###*..................*###","###....................###","###..o..............o..###",
+"###.....tttttttttt.....###","###....................###","###..o..............o..###","###....................###",
+"###*..................*###","###########....###########","###########....###########","############GG############",
+"##########################","##########################","##########################",
+    ],
+    spawn:[12,1],
+    arrive:{ top:[12,1], bottom:[12,34] },
+    arriveSay:{ top:'the stair at the top of The Watch', bottom:'the gate, at the bottom of The Watch' },
+    prizes:[[3,11],[22,14]],
+    things:[
+      { x:12, y:1,  walk:true, verb:'Up', where:'The Deep Cellars', act:()=> goFloor('cata_deep','bottom') },
+      { x:12, y:35, w:2, verb:'The gate', act:()=> r5WatchGate(), when:()=> !r5WatchOpen() },
+      { x:12, y:34, walk:true, verb:'Through', where:'The Family Crypt', arrow:'down', act:()=> goFloor('cata_crypt','top'), when:()=> r5WatchOpen() },
+      { x:9,  y:19, verb:'Drawing', act:()=> r5Chalk(4) },
+      { x:16, y:23, verb:'Drawing', act:()=> r5Chalk(5) },
+    ],
+    stealth:{ kind:'fight', sense:2, feel:4,
+      first:`<b>"Listen — far below us. The Monkey King, still fighting his way down."</b><br><br>` +
+            `<b>"And the Family's chiefs are here, keeping watch over the way down. All three of them."</b>`,
+      guards:[
+        { id:'black',  kind:'capo', x:4,  y:13, face:'r', clock:700, roster:'watch_black', sprite:'capo_black', when:()=> !!r5().sottoBeaten && !(r5().watch || {}).black },
+        { id:'purple', kind:'capo', x:21, y:13, face:'l', clock:700, roster:'watch_purple', sprite:'capo_purple', when:()=> !!r5().sottoBeaten && !(r5().watch || {}).purple },
+        { id:'consig', kind:'capo', x:12, y:30, face:'u', clock:700, roster:'watch_consigliere', sprite:'consigliere', when:()=> !!r5().sottoBeaten && !(r5().watch || {}).consigliere },
+        { id:'a', kind:'soldato', path:[[12,8],[12,24]], face:'d', clock:620, pause:3, roster:'watch_a', sprite:'soldato1' },
+        { id:'b', kind:'soldato', path:[[4,26],[21,26]], face:'r', clock:640, pause:3, roster:'watch_b', sprite:'soldato2' },
+      ],
+      /* more of the strong ones here: Hydras, Mimes, Firefoxes */
+      wild:{ rate:0.025, size:3, lv:[94,98], t3:true, more:{ hydra:2, mime:2, firefox:2 } } },
+    paint:(d)=> paintCatacomb(d),
+    onRender:(world, d)=> r5FloorRender(world, d),
+    onStep:(p, d)=> stealthStep(p, d),
+    ghostChat:(id)=> r5GhostChat(id),
+  },
+
+  /* ---- 3. THE FAMILY CRYPT: the Family's dead, every generation of them, in
+     tombs with the same knight carved on every lid — a knight with a burning
+     sword. Nino's small grave in its alcove, empty. A trail of green leaves
+     across the stones to the vault's great door — and Jax in front of it.
+     Nobody else on watch: even the Family's men do not like to stand among
+     their own dead. ---- */
+  cata_crypt: {
+    key:'cata_crypt', region:5, title:'The Family Crypt', bg:'catacombs', music:'zone_catacombs', tier:3, under:true,
+    bx:0, by:0, bs:1/32, nat:[26*32, 39*32], art:'catacombs3_crypt', entry:'top', vaultDoor:true,
+    rows:[
+"##########################","############..############","############..############","#########*......*#########",
+"#########........#########","#########........#########","#########........#########","###*..................*###",
+"###....................###","###..ZZ..ZZ....ZZ..ZZ..###","###....................###","###o..................o###",
+"###....................###","###..ZZ..ZZ....ZZ..ZZ..###","###......................#","###o..................o.Z#",
+"###......................h","###..ZZ..ZZ....ZZ..ZZ....#","###....................###","###o..................o###",
+"###....................###","###..ZZ..ZZ....ZZ..ZZ..###","###....................###","###o..................o###",
+"###....................###","##h....................###","###....................###","###########....###########",
+"###########....###########","###########....###########","######*............*######","######..............######",
+"######..o........o..######","######..............######","######..............######","######..............######",
+"###########GGGG###########","##########################","##########################",
+    ],
+    spawn:[12,1],
+    arrive:{ top:[12,1], vault:[12,35] },
+    arriveSay:{ top:'the stair at the top of The Family Crypt', vault:'the vault\'s door, at the bottom of The Family Crypt' },
+    prizes:[[4,26]],
+    chalkFresh:[[25,16]],
+    grave:[24,15],
+    leaves:[[12,5],[13,7],[12,8],[13,10],[12,12],[13,14],[12,16],[13,18],[12,20],[13,22],[12,24],[13,26],[12,28],[13,30],[12,32],[13,34]],
+    things:[
+      { x:12, y:1,  walk:true, verb:'Up', where:'The Watch', act:()=> goFloor('cata_watch','bottom') },
+      { x:2,  y:25, verb:'Drawing', act:()=> r5Chalk(6) },
+      { x:25, y:16, verb:'Drawing', act:()=> r5Chalk(7) },
+      { x:24, y:15, verb:'Grave', act:()=> r5Grave() },
+      { x:9,  y:9,  w:2, verb:'Tomb', act:()=> r5Tomb() },
+      { x:12, y:35, sprite:'rival_padrino', icon:'🧑', verb:'Jax', act:()=> r5JaxDoor(), when:()=> !r5().jaxBeaten, mark:()=> !r5().said.jaxMet },
+      /* (3.19) Jax gone in ahead: the door stands open — through it, the vault */
+      { x:12, y:35, walk:true, verb:'In', where:'The Vault', arrow:'down', act:()=> r5VaultDoor(), when:()=> !!r5().jaxBeaten },
+      { x:11, y:36, w:4, verb:'The vault', act:()=> r5VaultDoor() },
+    ],
+    stealth:{ kind:'fight', sense:2, feel:4,
+      first:`<b>"The Family's dead, every one of them. Walk softly."</b><br><br>` +
+            `<b>"And the cold — it is right below us now."</b>`,
+      guards:[],
+      /* the gentle ones among the tombs: Unicorns, Nurses, Sylphs */
+      wild:{ rate:0.02, size:2, lv:[95,98], t3:true, more:{ unicorn:3, nurse:3, sylph:2 } } },
+    paint:(d)=> paintCatacomb(d),
+    onRender:(world, d)=> r5FloorRender(world, d),
+    onStep:(p, d)=> stealthStep(p, d),
+    ghostChat:(id)=> r5GhostChat(id),
+  },
+
+  /* ---- 4. THE VAULT (3.19): through the crypt's great iron door — the
+     Padrino's vault, one round room, lit. Machines hum along its walls (`Y`),
+     a great clock is carved into the floor (vaultClock), Cyborg's iron cradle
+     stands at the far end (`M`), a stone table on the left (`E`) and on the
+     right the cage of iron and roots (`Q`, its bars an actor over the
+     Forest Guardian). Nobody on watch, nothing wild — the whole Family is
+     here. A room small enough to see all of at once (`view`: 11 tiles
+     across), so everything that happens in it is in sight. THE VAULT, below. ---- */
+  cata_vault: {
+    key:'cata_vault', region:5, title:'The Vault', bg:'catacombs', music:'zone_catacombs', tier:3, under:true, room:true, vault:true,
+    bx:0, by:0, bs:1/32, nat:[11*32, 11*32], art:'catacombs3_vault', view:11, vaultClock:[5.5, 6.1, 2.55],
+    rows:[
+"###########","#*Y.....Y*#","#.........#","#.........#",
+"#.EE...QQ.#","#......QQ.#","#.........#","#.........#",
+"#Y.......Y#","#*..MMM..*#","###########",
+    ],
+    spawn:[5,1],
+    arrive:{ top:[5,1] },
+    things:[
+      { x:5, y:1, walk:true, verb:'Up', where:'The Family Crypt', act:()=> goFloor('cata_crypt', 'vault') },
+      { x:5, y:6, verb:'The Padrino', act:()=> r5VaultPadrino(), when:()=> r5VaultState() === 'ready' },
+      /* (3.20) after the fight he kneels by his broken machine */
+      { x:4, y:7, verb:'The Padrino', act:()=> r5VaultPadrino(), when:()=> ['won', 'crowned'].includes(r5VaultState()) },
+      { x:7, y:4, w:2, h:2, verb:'The cage', act:()=> r5VaultCage() },
+      { x:2, y:4, w:2, verb:'The table', act:()=> r5VaultTable() },
+      { x:4, y:9, w:3, verb:'Cyborg', act:()=> r5VaultCyborg(), when:()=> !r5VaultAt('nemesis') },
+      /* (3.20) where Nemesis went: the space-time tear, over the empty cradle */
+      { x:4, y:9, w:3, verb:'The tear', where:'The space-time tear', act:()=> r5VaultTear(), when:()=> r5VaultAt('nemesis') },
+      { x:7, y:2, verb:'Monkey King', act:()=> r5VaultMK(), when:()=> ['ready', 'won', 'crowned'].includes(r5VaultState()) },
+    ],
+    paint:(d)=> paintCatacomb(d),
+    onRender:(world, d)=> r5VaultRender(world, d),
+    ghostChat:(id)=> r5GhostChat(id),
+  },
+
+  /* ============================================================
      THE CHURCH (2.90) — the Old Town's, at the top of the crypt stair
      Where the catacombs come out: a nave of pews and pillars, candles on the
      altar, the crypt stair down in its east corner and the great door out to
@@ -967,9 +1186,10 @@ const R5_DECKS = {
       /* the capos, at the café's tables: whichever you have beaten below —
          (2.95) and the Consigliere, once he has walked out of his ring. Each
          of them is one man, in one place: down there, or up here. */
-      { x:10, y:22, sprite:'capo_purple', icon:'🕴️', verb:'Capo', act:()=> r5CapoLook('purple'), when:()=> !!r5().capoPurple },
-      { x:10, y:25, sprite:'capo_black',  icon:'🕴️', verb:'Capo', act:()=> r5CapoLook('black'), when:()=> !!r5().capoBlack },
-      { x:8,  y:25, sprite:'consigliere', icon:'🕴️', verb:'Consigliere', act:()=> r5CapoLook('consigliere'), when:()=> !!r5().capoGrey },
+      /* (3.18) …until the villa's door is broken: then they are all down on the Watch, under the villa */
+      { x:10, y:22, sprite:'capo_purple', icon:'🕴️', verb:'Capo', act:()=> r5CapoLook('purple'), when:()=> !!r5().capoPurple && !r5().sottoBeaten },
+      { x:10, y:25, sprite:'capo_black',  icon:'🕴️', verb:'Capo', act:()=> r5CapoLook('black'), when:()=> !!r5().capoBlack && !r5().sottoBeaten },
+      { x:8,  y:25, sprite:'consigliere', icon:'🕴️', verb:'Consigliere', act:()=> r5CapoLook('consigliere'), when:()=> !!r5().capoGrey && !r5().sottoBeaten },
     ],
     stealth:{ kind:'town', light:true, feel:0,
       guards:[
@@ -1381,11 +1601,14 @@ const R5_DECKS = {
     paint:(d)=> paintTower(d), onRender:(world, d)=> r5TowerRender(world, d), ghostChat:(id)=> r5GhostChat(id) },
 };
 [...R5_FLOORS, ...R5_FLOORS_T2].forEach(id=>{ R5_DECKS[id].prizeLines = CATA_PRIZE_LINES; });
-/* Tier 2's wild tables: all thirteen on every floor (2.90). */
+/* Tier 2's wild tables: all thirteen on every floor (2.90). (3.18) The top
+   tier's: the hill's psychics. */
 Object.values(R5_DECKS).forEach(d=>{
   const w = d.stealth && d.stealth.wild;
   if(w && w.t2 && !w.table) w.table = r5T2Table(w.more);
+  if(w && w.t3 && !w.table) w.table = r5T3Table(w.more);
 });
+R5_FLOORS_T3.forEach(id=>{ R5_DECKS[id].prizeLines = CATA_PRIZE_LINES; });
 /* Look for any floor's own painting now, so it is ready the first time the
    floor is shown (cataPainting, 14-stealth.js). */
 Object.values(R5_DECKS).forEach(d=>{ if(d.art && d.paint) cataPainting(d); if(d.artAlt) cataPainting({ art:d.artAlt }); });
@@ -1400,7 +1623,8 @@ const R5_ALL_ROOMS = Object.values(R5_ROOMS).flat();
 /* The hill's own dead (2.95): every Ghost in the first tier's wild tables,
    its floors and side rooms. The ghosts that pour up the Garrison the night
    the dead rise, and haunt the Family's men (14-stealth.js), are these. (2.97:
-   the Tapirs and Tailed Cats that live down there among them are not dead.) */
+   the Tailed Cats that live down there among them are not dead; 3.14: the
+   Tapirs have left, and the Goblin and Jax's Firehound are among the dead.) */
 const R5_HILL_GHOSTS = [...new Set([...R5_FLOORS, ...R5_ALL_ROOMS].flatMap(id=>{
   const w = R5_DECKS[id] && R5_DECKS[id].stealth && R5_DECKS[id].stealth.wild;
   return ((w && w.table) || []).map(t=> t.sp);
@@ -1558,6 +1782,44 @@ const R5_ROSTERS = {
     [{species:'sumo',level:100},{species:'judo_red',level:100},{species:'strongman',level:100}],
     [{species:'physical_starter',level:100},{species:'lizardape',level:100},{species:'squid',level:100}],
     [{species:'tricerarmor',level:100}] ] },   // 2.99: 101 and 103 before — none of theirs past 100
+
+  /* (3.18) Under the villa: the Padrino's own men, with the psychics the
+     exorcists keep — a Physical monster of yours beats them; two waves, at
+     99 and 100. They think about their second wave (ai 'smart', as the
+     tower's psychics do). */
+  deep_a:  r5Squad(99, ['leopard','tapir','quetzal'], ['ram','psychic_starter'], ['power2','smart']),
+  deep_b:  r5Squad(99, ['puffball','unicorn'], ['seadragon','squid'], ['power2','smart']),
+  deep_c:  r5Squad(99, ['polygon','nurse','tapir'], ['steelcrab','tailed_cat'], ['power2','smart']),
+  deep_d:  r5Squad(99, ['hermit_sloth','leopard'], ['firefox','moon_swan'], ['power2','smart']),
+  deep_l:  r5Squad(99, ['quetzal','unicorn','puffball'], ['mime'], ['power2','smart']),
+  watch_a: r5Squad(99, ['tapir','leopard','polygon'], ['hydra','squid'], ['smart','smart']),
+  watch_b: r5Squad(99, ['nurse','hermit_sloth'], ['plasma_manta','sylph'], ['smart','smart']),
+  /* The Watch's three chiefs, a third time (the capos) and a second (the
+     Consigliere): three waves each at 100, the last crowned. Beaten, each
+     unlocks his lock on the gate and goes down to his master (r5WatchBeaten). */
+  watch_black: { label:'Black Capo', ai:['best','best','best'],
+    shout:`<b>"Well, well. The kid from the caverns — a third time."</b><br><br>He does not hurry. He never does.<br><br>` +
+          `<b>"My people don't forget a face. Neither do I."</b>`,
+    onBeaten:()=> r5WatchBeaten('black'),
+    waves:[
+    [{species:'goblin_knight',level:100,ai:'maxer'},{species:'puppet',level:100},{species:'horned_lynx',level:100}],
+    [{species:'firehound',level:100},{species:'goblin',level:100},{species:'squid',level:100}],
+    [{species:'ghost_starter',level:100,crowned:true,supplements:10}] ] },
+  watch_purple: { label:'Purple Capo', ai:['best','best','best'],
+    shout:`<b>"YOU. A third time."</b> He cracks his knuckles, one at a time.<br><br><b>"Third time lucky — for me."</b>`,
+    onBeaten:()=> r5WatchBeaten('purple'),
+    waves:[
+    [{species:'ghost_flame',level:100},{species:'tailed_cat',level:100},{species:'mime',level:100}],
+    [{species:'goblin_knight',level:100,ai:'maxer'},{species:'hydra',level:100},{species:'firefox',level:100}],
+    [{species:'psychic_starter',level:100,crowned:true,supplements:10}] ] },
+  watch_consigliere: { label:'Consigliere', ai:['best','best','best'],
+    shout:`<b>"Well now. The kid from my pit."</b> He folds his hands.<br><br>` +
+          `<b>"I advised the Padrino that nothing happened down there. He did not believe me. Shall we make it true this time?"</b>`,
+    onBeaten:()=> r5WatchBeaten('consigliere'),
+    waves:[
+    [{species:'sumo',level:100},{species:'judo_red',level:100},{species:'strongman',level:100}],
+    [{species:'lizardape',level:100},{species:'tricerarmor',level:100},{species:'steelcrab',level:100}],
+    [{species:'physical_starter',level:100,crowned:true,supplements:10}] ] },
 };
 /* Soldatos shout and give up in their own words; filled in once, here. */
 Object.values(R5_ROSTERS).forEach(r=>{
@@ -1598,6 +1860,10 @@ function goFloor(id, where, at){
     ui.currentZone = r5Zone('hilltop') || ui.currentZone;
   } else if(d.house){                                  // (3.03) a room in the town: its own part of town
     ui.currentZone = r5Zone(d.zone) || ui.currentZone;
+  } else if(d.vault){                                  // (3.19) the vault, under the crypt: lit, nobody on watch
+    ui.currentZone = r5Zone('catacombs') || ui.currentZone;
+    const r = r5();
+    if(!r.reached.includes(id)){ r.reached.push(id); saveProfile(); }
   }
   ui.returnDeck = null;
   w.busy = true;
@@ -1628,6 +1894,8 @@ function r5NoteStep(d, p){
   r5NoteSpot(d.key, p.x, p.y, (ui.floorEntry || {})[d.key]);
   r5WispStep(d, p);                              // (3.02) come close to the little light, and it goes
   r5HillStep(d, p);                              // (3.04) into the villa's forecourt: the Monkey King
+  r5MaliceStep(d, p);                            // (3.17) now and then, the cold under the island
+  r5LeadStep(d, p);                              // (3.18) under the villa: Nino waits, or goes on ahead
   const now = Date.now();
   if(now - (ui.r5SavedAt || 0) > 4000){ ui.r5SavedAt = now; saveProfile(); }
 }
@@ -1689,7 +1957,8 @@ function renderCatacombs(){
      try them before the story opens the gate (2.88). */
   const lower = R5_FLOORS.filter(f=> r.reached.includes(f));
   const floors = (lower.length ? lower : ['cata_landing'])
-    .concat(R5_FLOORS_T2.filter(f=> r.reached.includes(f) || (typeof isDev === 'function' && isDev())));
+    .concat(R5_FLOORS_T2.filter(f=> r.reached.includes(f) || (typeof isDev === 'function' && isDev())))
+    .concat(R5_FLOORS_T3.filter(f=> r.reached.includes(f)));                // (3.18) under the villa, once reached
   const enter = f=> goFloor(f, DECKS[f].entry || 'top');
   const last = r5LastSpot();
   if(floors.length <= 1){ ui.stealthFresh = true; return last ? r5Resume(last) : enter(floors[0] || 'cata_landing'); }
@@ -1708,7 +1977,7 @@ function renderCatacombs(){
       return 'Too many to fight. Do not be seen.' + (rooms.length ? ` ${left} on watch in the side rooms.` : '');
     return left ? `${left} of the Family on watch${where}` : `Nobody left on watch today${where}`;
   };
-  const all = [...R5_FLOORS, ...R5_FLOORS_T2];
+  const all = [...R5_FLOORS, ...R5_FLOORS_T2, ...R5_FLOORS_T3];
   const card = f=> `
         <div class="challenge-card" data-floor="${f}">
           <div class="region-num">${all.indexOf(f) + 1}</div>
@@ -1718,6 +1987,7 @@ function renderCatacombs(){
           </div>
         </div>`;
   const upper = floors.filter(f=> R5_FLOORS_T2.includes(f));
+  const top = floors.filter(f=> R5_FLOORS_T3.includes(f));
   const devOnly = upper.length && !r5().tier2Open && !upper.some(f=> r.reached.includes(f));
   /* where you left off, first (2.90) */
   const lastRoom = last && DECKS[last.id].room;
@@ -1739,6 +2009,8 @@ function renderCatacombs(){
       ${floors.filter(f=> R5_FLOORS.includes(f)).map(card).join('')}
       ${upper.length ? `<div class="screen-sub" style="margin:6px 0 0;">Under the Old Town${devOnly ? ' <i>(developer: the gate is still shut)</i>' : ''}</div>` : ''}
       ${upper.map(card).join('')}
+      ${top.length ? `<div class="screen-sub" style="margin:6px 0 0;">Under the villa</div>` : ''}
+      ${top.map(card).join('')}
     </div>
     <button class="btn btn-ghost" id="returnBtn" style="margin-top:14px;">Return</button>`;
   $('#backBtn').addEventListener('click', ()=> go('explore'));
@@ -1797,6 +2069,8 @@ const R5_HARBOUR_WORD = `<b>"My core. I can feel it, up there, at the very top o
                         `<b>"Jax brought it here. And he did not bring it for himself."</b>`;
 function r5HarbourRender(world, d){
   if(!r5().arrived) return r5ArrivalScene();
+  /* (3.20) the goodbye on the pier, if the app was closed before it */
+  if(r5FarewellDue()) return setTimeout(()=>{ if(ui.screen === 'harbour' && r5FarewellDue() && !ui.sceneRunning && !document.querySelector('.scene-say')) r5FarewellStart(); }, 600);
   if(!ui.sceneRunning && r5DailyDue('first_harbour')) r5PlaceWord('harbour', 'first_harbour', R5_HARBOUR_WORD);
 }
 async function r5ArrivalScene(){
@@ -2056,11 +2330,14 @@ async function r5GateSoldato(){
     return;
   }
   if(!ensurePool()) return;
-  const def = R5_ROSTERS.gate;
   walkTeardown();
-  beginBattle({ isNpc:true, name:'Soldato', npcId:'soldato1', noFlee:true,
-    waves: def.waves.map((w, wi)=> w.map(s=> Object.assign({ ai: s.ai || def.ai[wi] || 'power1', nerfed:false }, s))),
-    onWin: ()=> r5GateBeaten() });
+  beginBattle(Object.assign(r5GateBattle(), { onWin: ()=> r5GateBeaten() }));
+}
+/* (3.11) The setups below are shared with the Test Arena's Challengers. */
+function r5GateBattle(){
+  const def = R5_ROSTERS.gate;
+  return { isNpc:true, name:'Soldato', npcId:'soldato1', noFlee:true,
+    waves: def.waves.map((w, wi)=> w.map(s=> Object.assign({ ai: s.ai || def.ai[wi] || 'power1', nerfed:false }, s))) };
 }
 async function r5GateBeaten(){
   const r = r5();
@@ -2081,21 +2358,25 @@ async function r5GateBeaten(){
 function refreshWalkAll(){ if(DECKS[ui.screen]) go(ui.screen); }
 
 /* ============================================================
-   NINO (3.02) — the Padrino's little brother, lost in these tunnels as a
-   boy, long ago (part 6 §12b, his whole story, as the designer agreed it).
+   NINO (3.02) — the Padrino's little brother (part 6 §12b, his story, as
+   the designer agreed it; (3.17) §12c: he was ill from the day he was born —
+   Nemesis's doing — and died at six, long ago; not lost in the tunnels).
    While the mediums press every ghost in the hill down he is only a little
    light — the wisp, drawn here: a small pale glow "about as big as an
    apple" — that waits ahead of you, and goes when you come close. When the
    hold breaks (the tower, floor 13) he grows into a boy — his ghost,
    `ghost_child` (3.03, the designer: "nino first appears as npc/ghost_child
    with a different sprite"). He never speaks: the Whalelord says what he
-   feels, and the Ghost Master, who can hear him, says his words aloud.
-   `padrino_brother` is the boy alive — the body Cyborg brought back, and
+   feels, and (3.17) shows what he shows him — the Bone Demon. The Ghost
+   Master cannot see or hear him: the Ghost Guardian at her side has always
+   kept him from her (it is Nemesis's vessel); she sees him only at the end.
+   `padrino_brother` is the boy alive — the body Cyborg brings back, and
    Nino as he was in the past (the Madrina's photograph): NINO_BODY.
    r5().said: wispLanding (the light seen), wispFind (the Landing's find it
    waited over) and wispFindGone / wispFound, wispWaits (the Whalelord's "It
    always waits for us"), wispCistern / wispBones / wispStair (waited there),
-   wispShield (the night the dead rose); r5().ninoMet once he is a boy.
+   wispShield (the night the dead rose); r5().ninoMet once he is a boy;
+   (3.17) boneVision once he has shown the Whalelord the Bone Demon.
    ============================================================ */
 const NINO_GHOST = 'ghost_child';
 const NINO_BODY = 'padrino_brother';
@@ -2284,18 +2565,21 @@ async function r5WispShield(){
   r5WispOut(900);
   setTimeout(()=>{ if(el) el.classList.remove('nino-shield'); }, 1500);
 }
-/* Floor 13, before the fight (scene 5): a flicker at the edge of her candles. */
+/* Floor 13, before the fight (scene 5): a flicker at the edge of her candles.
+   (3.17) She cannot see it — only the flames, leaning toward it. */
 async function r5TowerFlicker(){
   r5Wisp(7, 5, 250); await sceneWait(380);
   await r5WispOut(260);
   await sceneWait(260);
   r5Wisp(7, 5, 250); await sceneWait(560);
   await r5WispOut(420);
-  await sceneSay([r5TowerFace(13)], 'Ghost Master', `She turns her head sharply.<br><br><b>"…What was that?"</b>`);
+  await sceneSay([r5TowerFace(13)], 'Ghost Master', `For a moment every candle flame leans the same way. She turns her head sharply.<br><br><b>"…What was that?"</b>`);
 }
-/* (3.02) A save that broke the hold before Nino was in the story: the Ghost
-   Master comes down the hill to find you and tells you who he is; he steps
-   out from behind her, smiles at you, and runs to the villa. */
+/* (3.02) A save that broke the hold before Nino was in the story — (3.17)
+   rewritten for §12c: the Ghost Master never saw him, so she does not come.
+   On the hill the little light catches you up, grows into a boy only you and
+   the Whalelord can see, writes his name in the air, shows the Whalelord the
+   Bone Demon, and runs to the villa. */
 async function r5NinoCatchUp(){
   const r = r5(), w = walkState();
   if(r.ninoMet || ui.sceneRunning || w.deck !== 'hilltop') return;
@@ -2303,30 +2587,231 @@ async function r5NinoCatchUp(){
   w.busy = true;
   if(typeof releaseKeys === 'function') releaseKeys();
   const p = (w.at && w.at.hilltop) || { x:12, y:11 };
-  const G = 'Ghost Master', gm = ()=> faceNpc('ghost_master', '👻');
   const wl = ()=> faceMon('whalelord'), W = whaleName();
-  const gx = Math.max(1, p.x - 1), gy = Math.max(1, p.y - 3);
-  const a = sceneActor('gmaster', { x:gx, y:gy - 2, w:1, h:1, src:'assets/npc/ghost_master.png', icon:'👻' });
-  if(a){ a.style.opacity = '0'; void a.offsetWidth; a.style.transition = `opacity ${500 * SCENE_SPEED}ms ease`; a.style.opacity = '1'; }
-  await r5MoveActor('gmaster', gx, gy, 900);
-  await sceneSay([gm()], G, `The Ghost Master comes running down the path, out of breath.<br><br><b>"Wait! You — Figlio's porter. There is something you need to know."</b>`);
-  await sceneSay([gm()], G, `<b>"When you took the stone, I saw someone in my tower. A little boy. He had been there all along — and we never knew."</b>`);
-  await sceneSay([gm()], G, `<b>"His name is Nino. He is the Padrino's little brother."</b>`);
-  await sceneSay([gm()], G, `<b>"He got lost in these tunnels when he was a little boy. A long, long time ago. He never came home."</b>`);
-  await sceneSay([gm()], G, `<b>"My great-uncle — the Padrino — has missed him every single day. That is why he wants to turn back time. Back to the day Nino got lost."</b>`);
-  r5NinoActor(gx + 1, gy, 900);
+  const gx = Math.max(1, Math.min(23, p.x + 1)), gy = Math.max(1, p.y - 2);
+  r5Wisp(gx, gy, 800);
   await sceneWait(900);
-  await sceneSay([r5NinoFace()], '', `A little boy steps out from behind her — short trousers, a cap, see-through like mist. He looks at you, and smiles.`);
+  await sceneSay([wl()], W, `<b>"Look — the little light. It has come out of the tower after us."</b>`);
+  r5NinoActor(gx, gy - 0.25, 1200);
+  await sceneGlowOut(['wisp'], 1200);
+  await sceneSay([r5NinoFace()], '', `It grows — and grows — into a boy. A small boy in short trousers and a cap, see-through like mist. He looks at you, and smiles.`);
   await sceneSay([wl()], W, `<b>"Now I can see him properly. He is not a monster at all. He is a boy. A human boy."</b>`);
+  await sceneSay([r5NinoFace()], '', `He writes in the air with one finger. The letters glow for a moment, then fade:<br><br><span class="r5-airname"><b>N I N O</b></span>`);
+  await sceneSay([wl()], W, `<b>"Nino. That is his name."</b>`);
   r.ninoMet = true;
   await saveProfile();
+  await r5BoneVision();
   await r5MoveActor('nino', 12.5, 9, 1800, true);
   sceneActorGone('nino');
   await sceneSay([], '', `Then he runs — up the hill, toward the villa — and he is gone.`);
-  await sceneSay([gm()], G, `<b>"He's going to his brother."</b>`);
-  await sceneSay([wl()], W, `<b>"The dead are free now, and the Padrino is the one they are angriest with. That little boy is going to stand in their way."</b>`);
-  await r5MoveActor('gmaster', gx, gy - 3, 900, true);
-  sceneActorGone('gmaster');
+  await sceneSay([wl()], W, `<b>"Toward the Padrino's house. The dead are free now, and the Padrino is the one they are angriest with…"</b><br><br><b>"…and that little boy ran straight to him."</b>`);
+  w.busy = false;
+  ui.sceneRunning = false;
+}
+/* (3.17) The picture Nino paints in the Whalelord's mind (part 6 §12c — the
+   designer: "it should paint the image of bone demon in the whalelord's mind,
+   trying to reveal the truth about what's controlling the ghost guardian and
+   the family by proxy"). Its picture: assets/mon/bone_demon_front.png, or
+   bone_demon.png; 💀 until then. Said once (r5().said.boneVision). */
+const R5_BONE_DEMON_ART = ['assets/mon/bone_demon_front.png', 'assets/mon/bone_demon.png'];
+/* An <img> that tries each picture of a list in turn, then shows the emoji. */
+function r5ArtImg(list, emoji){
+  return `<img src="${list[0]}" alt="" data-chain="${list.join('|')}" data-i="0" data-emoji="${emoji || '❓'}" onerror="r5ArtNext(this)">`;
+}
+function r5ArtNext(img){
+  const list = (img.dataset.chain || '').split('|'), i = +(img.dataset.i || 0) + 1;
+  if(i < list.length){ img.dataset.i = String(i); img.src = list[i]; return; }
+  img.outerHTML = `<span class="rv-emoji">${img.dataset.emoji || '❓'}</span>`;
+}
+function r5VisionShow(list, emoji){
+  r5Css();
+  let o = document.getElementById('r5Vision');
+  if(!o){
+    o = document.createElement('div');
+    o.id = 'r5Vision';
+    document.body.appendChild(o);
+  }
+  o.innerHTML = `<div class="rv-pic">${r5ArtImg(list, emoji)}</div>`;
+  o.style.transition = 'none'; o.style.opacity = '0';
+  void o.offsetWidth;
+  o.style.transition = `opacity ${900 * SCENE_SPEED}ms ease`;
+  o.style.opacity = '1';
+  return o;
+}
+async function r5VisionHide(ms){
+  const o = document.getElementById('r5Vision');
+  if(!o) return;
+  o.style.transition = `opacity ${(ms || 900) * SCENE_SPEED}ms ease`;
+  o.style.opacity = '0';
+  await sceneWait(ms || 900);
+  o.remove();
+}
+async function r5BoneVision(){
+  const r = r5(), W = whaleName(), wl = ()=> faceMon('whalelord');
+  r.said.boneVision = true;
+  saveProfile();
+  await sceneSay([wl()], W, `<b>"He is showing me something. A picture — in my head."</b>`);
+  playSfx('malice');
+  r5VisionShow(R5_BONE_DEMON_ART, '💀');
+  await sceneWait(1100);
+  await sceneSay([wl()], W, `<b>"A monster. A great beast with a dragon's head… and a hundred legs, all made of bone."</b>`);
+  await sceneSay([wl()], W, `<b>"It is old. So very old. And he is frightened of it — not for himself. For his brother. For his whole family."</b>`);
+  await sceneSay([wl()], W, r.said.malice1
+    ? `<b>"I have never seen it before. But I have felt it: that cold, deep under the island. It is this."</b>`
+    : `<b>"I have never seen it before. But he wants us to know it is here."</b>`);
+  await r5VisionHide(900);
+}
+
+/* ============================================================
+   THE COLD UNDER THE ISLAND (3.17) — Nemesis (part 6 §12c)
+   It hides in its rift, deep under the hill, and shows itself only now and
+   then. Each time the edges of the world go dark, the stones shiver, and the
+   Whalelord and the Forest Fairy feel it — the designer: "some deep, dark,
+   and terrifying malice emanates from time to time in the depths of the
+   island … it feels like an ancient power". It comes on a walk, some steps
+   in (r5MaliceStep, from r5NoteStep), never while anything else is said:
+     malice1      the first time — any catacomb floor or room but the Landing,
+                  the Old Town's streets, the Hilltop
+     (the ghost phoenix: the Whalelord wonders if that is it — r5SenseArmoury)
+     maliceGP     "despite ghost phoenix disappearing … the malice has not left
+                  the island": the first time after it goes to rest ('rest'); or,
+                  with no phoenix of yours, once you are up in the Old Town:
+                  it is not the phoenix waiting in the Armoury ('waiting') —
+                  and then maliceGPRest if it goes to rest after all
+     maliceHill   the Hilltop: "an ancient power"
+     maliceDay    the day of the last passing word — now and then after the
+                  first, one walk in three, never twice in a day
+   The Forest Fairy speaks here for the first time — your own, as you have her.
+   ============================================================ */
+/* Your Forest Fairy (the Sacred Seed, grown — Region 2): party first, then
+   storage. The story keeps her with you; null only for a save made up in a test. */
+function r5Fairy(){
+  return (state.party || []).concat(state.storage || []).find(m=> m && m.species === 'forest_fairy') || null;
+}
+function r5FairyFace(){
+  const m = r5Fairy();
+  return faceMon('forest_fairy', { stage:m ? monStage(m) : 1, crowned:!!(m && m.crowned) });
+}
+function r5FairyName(){ const m = r5Fairy(); return m ? displayName(m) : 'Forest Fairy'; }
+/* One line from her, or nothing if there is no her. */
+function r5FairySay(html){ return r5Fairy() ? sceneSay([r5FairyFace()], r5FairyName(), html) : Promise.resolve(); }
+/* The cold passing through: the screen's edges go dark red and purple, twice,
+   like a slow heartbeat, and the stones shiver. */
+function r5Dread(ms){
+  r5Css();
+  ms = ms || 1900;
+  let o = document.getElementById('r5Dread');
+  if(!o){ o = document.createElement('div'); o.id = 'r5Dread'; document.body.appendChild(o); }
+  playSfx('malice');
+  sceneShake(ms, t=> 0.05 * Math.sin(Math.PI * Math.min(1, t / ms)));
+  const dur = Math.max(1, ms * SCENE_SPEED), t0 = performance.now();
+  const beat = (t, c, w)=> Math.exp(-Math.pow((t - c) / w, 2));
+  return new Promise(done=>{
+    const frame = now=>{
+      const t = Math.min(1, (now - t0) / dur);
+      o.style.opacity = (0.95 * beat(t, 0.27, 0.12) + 0.72 * beat(t, 0.6, 0.12)).toFixed(3);
+      if(t < 1) requestAnimationFrame(frame); else { o.style.opacity = '0'; o.remove(); done(); }
+    };
+    requestAnimationFrame(frame);
+  });
+}
+/* Where it can come: the catacombs (not the Landing, the first time), the Old
+   Town's streets, the Hilltop — never the night the dead rose. */
+function r5MaliceDeck(d){
+  if(!d || d.region !== 5 || !d.stealth || stealthRush(d)) return false;
+  if(d.key === 'harbour') return false;
+  return r5IsCata(d) || d.key === 'old_town' || d.key === 'hilltop';
+}
+/* What is due on this deck, if anything: the key, said in that order. */
+function r5MaliceDue(d){
+  const r = r5(), s = r.said;
+  if(r.vault && r.vault.nemesis) return null;     // (3.20) it went into the tear, with Cyborg
+  if(!s.malice1) return d.key === 'cata_landing' ? null : 'malice1';
+  if(!s.maliceGP){
+    if(r.phoenixGone) return 'maliceGP';
+    if(r.phoenixMet && r.oldTown && !r5MyPhoenix()) return 'maliceGP';
+  }
+  if(s.maliceGP === 'waiting' && r.phoenixGone && !s.maliceGPRest) return 'maliceGPRest';
+  if(!s.maliceHill && d.key === 'hilltop') return 'maliceHill';
+  return s.maliceDay === r5Day() || s.maliceAt === r5Day() ? null : 'maliceDay';
+}
+const R5_MALICE_STEPS = 12;
+function r5MaliceStep(d, p){
+  if(!r5MaliceDeck(d) || ui.sceneRunning || ui.r5MaliceBusy) return;
+  const m = ui.r5MaliceWalk && ui.r5MaliceWalk.deck === d.key ? ui.r5MaliceWalk : (ui.r5MaliceWalk = { deck:d.key, n:0, rolled:false, fired:false });
+  m.n++;
+  if(m.fired) return;                            // once on a walk through a place
+  const due = r5MaliceDue(d);
+  if(!due) return;
+  const at = due === 'maliceDay' ? 18 : R5_MALICE_STEPS;
+  if(m.n < at) return;
+  if(due === 'maliceDay'){
+    if(m.rolled) return;
+    m.rolled = true;                               // one roll a walk on a deck
+    if(Math.random() >= 1 / 3) return;
+  }
+  const st = ui.stealth && ui.stealth[d.key];
+  if(st && (st.caught || st.guards.some(g=> g.sus))) return;          // not with a man about to see you
+  if(d.key === 'hilltop' && r5MKDue() && r5InForecourt(p)) return;     // the Monkey King is about to drop in
+  if(walkState().busy || document.querySelector('.scene-say') || document.body.classList.contains('in-scene')) return;
+  ui.r5MaliceBusy = true;
+  setTimeout(()=>{
+    ui.r5MaliceBusy = false;
+    if(ui.screen !== d.key || walkState().deck !== d.key || ui.sceneRunning || walkState().busy || document.querySelector('.scene-say')) return;
+    m.fired = true;
+    r5Malice(due);
+  }, 250);
+}
+const R5_MALICE_DAY = [
+  [['w', `There. Did you feel it?`], ['f', `…And gone again. It hides every time we notice it.`]],
+  [['f', `The ground just shivered. Under everything.`], ['w', `The same cold. Always the same.`]],
+  [['w', `Something down there opened its eyes for a moment — and looked at us.`], ['f', `And then it shut them again.`]],
+  [['f', `Every time it comes, the little plants in the cracks curl up tight.`], ['w', `Stay close to me.`]],
+  [['w', `That cold again. It is patient, whatever it is. Very patient.`]],
+  [['f', `It feels like an old, old tree that died long ago — with roots that are still alive under the ground. And hungry.`]],
+];
+async function r5Malice(key){
+  const r = r5(), s = r.said;
+  if(ui.sceneRunning) return;
+  ui.sceneRunning = true;
+  const w = walkState();
+  w.busy = true;
+  if(typeof releaseKeys === 'function') releaseKeys();
+  const wl = ()=> faceMon('whalelord'), W = whaleName();
+  const ws = html=> sceneSay([wl()], W, `<b>"${html}"</b>`);
+  const fs = html=> r5FairySay(`<b>"${html}"</b>`);
+  if(key === 'maliceGP') s.maliceGP = r.phoenixGone ? 'rest' : 'waiting';
+  else if(key === 'maliceDay') s.maliceDay = r5Day();
+  else s[key] = true;
+  s.maliceAt = r5Day();
+  saveProfile();
+  await r5Dread(2000);
+  ghostAlert();
+  if(key === 'malice1'){
+    await sceneSay([], '', `Every light dips at once. Under your feet, the stones shiver — and something cold goes through you, from far, far below.`);
+    await ws(`…Did you feel that?`);
+    await ws(`Something went through the whole island just now. Not the dead. Something under the dead — deeper than anything down here.`);
+    await fs(`I felt it too. It was there, and then it was gone — as if it hid again, the moment it knew we felt it.`);
+    await fs(`It is very old. Older than my grove. Older than anything I know.`);
+    await ws(`And it hates. I have never felt anything hate like that. Not even me, when I lost my core.`);
+  } else if(key === 'maliceGP' && r.phoenixGone){
+    await ws(`That cold again.`);
+    await ws(`I was sure it was the old phoenix I had been feeling, all this time. All that anger. But the old phoenix is at rest now — and this is still here.`);
+    await fs(`It was never the phoenix. The phoenix burned. This is cold — and it is still down there, deep under the island. Waiting.`);
+  } else if(key === 'maliceGP'){
+    await ws(`That cold again.`);
+    await ws(`It is not the old phoenix. The phoenix is down in the Armoury, far behind us, warm and sad. This comes from much deeper.`);
+    await fs(`The phoenix burns. This is cold. Something else is down there — something very old.`);
+  } else if(key === 'maliceGPRest'){
+    await ws(`The old phoenix is at rest now. And still the cold is here. It never had anything to do with the phoenix.`);
+  } else if(key === 'maliceHill'){
+    await fs(`It's stronger up here. Much stronger.`);
+    await ws(`An ancient power. Older than this town. Older than the dead under it.`);
+    await fs(`An ancient power — yes. Something that should have ended a very long time ago… and would not.`);
+  } else {
+    const pick = R5_MALICE_DAY[Math.floor(Math.random() * R5_MALICE_DAY.length)];
+    for(const [who, line] of pick) await (who === 'f' && r5Fairy() ? fs(line) : ws(line));
+  }
   w.busy = false;
   ui.sceneRunning = false;
 }
@@ -2346,6 +2831,12 @@ function r5FloorRender(world, d){
   const say = html=> sceneSay([faceMon('whalelord')], whaleName(), html);
   const later = f=> setTimeout(f, 500);
   r5WispRender(d);                                // (3.02) the little light, where it waits
+  /* (3.18) under the villa: the first time on each floor, its scene; after
+     that Nino at his stop, then the floor's word as on any other */
+  if(d.under){
+    if(r5UnderArriveDue(d)) return later(()=> r5UnderArrive(d));
+    r5LeadRender(d);
+  }
   /* The ghost phoenix, in the Armoury, once the Purple Capo is beaten (2.90):
      (2.92) its orb, waiting to be touched. */
   if(r5PhoenixDue(d)) return r5OrbScene(world, d);
@@ -2399,7 +2890,7 @@ function r5FloorRender(world, d){
                        back ? ()=>{ r.regrouped = false; saveProfile(); } : null);
   }
   /* The first time in the dark in disguise (2.91). */
-  if(r.disguised && fresh && r5Once('disguisedDark'))
+  if(r.disguised && fresh && !d.under && r5Once('disguisedDark'))      // (3.18) not under the villa: it fools nobody there
     return later(()=> say(`<b>"In that uniform, nobody down here will look at you twice. Walk right past them, if you like."</b><br><br>` +
                           `<b>"And the ones who come alongside you, you can talk to. They do love to talk."</b>`));
   /* Back under the Old Town after that night: the Family has its posts back. */
@@ -2540,6 +3031,9 @@ async function r5SenseArmoury(){
     `<b>"Wait."</b><br><br><b>"There is something else in this hill. Not the Family's men. Something dead — and so angry that it burns."</b>`);
   await sceneSay([whale], wn,
     `<b>"It is in the rooms off this stair. The furthest one: the Armoury, past the Barracks."</b>`);
+  /* (3.17) the red herring (part 6 §12c): is this the cold they have felt? */
+  if(r5().said.malice1)
+    await sceneSay([whale], wn, `<b>"So much anger… Perhaps that is what we have been feeling, deep under the hill, all this time."</b>`);
 }
 
 /* ============================================================
@@ -2676,6 +3170,40 @@ function r5Css(){
     /* the night the dead rose: the little light keeps one man's ghosts off him */
     .walk-ent.guard.nino-shield .guard-haunt{opacity:.25;transform:scale(1.7);transition:opacity .6s ease,transform .6s ease;}
     .walk-ent.guard.nino-shield > img{animation:none;}
+    /* (3.17) the cold under the island (Nemesis, part 6 §12c): the edges of
+       the screen go dark red and purple, twice, like a slow heartbeat */
+    #r5Dread{position:fixed;inset:0;z-index:84;pointer-events:none;opacity:0;
+      background:radial-gradient(ellipse at 50% 50%,rgba(0,0,0,0) 28%,rgba(70,8,34,.5) 60%,rgba(24,2,30,.93) 100%);}
+    /* …a picture in the Whalelord's mind: dark all round, the picture high up
+       (the talk box is at the bottom), drifting */
+    #r5Vision{position:fixed;inset:0;z-index:84;pointer-events:none;opacity:0;display:flex;justify-content:center;align-items:flex-start;
+      background:radial-gradient(ellipse at 50% 34%,rgba(80,12,44,.3) 0%,rgba(42,4,42,.74) 40%,rgba(8,0,12,.95) 72%);}
+    #r5Vision .rv-pic{margin-top:10vh;width:min(74vw,340px);height:min(74vw,340px);display:flex;align-items:center;justify-content:center;
+      filter:sepia(.3) saturate(1.25) drop-shadow(0 0 24px rgba(210,40,72,.6));animation:r5VisionDrift 5s ease-in-out infinite;}
+    #r5Vision .rv-pic img{width:100%;height:100%;object-fit:contain;}
+    #r5Vision .rv-emoji{font-size:min(38vw,180px);line-height:1;opacity:.85;}
+    @keyframes r5VisionDrift{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-3%) scale(1.03)}}
+    /* the Family's Ghost Guardian, risen at the Ghost Master's shoulder: a
+       purple glow, and it turns slowly */
+    .scene-actor.r5-guard .sa-in{filter:drop-shadow(0 0 8px rgba(170,90,255,.85));}
+    .scene-actor.r5-guard .sa-in > *{transition:scale .7s ease;}
+    /* the little light, shrinking back from it */
+    .r5-wisp.shy > i{transform:scale(.55) !important;opacity:.6;transition:transform .5s ease,opacity .5s ease;animation:none;}
+    /* the Fairy Stone on its silk, glinting */
+    .scene-actor.r5-fstone .sa-in{filter:drop-shadow(0 0 6px rgba(205,235,255,.95));animation:r5Glint 1.8s ease-in-out infinite;}
+    @keyframes r5Glint{0%,100%{filter:drop-shadow(0 0 4px rgba(205,235,255,.8)) brightness(1)}50%{filter:drop-shadow(0 0 10px rgba(225,245,255,1)) brightness(1.35)}}
+    .r5-silk{position:absolute;pointer-events:none;border-radius:50%;background:radial-gradient(ellipse,rgba(10,6,16,.95) 0%,rgba(20,10,30,.85) 55%,rgba(20,10,30,0) 72%);}
+    /* the letters he writes in the air */
+    .r5-airname{letter-spacing:.35em;color:#cfe6ff;text-shadow:0 0 8px rgba(160,210,255,.95);}
+    /* (3.18) a chalk drawing, shown large on its stone (the talk box below) */
+    #r5Chalk{position:fixed;inset:0;z-index:84;pointer-events:none;opacity:0;display:flex;justify-content:center;align-items:flex-start;
+      background:rgba(6,4,10,.5);}
+    #r5Chalk .rc-wall{margin-top:7vh;width:min(92vw,470px);aspect-ratio:3/2;border-radius:10px;padding:10px;box-sizing:border-box;
+      background:radial-gradient(ellipse at 45% 40%,#47424e 0%,#2d2933 62%,#1d1a22 100%);
+      box-shadow:0 10px 30px rgba(0,0,0,.6),inset 0 0 34px rgba(0,0,0,.65);}
+    #r5Chalk .rc-pic{width:100%;height:100%;}
+    /* the dead, hanging back at the edge of Nino's wall */
+    .scene-actor.r5-held .sa-in{filter:drop-shadow(0 0 7px rgba(170,120,255,.9)) grayscale(.4);}
   `;
   document.head.appendChild(st);
 }
@@ -3893,7 +4421,7 @@ function paintChurch(d){
      in the Old Town    they know you — frozen to the spot, surrounded by
                         soldatos and capos, ten phrases, back in the church
    ============================================================ */
-function r5DisguiseDeck(d){ return !!(d && d.region === 5 && (d.stealth || d.key === 'church' || d.key === 'tailor' || d.tower ||
+function r5DisguiseDeck(d){ return !!(d && d.region === 5 && !d.under && (d.stealth || d.key === 'church' || d.key === 'tailor' || d.tower ||
                                                               (d.house && d.zone !== 'harbour'))); }   // (3.03) the Old Town's and the Hilltop's rooms
 function r5YouArt(d){
   if(!r5DisguiseDeck(d) || !r5().disguised) return null;
@@ -3984,6 +4512,9 @@ const R5_SOLDATO_TALK = [
   `<b>"I asked a capo what the Padrino's building. He said, 'The end of all our problems.' Then he told me to mind my own business."</b>`,
   `<b>"Soon, they say. Any day now. And when it's ready, we'll all get a pay rise. Probably."</b>`,
   `<b>"There's a kid loose in the catacombs, they say. Beat two capos — and the Consigliere himself! Don't tell him I told you."</b>`,
+  /* (3.17, part 6 §12c) the Forest Guardian, brought in; and the voice in his dreams */
+  `<b>"Last month the boss's boat brought in a cage from across the sea. Big as a cart, with green leaves growing out between the bars. Nobody's allowed near it."</b>`,
+  `<b>"My uncle stands outside the Padrino's door at night. He says the boss talks in his sleep — to somebody who isn't there. And sometimes it sounds like somebody answers."</b>`,
 ];
 const R5_REVEAL_SHOUTS = [
   `You push back the cap and look him in the eye. His lantern starts to shake.<br><br><b>"YOU! You're the kid from the catacombs!"</b>`,
@@ -4182,7 +4713,7 @@ const R5_FIGLIO_LINES = [
   `<b>"The mediums frightened me when I was small. They still do, a little. They never blink."</b>`,
   `<b>"If you see my father before I do, tell him— no. Don't tell him anything."</b>`,
 ];
-function r5FiglioLevel(){ return Math.min(ENEMY_LEVEL_CAP, 94 + (r5().figlioWins5 || 0)); }
+function r5FiglioLevel(){ return Math.min(ENEMY_LEVEL_CAP, 94 + ((state.progress.region5 || {}).figlioWins5 || 0)); }   // (3.11) read, never written
 /* wave k's level (0 the first, 5 the Howler), and the span to show */
 function r5FiglioLv(k){ return Math.min(ENEMY_LEVEL_CAP, r5FiglioLevel() + k); }
 function r5FiglioSpan(){ const lo = r5FiglioLv(0), hi = r5FiglioLv(5); return lo === hi ? `${lo}` : `${lo}–${hi}`; }
@@ -4234,10 +4765,8 @@ async function r5FiglioMeet(){
   refreshWalkAll();                              // his "!" goes
   toast('Figlio will take you up the hill: the steps at the top of the Old Town.');
 }
-function r5FiglioFight(){
-  if(!ensurePool()) return;
-  walkTeardown();
-  beginBattle({ isNpc:true, name:'Figlio', npcId:'figlio', bgKey:'battle_opera', figlio:true,
+function r5FiglioBattle(){
+  return { isNpc:true, name:'Figlio', npcId:'figlio', bgKey:'battle_opera', figlio:true,
     waves:[
       [{species:'ground_starter',   level:r5FiglioLv(0), ai:'best'}],
       [{species:'psychic_starter',  level:r5FiglioLv(1), ai:'best'}],
@@ -4245,8 +4774,12 @@ function r5FiglioFight(){
       [{species:'physical_starter', level:r5FiglioLv(3), ai:'best'}],
       [{species:'flying_starter',   level:r5FiglioLv(4), ai:'best'}],
       [{species:'howler',           level:r5FiglioLv(5), ai:'best', crowned:true, supplements:10}],
-    ],
-    onWin: ()=> r5FiglioWon() });
+    ] };
+}
+function r5FiglioFight(){
+  if(!ensurePool()) return;
+  walkTeardown();
+  beginBattle(Object.assign(r5FiglioBattle(), { onWin: ()=> r5FiglioWon() }));
 }
 async function r5FiglioWon(){
   const c = concertState(), r = r5();
@@ -4567,11 +5100,11 @@ const R5_FOLK = {
     lines:[
       `<b>"Sit, sit! Soldato or no soldato, you are all skin and bones. Eat something."</b> She pushes a plate at you. <b>"No — eat MORE."</b>`,
       `<b>"When I was young, the Family was three men and a boat. Now look at them. They even own the lemons."</b>`,
-      `<b>"A long time ago, every morning, two little boys ran past my window. A big one, and a little one holding his hand, trying to keep up."</b><br><br>` +
-        `She looks at the window for a while. <b>"Then one day, only the big one came back."</b>`,
+      `<b>"A long time ago, every morning, two boys came past my window. A big one, with a little one riding on his back — the little one was too poorly to walk far."</b><br><br>` +
+        `She looks at the window for a while. <b>"Then one spring, the big one came past all alone. He never smiled again."</b>`,
       `<b>"My cat sits in that window all day, watching the soldatos. She doesn't trust them either. Clever cat."</b>`,
     ],
-    nino:`<b>"Nino. That was the little one's name — I remember now. Always running to keep up with his big brother."</b><br><br>` +
+    nino:`<b>"Nino. That was the little one's name — I remember now. Always laughing, up there on his big brother's back."</b><br><br>` +
       `She wipes her eyes. <b>"I lit a candle for him every year."</b>`,
     free:`<b>"Do you hear them singing, under the hill? I am too old to be frightened."</b> She hums along. <b>"I know this one."</b>` },
   barber:{ name:'Barber Toni', sprite:'barber', icon:'💈',
@@ -4875,6 +5408,15 @@ async function r5MKVilla(){
   await sceneSay([mk()], MK,
     `He sniffs the air, and stops grinning.<br><br><b>"He has something down there with him. Something that should not exist. ` +
     `It smells like a clock running backwards."</b>`);
+  /* (3.17, part 6 §12c) "something troubles him about how familiar the
+     energy is, though he can only sense it from time to time" */
+  await sceneSay([mk()], MK, `He turns his head sharply, as if somebody had called his name.<br><br>` +
+    `<b>"…And something else. There — did you feel it? Cold. And gone again."</b>`);
+  await sceneSay([mk()], MK, `<b>"I know that cold. I have felt it before — long, long ago. But I cannot remember where."</b>`);
+  if(r.said.malice1){
+    await sceneSay([whale()], W, `<b>"We have felt it all over this island, now and then. Deep down."</b>`);
+    await sceneSay([mk()], MK, `<b>"Then it has been here a long time."</b> He scowls at the ground under his feet. <b>"It troubles me."</b>`);
+  } else await sceneSay([mk()], MK, `He scowls at the ground under his feet.<br><br><b>"It troubles me."</b>`);
   await sceneSay([mk()], MK, `<b>"I have waited a long time for this. I go first."</b>`);
   /* over the Sottocapo's head, onto the roof, and in */
   sceneShake(400, t=> 0.08 * Math.max(0, 1 - t / 400));
@@ -4916,18 +5458,20 @@ async function r5SottoAsk(){
   }
   r5SottoFight();
 }
-function r5SottoFight(){
-  if(!ensurePool()) return;
-  walkTeardown();
+function r5SottoBattle(){
   const L = R5_SOTTO_LV;
-  beginBattle({ isNpc:true, name:'Sottocapo', npcId:'sottocapo', noFlee:true, bgKey:'battle_villa',
+  return { isNpc:true, name:'Sottocapo', npcId:'sottocapo', noFlee:true, bgKey:'battle_villa',
     waves:[
       [{species:'golem', level:L, ai:'best'}, {species:'earth_snake', level:L, ai:'best'}, {species:'bat', level:L, ai:'best'}],
       [{species:'thunderhound', level:L, ai:'best'}, {species:'goblin_knight', level:L, ai:'maxer'}, {species:'firehound', level:L, ai:'best'}],
       [{species:'tricerarmor', level:L, ai:'best'}, {species:'sumo', level:L, ai:'best'}, {species:'horned_lynx', level:L, ai:'best'}],
       [{species:'lizardape', level:L, ai:'best', crowned:true, supplements:10}],
-    ],
-    onWin: ()=> r5SottoBeaten() });
+    ] };
+}
+function r5SottoFight(){
+  if(!ensurePool()) return;
+  walkTeardown();
+  beginBattle(Object.assign(r5SottoBattle(), { onWin: ()=> r5SottoBeaten() }));
 }
 async function r5SottoBeaten(){
   const r = r5();
@@ -5003,12 +5547,20 @@ async function r5Madrina(){
   await sceneSay([ma()], M, `<b>"Sit down. I am too old to fight children, and too tired to shout."</b>`);
   await sceneSay([ma()], M, `<b>"They call me the Madrina. The Padrino is my little brother. And my granddaughter lives at the top of that tower — you have met her, I think."</b>`);
   await sceneSay([ma()], M, `She holds out the photograph.<br><br>${r5PhotoHtml(220)}`);
-  await sceneSay([ma()], M, `<b>"My little brothers. That one is the Padrino. He was ten."</b>`);
+  await sceneSay([ma()], M, `<b>"My little brothers. That one is the Padrino. He was sixteen."</b>`);
   await sceneSay([ma()], M, `<b>"And that one is Nino. He was six."</b>`);
-  if(r.ninoMet) await sceneSay([whale()], W, `<b>"…Nino."</b>`);
-  await sceneSay([ma()], M, `<b>"One day they went down into the tunnels under this house, to play. The big one ran on ahead. When he looked back, Nino was gone."</b>`);
-  await sceneSay([ma()], M, `<b>"We looked for him for days. For years. My brother never stopped looking."</b>`);
-  await sceneSay([ma()], M, `<b>"He built the whole Family to dig through that hill. And when he still could not find him, he decided to turn back time instead."</b>`);
+  if(r.ninoMet) await sceneSay([whale()], W, `<b>"…Nino. That is him — the little boy from the tower."</b>`);
+  /* (3.17, part 6 §12c — the designer's words for it) ill, not lost */
+  await sceneSay([ma()], M, `<b>"Nino was ill from the day he was born. Every year a little weaker."</b>`);
+  await sceneSay([ma()], M, `<b>"Our family has a guardian — a knight of ghost-fire, as old as this house. I have the gift, as my granddaughter has, and it speaks to me. ` +
+    `It told me that only a monster's core, a strong one, could make Nino well."</b>`);
+  await sceneSay([ma()], M, `<b>"So my brother went looking for anything that could make him well. The strongest monsters there were, and their cores. He was only a boy himself."</b>`);
+  await sceneSay([ma()], M, `<b>"He even crossed the sea, to a fairy in a sacred forest, and begged her for her core. She would not give it. She gave him a little stone instead."</b>`);
+  if(r5Fairy()) await r5FairySay(`<b>"A fairy… in a sacred forest?"</b>`);
+  await sceneSay([ma()], M, `<b>"And it helped. For a while, Nino was stronger. But when Nino was six, he died."</b>`);
+  await sceneSay([ma()], M, `<b>"After that my brother could not bear to look at the little stone. He gave it to the mediums. And he never forgave that fairy — nor the world."</b>`);
+  if(ownsStone('fairyStone')) await sceneSay([whale()], W, `<b>"A fairy's stone… It is in your bag. The stone we took from the tower."</b>`);
+  await sceneSay([ma()], M, `<b>"He built the whole Family. He brought mediums over the sea to find Nino's ghost, and they never did. And so he decided to turn back time instead."</b>`);
   await sceneSay([ma()], M, `<b>"Tonight the dead are loose, all over the town — and still this house is quiet. I have felt it all my life. Something small, keeping the cold away from us."</b>`);
   await sceneSay([whale()], W, `<b>"She knows. She just does not know that she knows."</b>`);
   await sceneSay([ma()], M, `<b>"My brother is down there now, under the cellars, with that machine of his. And your friend with the tail went down after him."</b>`);
@@ -5029,29 +5581,40 @@ async function r5Madrina(){
   ui.sceneRunning = false;
   refreshWalkAll();
 }
-/* The photograph: two little boys on the villa's steps, the big one holding
-   the little one's hand. Nino as he was is NINO_BODY (padrino_brother —
-   "in the past stories if art is used there"); the Padrino at ten is
-   padrino_young. Sepia; the stand-ins are emoji until they are drawn. */
+/* The photograph: two boys on the villa's steps, the big one holding the
+   little one's hand. Nino as he was is NINO_BODY (padrino_brother — "in the
+   past stories if art is used there"); the Padrino — (3.17) at sixteen, a
+   teenager (part 6 §12c) — is padrino_young. Sepia; the stand-ins are emoji
+   until they are drawn. */
 function r5PhotoHtml(px){
   r5Css();
   const h = Math.round(px * 0.8), fig = Math.round(px * 0.42), fall = Math.round(fig * 0.7);
   return `<div class="r5-photo" style="width:${px}px;height:${h}px;"><div class="r5-photo-in">` +
     `<span class="r5-photo-step"></span>` +
-    `<img class="big" style="width:${Math.round(fig * 1.12)}px;height:${Math.round(fig * 1.12)}px;" src="assets/npc/padrino_young.png" alt="" onerror="walkArtMissing(this,'🧒',${fall},0)">` +
-    `<img class="small" style="width:${Math.round(fig * 0.86)}px;height:${Math.round(fig * 0.86)}px;" src="assets/npc/${NINO_BODY}.png" alt="" onerror="walkArtMissing(this,'👦',${Math.round(fall * 0.8)},0)">` +
+    `<img class="big" style="width:${Math.round(fig * 1.3)}px;height:${Math.round(fig * 1.3)}px;" src="assets/npc/padrino_young.png" alt="" onerror="walkArtMissing(this,'🧑',${fall},0)">` +
+    `<img class="small" style="width:${Math.round(fig * 0.8)}px;height:${Math.round(fig * 0.8)}px;" src="assets/npc/${NINO_BODY}.png" alt="" onerror="walkArtMissing(this,'👦',${Math.round(fall * 0.75)},0)">` +
     `</div></div>`;
 }
 async function r5Photograph(){
   if(ui.sceneRunning || document.querySelector('.scene-say')) return;
-  await sceneSay([], 'A photograph', `${r5PhotoHtml(220)}<br>Two little boys on the steps of this house. The big one is holding the little one's hand.`);
+  await sceneSay([], 'A photograph', `${r5PhotoHtml(220)}<br>Two boys on the steps of this house — a tall one and a little one. The big one is holding the little one's hand.`);
   if(r5().madrinaMet && r5Once('photoWhale'))
-    await sceneSay([faceMon('whalelord')], whaleName(), `<b>"The big one ran ahead, and did not wait. The little one has been waiting ever since."</b>`);
+    await sceneSay([faceMon('whalelord')], whaleName(), `<b>"The big one is holding on so tightly. As if he could keep him here, just by holding on."</b>`);
 }
-function r5VillaDesk(){
-  return sceneSay([], "The Padrino's desk",
+async function r5VillaDesk(){
+  await sceneSay([], "The Padrino's desk",
     `Maps of the islands, with red rings drawn round the towns. A glass case of little velvet beds, one for each core — every one of them empty.<br><br>` +
     `And a drawing, pinned over everything else: a monster made of metal, with a clock where its heart should be.`);
+  /* (3.17, part 6 §12c) the Padrino's last catch: the Forest Guardian */
+  await sceneSay([], "The Padrino's desk", `Under the drawing, a note in a hurried hand:<br><br>` +
+    `<i>The fairy of the Sacred Grove — taken, as you ordered. She is in the vault. She has not said a word.</i>`);
+  if(r5Once('deskFairy')){
+    if(r5Fairy()){
+      await r5FairySay(`<b>"The Sacred Grove… That is where I come from."</b>`);
+      await r5FairySay(`<b>"The fairy there is the Forest Guardian. She gave you the seed I grew from."</b>`);
+    }
+    await sceneSay([faceMon('whalelord')], whaleName(), `<b>"The fairy who would not give him her core. He has her — down there, somewhere below us."</b>`);
+  }
 }
 function r5VillaKitchen(){
   return sceneSay([], 'The kitchen', `Supper is half-made and the pans are still warm. Whoever was cooking left in a hurry.`);
@@ -5069,11 +5632,42 @@ async function r5CellarStair(){
   if(ui.sceneRunning || document.querySelector('.scene-say')) return;
   if(!r.madrinaMet)
     return sceneSay([whale()], W, `<b>"Wait. Somebody is sitting by the fire, in the room by the front door. She has been waiting for us."</b>`);
+  /* (3.17) a save that met Nino before 3.17 never saw what he showed the
+     Whalelord: he is waiting at the top of the stair, and shows him now */
+  const vision = r.ninoMet && !r.said.boneVision;
+  /* (3.18) down into the floors under the villa — the first time with a word */
+  if(r.cellarSeen && !vision) return goFloor('cata_deep', 'top');
   await sceneSay([], 'The cellar stair', `Stone steps go down under the villa, into the dark — down and down, further than any cellar should.`);
-  ghostAlert();
-  await sceneSay([whale()], W, `<b>"Can you hear it? Far below us. Fighting — the Monkey King. And something else, something that ticks."</b>`);
-  await sceneSay([whale()], W, `<b>"And there it is again: the soft wall, keeping the dead away. It is down there with them."</b><br><br><i>The top of the catacombs is coming soon.</i>`);
-  if(!r.cellarSeen){ r.cellarSeen = true; saveProfile(); }
+  if(vision) await r5StairVision();
+  if(!r.cellarSeen){
+    ghostAlert();
+    await sceneSay([whale()], W, `<b>"Can you hear it? Far below us. Fighting — the Monkey King. And something else, something that ticks."</b>`);
+    if(r.said.malice1){
+      await sceneSay([whale()], W, `<b>"And the cold. It is down there too — stronger than I have ever felt it."</b>`);
+      await r5FairySay(`<b>"Whatever it is… it is awake."</b>`);
+    }
+    await sceneSay([whale()], W, `<b>"And there it is again: the soft wall, keeping the dead away. It is down there with them."</b>`);
+    r.cellarSeen = true;
+    await saveProfile();
+  }
+  return goFloor('cata_deep', 'top');
+}
+/* (3.17) Nino at the top of the cellar stair — for a save that met him
+   before he could show the Whalelord the Bone Demon (r5BoneVision). */
+async function r5StairVision(){
+  const was = ui.sceneRunning, w = walkState();
+  ui.sceneRunning = true;
+  w.busy = true;
+  const t = (DECKS.villa.things || []).find(x=> /cellar/i.test(x.where || '') || /Cellar/.test(x.verb || '')) || { x:9, y:1 };
+  r5NinoActor(t.x, t.y + 0.6, 900);
+  await sceneWait(900);
+  await sceneSay([r5NinoFace()], '', `Nino is standing at the top of the stair, waiting for you. He looks at the Whalelord, very hard.`);
+  await r5BoneVision();
+  await sceneSay([r5NinoFace()], '', `Then he turns, and goes down the stairs into the dark.`);
+  await r5MoveActor('nino', t.x, t.y - 0.6, 900, true);
+  sceneActorGone('nino');
+  w.busy = false;
+  ui.sceneRunning = was;
 }
 /* The Whalelord in the villa. */
 const R5_GHOST_VILLA = [
@@ -5081,6 +5675,2746 @@ const R5_GHOST_VILLA = [
   `My core is close. Below us. I can feel it beating.`,
   `Everything in here is expensive, and nothing in here is happy.`,
 ];
+
+/* ============================================================
+   UNDER THE VILLA (3.18) — step 3 of the build (part 6 §12b; §12c B)
+   Down the villa's cellar stair (r5CellarStair) into the top tier of the
+   catacombs: the Deep Cellars, the Watch, the Family Crypt (R5_DECKS,
+   `under`). Nino leads (R5_LEAD) and waits by his chalk drawings (R5_CHALK),
+   which tell his story; the Monkey King is heard far below; on the Watch the
+   Family's three chiefs each hold a lock of the gate down, and each, beaten,
+   unlocks his and goes down ahead to his master (r5WatchBeaten); in the
+   Crypt, the knight on every tomb, Nino's empty grave, the Forest Guardian's
+   leaves — and Jax at the vault's great door (r5JaxDoor). The vault itself
+   is 3.19 (r5VaultDoor: coming soon).
+   r5(): watch { black, purple, consigliere } (each beaten on the Watch, his
+   lock open), jaxBeaten; said: deepArrive / watchArrive / cryptArrive (the
+   first time on each), chalk1…chalk7 (looked at), leadPoint, leadWaits,
+   leadGate, grave, tomb, jaxMet, vaultSeen.
+   ============================================================ */
+/* --- Nino leads ---
+   On each floor, the stops he waits at, in order: by each of his chalk
+   drawings (`chalk`: which one), and last the way on (`on`). He stands at the
+   first stop whose drawing you have not looked at yet — or, every one looked
+   at, at the way on. Come within two steps of a drawing's stop and he turns to
+   the drawing and waits; look at it, and he goes on to the next stop, and
+   waits there. Come within two steps of the way on and he goes ahead — down
+   the stair; through the Watch's gate, once it is open; and in the Crypt he
+   waits at the vault's door. */
+const R5_LEAD = {
+  cata_deep:  [ { x:9, y:5, chalk:1 }, { x:2, y:14, chalk:2 }, { x:3, y:31, chalk:3 }, { x:13, y:36, on:true } ],
+  cata_watch: [ { x:11, y:20, chalk:4 }, { x:14, y:22, chalk:5 }, { x:13, y:34, on:true } ],
+  cata_crypt: [ { x:4, y:24, chalk:6 }, { x:23, y:15, chalk:7 }, { x:13, y:33, on:true } ],
+};
+/* where each drawing is drawn: the wall tile (its Drawing) */
+const R5_CHALK_AT = { 1:[8,4], 2:[1,13], 3:[1,30], 4:[9,19], 5:[16,23], 6:[2,25], 7:[25,16] };
+function r5NinoLeads(){ const r = r5(); return !!(r.holdBroken && r.ninoMet && !r.vault); }
+function r5LeadStop(id){
+  const list = R5_LEAD[id];
+  if(!list) return null;
+  const s = r5().said;
+  return list.find(t=> t.chalk && !s['chalk' + t.chalk]) || list[list.length - 1];
+}
+/* On each render of a floor under the villa: Nino at his stop. */
+function r5LeadRender(d){
+  if(!d || !R5_LEAD[d.key] || !r5NinoLeads()){ ui.r5LeadAt = null; return; }
+  const t = r5LeadStop(d.key);
+  ui.r5LeadAt = { deck:d.key, stop:t, waited:false };
+  r5NinoActor(t.x, t.y - 0.1, 700);
+  if(t.chalk){ const a = R5_CHALK_AT[t.chalk]; if(a) actorFaceToward('nino', a[0] + 0.5); }
+}
+/* A step: come close and he waits by his drawing — or goes on ahead. */
+function r5LeadStep(d, p){
+  const L = ui.r5LeadAt;
+  if(!L || L.deck !== d.key || ui.sceneRunning || !p || !document.getElementById('sa-nino')) return;
+  const t = L.stop;
+  if(Math.abs(p.x - t.x) + Math.abs(p.y - t.y) > 2) return;
+  const r = r5(), say = html=> sceneSay([faceMon('whalelord')], whaleName(), html);
+  const quiet = ()=> ui.screen === d.key && !ui.sceneRunning && !document.querySelector('.scene-say');
+  if(t.chalk){
+    if(L.waited) return;
+    L.waited = true;
+    const a = R5_CHALK_AT[t.chalk]; if(a) actorFaceToward('nino', a[0] + 0.5);
+    if(!r.said.leadPoint){
+      r.said.leadPoint = true; saveProfile();
+      setTimeout(()=>{ if(quiet()) say(`<b>"He is looking at something on the wall. He wants us to see it."</b>`); }, 450);
+    }
+    return;
+  }
+  if(d.key === 'cata_crypt') return;                         // he waits at the vault's door
+  if(d.key === 'cata_watch' && !r5WatchOpen()){
+    if(L.waited) return;
+    L.waited = true;
+    if(!r.said.leadGate){
+      r.said.leadGate = true; saveProfile();
+      setTimeout(()=>{ if(quiet()) say(`<b>"He is waiting by the gate. He could go through it — he is a ghost. But he will not go on without us."</b>`); }, 450);
+    }
+    return;
+  }
+  /* on ahead: down the stair, or through the open gate */
+  ui.r5LeadAt = null;
+  r5MoveActor('nino', t.x - 0.5, t.y + 1.2, 900, true).then(()=> sceneActorGone('nino'));
+}
+/* He moves on once you have looked at the drawing he was waiting by. */
+async function r5LeadAfterChalk(n){
+  const L = ui.r5LeadAt, w = walkState();
+  if(!L || L.stop.chalk !== n || !document.getElementById('sa-nino')) return;
+  const next = r5LeadStop(L.deck);
+  ui.r5LeadAt = { deck:L.deck, stop:next, waited:false };
+  const far = Math.abs(next.x - L.stop.x) + Math.abs(next.y - L.stop.y);
+  await r5MoveActor('nino', next.x, next.y - 0.1, Math.min(2600, 260 + far * 130));
+  if(next.chalk){ const a = R5_CHALK_AT[next.chalk]; if(a) actorFaceToward('nino', a[0] + 0.5); }
+  else { const p = w.at && w.at[L.deck]; if(p) actorFaceToward('nino', p.x + 0.5); }
+  const r = r5();
+  if(!r.said.leadWaits && ui.screen === L.deck && !ui.sceneRunning && !document.querySelector('.scene-say')){
+    r.said.leadWaits = true; saveProfile();
+    await sceneSay([faceMon('whalelord')], whaleName(), `<b>"Have you noticed? He always waits for us."</b>`);
+  }
+  /* close enough already: as if you had just stepped */
+  const p = w.at && w.at[L.deck];
+  if(p) r5LeadStep(DECKS[L.deck], p);
+}
+
+/* --- His chalk drawings (part 6 §12b scene 7, redrawn for §12c) --- */
+const R5_CHALK_INK = { w:'#f3efe4', y:'#f4dc78', g:'#9fdc86', p:'#c69cff', r:'#ff8a8a', b:'#a6d8ff', s:'#a39ea8', o:'#ffb36b' };
+function r5ChalkDefs(rough){
+  return `<defs><filter id="r5chalk${rough ? 'R' : ''}" x="-6%" y="-6%" width="112%" height="112%">` +
+    `<feTurbulence type="fractalNoise" baseFrequency="${rough ? 0.55 : 0.8}" numOctaves="2" seed="${rough ? 11 : 3}" result="n"/>` +
+    `<feDisplacementMap in="SourceGraphic" in2="n" scale="${rough ? 5 : 2.6}" xChannelSelector="R" yChannelSelector="G" result="d"/>` +
+    `<feTurbulence type="fractalNoise" baseFrequency="2.1" numOctaves="1" seed="7" result="g"/>` +
+    `<feColorMatrix in="g" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 -1.5 1.3" result="gm"/>` +
+    `<feComposite in="d" in2="gm" operator="in"/></filter></defs>`;
+}
+/* a line, a path, a circle, in one chalk */
+const _ck = {
+  l:(c, x1, y1, x2, y2, w)=> `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${R5_CHALK_INK[c]}" stroke-width="${w || 3.4}"/>`,
+  p:(c, d, w, fill)=> `<path d="${d}" stroke="${R5_CHALK_INK[c]}" stroke-width="${w || 3.4}" fill="${fill ? R5_CHALK_INK[fill] : 'none'}"/>`,
+  c:(c, x, y, r, w, fill)=> `<circle cx="${x}" cy="${y}" r="${r}" stroke="${R5_CHALK_INK[c]}" stroke-width="${w || 3.4}" fill="${fill ? R5_CHALK_INK[fill] : 'none'}"/>`,
+  e:(c, x, y, rx, ry, rot, w, fill)=> `<ellipse cx="${x}" cy="${y}" rx="${rx}" ry="${ry}" transform="rotate(${rot || 0} ${x} ${y})" stroke="${R5_CHALK_INK[c]}" stroke-width="${w || 3}" fill="${fill ? R5_CHALK_INK[fill] : 'none'}"/>`,
+};
+/* A stick figure, feet at (x, y), h tall. o: { c (chalk), armL / armR ([x, y]
+   a hand goes to), hat, cap, crown, smile, sad, eyesShut } — returns its
+   parts and where its hands and head are, so others can hold them. */
+function r5Stick(x, y, h, o){
+  o = o || {};
+  const c = o.c || 'w', r = h * 0.13, hy = y - h + r, neck = y - h + 2 * r, hip = y - h * 0.4, sh = neck + h * 0.08;
+  const aL = o.armL || [x - h * 0.24, sh + h * 0.22], aR = o.armR || [x + h * 0.24, sh + h * 0.22];
+  let s = _ck.c(c, x, hy, r) + _ck.l(c, x, neck, x, hip) +
+    _ck.l(c, x, hip, x - h * 0.15, y) + _ck.l(c, x, hip, x + h * 0.15, y) +
+    _ck.l(c, x, sh, aL[0], aL[1]) + _ck.l(c, x, sh, aR[0], aR[1]);
+  const fw = Math.max(1.6, h * 0.022);
+  if(o.smile) s += _ck.p(c, `M${x - r * 0.45} ${hy + r * 0.25} Q${x} ${hy + r * 0.7} ${x + r * 0.45} ${hy + r * 0.25}`, fw);
+  if(o.sad) s += _ck.p(c, `M${x - r * 0.42} ${hy + r * 0.55} Q${x} ${hy + r * 0.15} ${x + r * 0.42} ${hy + r * 0.55}`, fw);
+  if(o.eyes !== false && !o.eyesShut) s += _ck.c(c, x - r * 0.38, hy - r * 0.2, fw * 0.5, fw) + _ck.c(c, x + r * 0.38, hy - r * 0.2, fw * 0.5, fw);
+  if(o.eyesShut) s += _ck.p(c, `M${x - r * 0.6} ${hy - r * 0.15} q${r * 0.22} ${r * 0.2} ${r * 0.44} 0 M${x + r * 0.16} ${hy - r * 0.15} q${r * 0.22} ${r * 0.2} ${r * 0.44} 0`, fw);
+  if(o.hat) s += _ck.l(o.hatC || c, x - r * 1.7, hy - r * 0.75, x + r * 1.7, hy - r * 0.75) +
+               _ck.p(o.hatC || c, `M${x - r} ${hy - r * 0.75} L${x - r * 0.85} ${hy - r * 1.9} L${x + r * 0.85} ${hy - r * 1.9} L${x + r} ${hy - r * 0.75}`);
+  if(o.cap) s += _ck.p(o.capC || c, `M${x - r * 1.05} ${hy - r * 0.35} Q${x} ${hy - r * 1.6} ${x + r * 1.05} ${hy - r * 0.35} L${x + r * 1.9} ${hy - r * 0.3}`);
+  if(o.crown) s += _ck.p('y', `M${x - r * 0.8} ${hy - r * 0.9} l${r * 0.2} ${-r * 0.9} l${r * 0.35} ${r * 0.55} l${r * 0.25} ${-r * 0.75} l${r * 0.25} ${r * 0.75} l${r * 0.35} ${-r * 0.55} l${r * 0.2} ${r * 0.9}`, 2.4);
+  return { s, hy, r, sh, aL, aR };
+}
+/* a little round monster, sitting: ears, eyes, a mouth */
+function r5Critter(x, y, s, o){
+  o = o || {};
+  const c = o.c || 'w';
+  let out = _ck.c(c, x, y, s) + _ck.p(c, `M${x - s * 0.7} ${y - s * 0.7} l${-s * 0.25} ${-s * 0.55} l${s * 0.55} ${s * 0.2}`) +
+    _ck.p(c, `M${x + s * 0.7} ${y - s * 0.7} l${s * 0.25} ${-s * 0.55} l${-s * 0.55} ${s * 0.2}`) +
+    _ck.c(c, x - s * 0.35, y - s * 0.15, 1.2, 2.2) + _ck.c(c, x + s * 0.35, y - s * 0.15, 1.2, 2.2);
+  out += o.sad
+    ? _ck.p(c, `M${x - s * 0.35} ${y + s * 0.45} Q${x} ${y + s * 0.15} ${x + s * 0.35} ${y + s * 0.45}`, 2.2) +
+      _ck.p('b', `M${x - s * 0.38} ${y} q-2 ${s * 0.35} 0 ${s * 0.5}`, 2.2)
+    : _ck.p(c, `M${x - s * 0.38} ${y + s * 0.2} Q${x} ${y + s * 0.6} ${x + s * 0.38} ${y + s * 0.2}`, 2.2);
+  return out;
+}
+function r5Bed(x, y, o){
+  o = o || {};
+  /* a bed, its top-left at (x, y), 110 × 34; the little one in it, head on the pillow */
+  let s = _ck.p('w', `M${x} ${y + 34} L${x} ${y - 6} M${x + 110} ${y + 34} L${x + 110} ${y + 6} M${x} ${y + 18} L${x + 110} ${y + 18}`) +
+          _ck.e('w', x + 18, y + 6, 13, 6, 0, 2.6) +
+          _ck.c('w', x + 18, y - 4, 9) +
+          _ck.p('w', `M${x + 30} ${y + 4} L${x + 108} ${y + 4} L${x + 108} ${y + 18}`) +
+          _ck.p('b', `M${x + 34} ${y + 10} l12 0 M${x + 54} ${y + 10} l12 0 M${x + 74} ${y + 10} l12 0 M${x + 94} ${y + 10} l10 0`, 2.2);
+  s += o.eyesShut
+    ? _ck.p('w', `M${x + 13} ${y - 6} q2.5 2 5 0 M${x + 19} ${y - 6} q2.5 2 5 0`, 1.8)
+    : _ck.c('w', x + 15, y - 6, 0.8, 1.8) + _ck.c('w', x + 21, y - 6, 0.8, 1.8);
+  if(o.sad) s += _ck.p('w', `M${x + 14} ${y + 1} Q${x + 18} ${y - 2} ${x + 22} ${y + 1}`, 1.8);
+  return s;
+}
+const R5_CHALK = {
+  /* 1 — two brothers, holding hands (old chalk) */
+  1: ()=>{
+    const big = r5Stick(118, 172, 112, { armR:[150, 118], smile:true });
+    const small = r5Stick(176, 172, 70, { armL:[150, 118], smile:true, cap:true, capC:'b' });
+    return { old:true, svg:_ck.p('w', 'M18 174 Q150 168 284 175', 2.6) + big.s + small.s +
+      _ck.c('y', 252, 40, 15) + [0, 1, 2, 3, 4, 5, 6, 7].map(k=>{ const a = k * Math.PI / 4;
+        return _ck.l('y', 252 + Math.cos(a) * 21, 40 + Math.sin(a) * 21, 252 + Math.cos(a) * 30, 40 + Math.sin(a) * 30, 2.6); }).join('') };
+  },
+  /* 2 — the little one sick in bed, a black cloud over him; the big one going, a bag on his back */
+  2: ()=>{
+    const big = r5Stick(196, 172, 104, { armL:[176, 128], armR:[214, 130], sad:true });
+    const cloud = 'M42 74 q-4 -20 16 -22 q6 -18 28 -12 q14 -16 32 -2 q22 -4 20 18 q10 14 -8 22 l-80 0 q-16 -2 -8 -4z';
+    return { old:true, svg:r5Bed(36, 128, { sad:true }) +
+      _ck.p('s', cloud, 3.4) + _ck.p('s', 'M50 70 l70 -6 M48 78 l78 -2 M56 62 l58 -8 M66 54 l40 -4', 2.4) +
+      _ck.p('s', 'M70 88 l-4 14 M92 90 l-4 12 M112 88 l-4 14', 2.2) +
+      _ck.p('w', 'M226 172 L226 58 L272 58 L272 172', 3) + _ck.c('w', 232 + 32, 118, 2.4, 2.4) +
+      big.s + _ck.c('o', 174, 112, 13) + _ck.l('o', 181, 101, 196, 92, 2.6) };
+  },
+  /* 3 — the grove: the big one holds out his hands; the fairy puts a little stone in them */
+  3: ()=>{
+    const big = r5Stick(110, 172, 108, { armL:[140, 116], armR:[150, 112] });
+    const fairy = r5Stick(196, 172, 96, { c:'g', armL:[160, 108], crown:true, smile:true });
+    const wings = _ck.e('g', 178, fairy.sh + 4, 18, 8, -35, 2.6) + _ck.e('g', 214, fairy.sh + 4, 18, 8, 35, 2.6);
+    const tree = (x)=> _ck.l('o', x, 174, x, 116, 4) + _ck.c('g', x, 96, 26) + _ck.c('g', x - 14, 108, 14, 2.6) + _ck.c('g', x + 14, 106, 14, 2.6);
+    const stone = _ck.c('b', 156, 106, 5, 2.6, 'b') + [[-11, 0, -7, 0], [11, 0, 7, 0], [0, -11, 0, -7], [0, 11, 0, 7]]
+      .map(([a, b, c2, d2])=> _ck.l('b', 156 + a, 106 + b, 156 + c2, 106 + d2, 2)).join('');
+    return { old:true, svg:tree(34) + tree(272) + _ck.p('g', 'M20 174 Q150 168 286 174', 2.4) + wings + fairy.s + big.s + stone };
+  },
+  /* 4 — the little one in bed again; his candle has gone out, a line of smoke going up */
+  4: ()=>{
+    return { old:true, svg:r5Bed(36, 128, { eyesShut:true }) +
+      _ck.p('w', 'M168 172 L168 138 L208 138 L208 172 M164 138 L212 138', 3) +
+      _ck.p('w', 'M181 138 L181 104 L195 104 L195 138', 3) + _ck.l('w', 188, 104, 188, 98, 2) +
+      _ck.p('s', 'M188 96 q-8 -10 0 -18 q8 -8 0 -18 q-8 -8 0 -16', 2.4) +
+      _ck.p('w', 'M232 30 L288 30 L288 90 L232 90 Z M260 30 L260 90 M232 60 L288 60', 2.6) +
+      _ck.p('y', 'M246 40 l0 8 M242 44 l8 0 M274 70 l0 8 M270 74 l8 0 M248 76 l0 6 M245 79 l6 0', 2) };
+  },
+  /* 5 — (newer chalk) monsters in cages, crying; men with lanterns carrying a box away — something glows in it */
+  5: ()=>{
+    const cage = (x, y, w, h)=> _ck.p('w', `M${x} ${y} L${x + w} ${y} L${x + w} ${y + h} L${x} ${y + h} Z`, 3) +
+      Array.from({ length:Math.floor(w / 12) }, (_, k)=> _ck.l('w', x + 12 * (k + 1), y, x + 12 * (k + 1), y + h, 2.2)).join('');
+    const man1 = r5Stick(214, 172, 96, { hat:true, armL:[194, 120], armR:[240, 126] });
+    const man2 = r5Stick(266, 172, 96, { hat:true, armL:[240, 126], armR:[288, 132] });
+    const lantern = (x, y)=> _ck.l('w', x, y, x, y + 8, 2) + _ck.p('y', `M${x - 6} ${y + 8} L${x + 6} ${y + 8} L${x + 6} ${y + 22} L${x - 6} ${y + 22} Z`, 2.4) +
+      _ck.c('y', x, y + 15, 9, 1.4);
+    const box = _ck.p('o', 'M226 112 L256 112 L256 134 L226 134 Z', 3) + _ck.c('y', 241, 123, 4, 2, 'y') + _ck.c('y', 241, 123, 9, 1.2);
+    return { svg:cage(16, 96, 62, 56) + r5Critter(47, 132, 13, { sad:true }) +
+      cage(92, 108, 50, 44) + r5Critter(117, 136, 11, { sad:true }) +
+      cage(150, 120, 38, 32) + r5Critter(169, 140, 8, { sad:true }) +
+      _ck.l('w', 10, 154, 196, 154, 2.2) + man1.s + man2.s + box + lantern(194, 120) + lantern(288, 132) };
+  },
+  /* 6 — (in a hurry, pressing hard) the knight with the purple sword in front of the
+     Family — and over them all, the bone monster with a hundred legs, red eyes */
+  6: ()=>{
+    const fam = [150, 178, 206, 234, 262].map((x, i)=> r5Stick(x, 174, 44 + (i % 2) * 6, { eyes:false }).s).join('');
+    const knight = r5Stick(96, 174, 102, { armR:[124, 92], armL:[74, 128] });
+    const helm = _ck.l('w', knight.r * -1 + 96, knight.hy, 96 + knight.r, knight.hy, 2.6) + _ck.p('w', `M${96 - knight.r} ${knight.hy - 2} Q96 ${knight.hy - knight.r * 2.4} ${96 + knight.r} ${knight.hy - 2}`, 3);
+    const sword = _ck.l('p', 124, 92, 146, 30, 4.4) + _ck.l('p', 116, 88, 132, 98, 3.4) +
+      _ck.p('p', 'M140 40 q6 -10 2 -18 M148 44 q8 -8 6 -20 M134 50 q-4 -8 0 -16', 2.4);
+    /* the monster: a long arched spine over everything, ribs, a skull of a
+       head on the left, a hundred legs */
+    const spine = 'M58 70 Q120 18 200 34 Q250 44 290 70';
+    const ribs = Array.from({ length:13 }, (_, k)=>{ const t = (k + 1) / 14, x = 58 + t * 232, y = 70 - Math.sin(t * Math.PI) * 42 - (t < 0.5 ? 0 : 6);
+      return _ck.l('s', x, y, x - 4, y + 14, 2.6); }).join('');
+    const legs = Array.from({ length:20 }, (_, k)=>{ const t = (k + 0.5) / 20, x = 66 + t * 222, y = 74 - Math.sin(t * Math.PI) * 38;
+      return _ck.p('s', `M${x} ${y + 6} l${k % 2 ? 6 : -6} 14 l${k % 2 ? 4 : -4} 10`, 2.2); }).join('');
+    const skull = _ck.p('s', 'M60 54 q-26 -6 -36 12 q-6 16 10 22 l0 10 l10 -4 l6 6 l6 -6 l10 4 l-2 -12 q10 -12 -4 -28 z', 3.4) +
+      _ck.c('r', 38, 70, 3.6, 2.6, 'r') + _ck.c('r', 54, 68, 3.6, 2.6, 'r') + _ck.p('s', 'M30 92 l4 6 M40 94 l2 7 M50 93 l-1 7', 2.2);
+    return { rough:true, svg:_ck.p('s', spine, 4) + _ck.p('s', 'M60 76 Q120 30 198 44 Q248 52 288 76', 2.4) + ribs + legs + skull +
+      fam + knight.s + helm + sword };
+  },
+  /* 7 — (fresh chalk, bright) a big man in a hat holding the little boy's hand; the monsters out of their cages, smiling */
+  7: ()=>{
+    const big = r5Stick(124, 172, 116, { hat:true, armR:[152, 122], smile:true });
+    const boy = r5Stick(176, 172, 70, { armL:[152, 122], cap:true, capC:'b', smile:true });
+    const heart = (x, y, s)=> _ck.p('r', `M${x} ${y + s} C${x - s * 1.6} ${y - s * 0.2} ${x - s * 0.6} ${y - s * 1.4} ${x} ${y - s * 0.4} C${x + s * 0.6} ${y - s * 1.4} ${x + s * 1.6} ${y - s * 0.2} ${x} ${y + s}`, 2.4);
+    const open = _ck.p('w', 'M14 110 L54 110 L54 152 L14 152 Z', 2.6) + _ck.p('w', 'M54 110 L76 98 L76 140 L54 152', 2.4) +
+      _ck.l('w', 26, 110, 26, 152, 2) + _ck.l('w', 40, 110, 40, 152, 2);
+    return { fresh:true, svg:_ck.p('w', 'M10 174 Q150 168 290 175', 2.6) + open +
+      r5Critter(86, 156, 12) + r5Critter(62, 172 - 4, 9) + r5Critter(226, 156, 12) + r5Critter(262, 160, 14) + r5Critter(244, 118, 9) +
+      big.s + boy.s + heart(92, 112, 8) + heart(210, 104, 7) + heart(150, 70, 9) +
+      _ck.c('y', 262, 36, 14) + [0, 1, 2, 3, 4, 5, 6, 7].map(k=>{ const a = k * Math.PI / 4;
+        return _ck.l('y', 262 + Math.cos(a) * 20, 36 + Math.sin(a) * 20, 262 + Math.cos(a) * 28, 36 + Math.sin(a) * 28, 2.4); }).join('') };
+  },
+};
+function r5ChalkSvg(n){
+  const d = R5_CHALK[n] && R5_CHALK[n]();
+  if(!d) return '';
+  const op = d.fresh ? 1 : d.old ? 0.74 : 0.9;
+  return `<svg viewBox="0 0 300 200" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block;">` +
+    r5ChalkDefs(d.rough) + `<g filter="url(#r5chalk${d.rough ? 'R' : ''})" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="${op}">` +
+    d.svg + (d.rough ? `<g transform="translate(1.6 1.2)" opacity="0.45">${d.svg}</g>` : '') + `</g></svg>`;
+}
+
+/* What is said over each (`''` the drawing itself; 'w' the Whalelord; 'f' your
+   Forest Fairy — or, if you have none, the Whalelord says the third part;
+   'n' Nino, while he is with you). */
+const R5_CHALK_SAY = {
+  1: [['', `Chalk on the wall — a child's drawing. Two stick people holding hands: a big one, and a little one.`],
+      ['w', `Two brothers.`]],
+  2: [['', `A little one in a bed, with a black cloud over him. At the door, the big one, a bag on his back.`],
+      ['w', `The little one is sick.`],
+      ['w', `And the big one is going away — to find something that will make him well.`]],
+  3: [['', `Trees, and a fairy with leaf wings and a little crown. The big one is holding out his hands, and she is putting something small and shining into them.`],
+      ['f', `That's my grove! And that's the Forest Guardian.`, `That is a grove, and its fairy — the Forest Guardian of the Sacred Grove.`],
+      ['w', `She is giving him the little stone. The Fairy Stone.`]],
+  4: [['', `The little one in his bed again. The candle beside him has gone out; a thin line of smoke goes up from it.`],
+      ['w', `And then… the little one's candle went out.`],
+      ['n', `Nino nods.`]],
+  5: [['', `Newer chalk: monsters in cages, crying. Men with lanterns, carrying a box away — and in the box, something glows.`],
+      ['w', `He has watched the Family from down here for a long, long time. He saw everything they did to monsters.`],
+      ['w', `The cores they stole. He saw them carried in, one by one. Mine too.`]],
+  6: [['', `This one is drawn in a hurry, pressing hard. A knight with a purple sword, in front of a row of little people. And over them all, like a shadow — a monster of bones, with a hundred legs and red eyes.`],
+      ['w', `The bone monster. The one he showed me.`],
+      ['f', `It's standing over all of them. Even the knight.`, null],
+      ['w', `He is trying to tell us something. About that knight… and that monster.`]],
+  7: [['', `Fresh chalk, bright and new. A big man in a hat, holding the little boy's hand. All round them, the monsters are out of their cages — smiling.`],
+      ['w', `This one is new. He drew it himself.`],
+      ['w', `His big brother back. And the monsters free.`],
+      ['n', `Nino smiles.`]],
+};
+function r5ChalkShow(n){
+  r5Css();
+  let o = document.getElementById('r5Chalk');
+  if(!o){ o = document.createElement('div'); o.id = 'r5Chalk'; document.body.appendChild(o); }
+  o.dataset.n = String(n);
+  o.innerHTML = `<div class="rc-wall"><div class="rc-pic">${r5ChalkSvg(n)}</div></div>`;
+  o.style.transition = 'none'; o.style.opacity = '0';
+  void o.offsetWidth;
+  o.style.transition = `opacity ${600 * SCENE_SPEED}ms ease`;
+  o.style.opacity = '1';
+}
+async function r5ChalkHide(){
+  const o = document.getElementById('r5Chalk');
+  if(!o) return;
+  o.style.transition = `opacity ${500 * SCENE_SPEED}ms ease`;
+  o.style.opacity = '0';
+  await sceneWait(500);
+  o.remove();
+}
+async function r5Chalk(n){
+  const w = walkState();
+  if(ui.sceneRunning || w.busy || document.querySelector('.scene-say')) return;
+  ui.sceneRunning = true;
+  w.busy = true;
+  releaseKeys();
+  const a = R5_CHALK_AT[n]; if(a) walkFaceToward(a[0] + 0.5);
+  r5ChalkShow(n);
+  const W = whaleName(), wl = ()=> faceMon('whalelord'), fairy = !!r5Fairy(), nino = r5NinoLeads() && !!document.getElementById('sa-nino');
+  for(const [who, line, alt] of R5_CHALK_SAY[n] || []){
+    if(who === '') await sceneSay([], 'A chalk drawing', line);
+    else if(who === 'w') await sceneSay([wl()], W, `<b>"${line}"</b>`);
+    else if(who === 'f'){
+      if(fairy) await r5FairySay(`<b>"${line}"</b>`);
+      else if(alt) await sceneSay([wl()], W, `<b>"${alt}"</b>`);
+    } else if(who === 'n' && nino) await sceneSay([r5NinoFace()], '', line);
+  }
+  await r5ChalkHide();
+  const r = r5(), first = !r.said['chalk' + n];
+  r.said['chalk' + n] = true;
+  await saveProfile();
+  w.busy = false;
+  ui.sceneRunning = false;
+  if(first) r5LeadAfterChalk(n);
+}
+
+/* --- Arriving on each floor, the first time --- */
+function r5UnderArriveDue(d){
+  const s = r5().said;
+  return ({ cata_deep:'deepArrive', cata_watch:'watchArrive', cata_crypt:'cryptArrive' })[d.key] && !s[({ cata_deep:'deepArrive', cata_watch:'watchArrive', cata_crypt:'cryptArrive' })[d.key]];
+}
+async function r5UnderArrive(d){
+  const r = r5(), w = walkState();
+  if(ui.sceneRunning || w.deck !== d.key) return;
+  ui.sceneRunning = true;
+  w.busy = true;
+  releaseKeys();
+  const W = whaleName(), wl = ()=> faceMon('whalelord');
+  const key = { cata_deep:'deepArrive', cata_watch:'watchArrive', cata_crypt:'cryptArrive' }[d.key];
+  r.said[key] = true;
+  r.said['first_' + d.key] = r5Day();                 // his word for the floor: said here, for today
+  saveProfile();
+  const lead = r5NinoLeads();
+  if(d.key === 'cata_deep'){
+    /* Nino at the foot of the stairs; the dead, deeper in the dark, hanging back */
+    const held = [[10.7, 6.0], [14.1, 6.1], [9.4, 5.5], [15.4, 5.6]].map(([x, y], i)=>{
+      const sp = ['ghost', 'crow', 'ghost_flame', 'cyclops'][i];
+      const el = r5MonActor('held' + i, sp, x, y, 0.9, { html:monPortrait(sp, Math.round(WALK_T * 0.9), { view:'front', bare:true }) });
+      if(el){ el.classList.add('r5-held'); el.style.opacity = '0'; void el.offsetWidth; el.style.transition = `opacity ${800 * SCENE_SPEED}ms ease`; el.style.opacity = '0.55'; }
+      return 'held' + i;
+    });
+    if(lead) r5NinoActor(12.5, 5.0, 900);
+    await sceneWait(900);
+    await sceneSay([], 'The Deep Cellars', lead
+      ? `At the bottom of the stairs a little boy is waiting, see-through like mist. Behind him, deeper in the dark, pale shapes hang back — the dead of the hill. Not one of them comes past him.`
+      : `At the bottom of the stairs, deeper in the dark, pale shapes hang back — the dead of the hill. Not one of them comes any closer.`);
+    if(lead) await sceneSay([wl()], W, `<b>"There he is. Keeping the dead away from his brother's house. All by himself."</b>`);
+    for(const id of held) r5MoveActor(id, document.getElementById('sa-' + id)._o.x, document.getElementById('sa-' + id)._o.y + 1.5, 1400, true);
+    await sceneWait(1000);
+    held.forEach(id=> sceneActorGone(id));
+    await sceneSay([wl()], W, `<b>"So there are no ghosts on any of the Padrino's men down here. They will see us — and these are his own men. They know your face. No uniform will fool them."</b>`);
+    await sceneSay([wl()], W, `<b>"Keep to the dark."</b>`);
+    if(r.said.malice1) await r5FairySay(`<b>"And the cold is close now. Very close."</b>`);
+    if(lead){
+      const t = r5LeadStop(d.key);
+      await sceneSay([r5NinoFace()], '', `He turns, and walks ahead into the dark. Then he stops, and looks back at you — waiting.`);
+      await r5MoveActor('nino', t.x, t.y - 0.1, 1200);
+      if(t.chalk){ const a = R5_CHALK_AT[t.chalk]; if(a) actorFaceToward('nino', a[0] + 0.5); }
+      ui.r5LeadAt = { deck:d.key, stop:t, waited:false };
+    }
+  } else if(d.key === 'cata_watch'){
+    if(lead) r5LeadRender(d);
+    sceneShake(1300, t=> 0.12 * Math.max(0, 1 - t / 1300));
+    await sceneWait(700);
+    await sceneSay([], 'The Watch', `Far below, something crashes — again, and again. Dust trickles down from the ceiling.`);
+    await sceneSay([wl()], W, `<b>"The Monkey King! He is fighting his way down — the loud way, through every one of the Padrino's men."</b>`);
+    if(r5Fairy()){
+      await r5FairySay(`<b>"He didn't wait for us."</b>`);
+      await sceneSay([wl()], W, `<b>"He never does."</b>`);
+    }
+    await sceneSay([wl()], W, `<b>"And the Family's chiefs are here — the capos, and the Consigliere. They are keeping watch over the way down."</b>`);
+  } else if(d.key === 'cata_crypt'){
+    if(lead) r5LeadRender(d);
+    await r5Dread(2600);
+    ghostAlert();
+    await sceneSay([], 'The Family Crypt', `The cold comes up through the floor here — so strong that your breath turns to mist.`);
+    await sceneSay([wl()], W, `<b>"The cold. It is right below us now."</b>`);
+    if(r5Fairy()) await r5FairySay(`<b>"And something else… my grove. I can smell my grove!"</b>`);
+    await sceneSay([], '', `A trail of green leaves runs across the stones — all the way down to a great iron door at the far end.`);
+    await sceneSay([wl()], W, `<b>"The fairy from the note on the Padrino's desk. The Forest Guardian. They brought her this way."</b>`);
+    await sceneSay([wl()], W, `<b>"And this is the Family's crypt. Every one of them is buried here."</b>`);
+  }
+  w.busy = false;
+  ui.sceneRunning = false;
+}
+
+/* --- The Watch's gate: three locks --- */
+const R5_WATCH = ['black', 'purple', 'consigliere'];
+function r5WatchLocks(){ const w = r5().watch || {}; return R5_WATCH.filter(k=> w[k]).length; }
+function r5WatchOpen(){ return r5WatchLocks() === 3; }
+async function r5WatchGate(){
+  const n = r5WatchLocks(), W = whaleName(), wl = faceMon('whalelord');
+  await sceneSay([], 'The gate', `An iron gate across the stairs down, with three great locks on it` +
+    (n ? ` — ${n === 1 ? 'one of them' : 'two of them'} open.` : '.') + ` Through the bars, steps go down into the dark.`);
+  const left = R5_WATCH.filter(k=> !(r5().watch || {})[k]).map(k=> ({ black:'the Black Capo', purple:'the Purple Capo', consigliere:'the Consigliere' })[k]);
+  return sceneSay([wl], W, n
+    ? `<b>"${left.length === 1 ? 'One more lock. ' + left[0].replace(/^t/, 'T') + ' has the key.' : 'Two more. ' + left[0].replace(/^t/, 'T') + ' and ' + left[1] + ' have the keys.'}"</b>`
+    : `<b>"Three locks. The capos and the Consigliere will each have a key."</b>`);
+}
+const R5_WATCH_BEATEN = {
+  black:{ sprite:'capo_black', name:'Black Capo',
+    said:`He straightens his coat, as he always does.<br><br><b>"The Padrino will hear of this — from me, before you get there."</b>` },
+  purple:{ sprite:'capo_purple', name:'Purple Capo',
+    said:`He laughs, short and sharp — but not for long.<br><br><b>"Fine. FINE. Go on down, then. The boss will finish you himself."</b>` },
+  consigliere:{ sprite:'consigliere', name:'Consigliere',
+    said:`<b>"Nobody saw that."</b> He sighs. <b>"No — everybody will. They are all down there tonight."</b>` },
+};
+async function r5WatchBeaten(which){
+  const r = r5();
+  r.watch = r.watch || {};
+  const first = !r.watch[which];
+  r.watch[which] = true;
+  if(first) state.inventory.protein = (state.inventory.protein || 0) + 2;
+  await saveProfile();
+  const b = R5_WATCH_BEATEN[which], n = r5WatchLocks();
+  storyModal(npcPortrait(b.sprite, '🕴️', 130, 'transparent'), b.name + ' defeated',
+    b.said + `<br><br>He goes to the gate, turns his key in one of its three locks, and slips through — down to his master.` +
+    (first ? `<br><br><b>+2 Protein Supplements</b>` : '') +
+    `<br><br><i>${n === 3 ? 'All three locks are open: the way down is clear.' : (n === 1 ? 'One' : 'Two') + ' of the gate\'s three locks open.'}</i>`,
+    ()=> go('cata_watch'), { subtitle:'The Watch' });
+}
+
+/* --- The Family Crypt: the tombs, Nino's grave --- */
+async function r5Tomb(){
+  if(ui.sceneRunning || document.querySelector('.scene-say')) return;
+  await sceneSay([], 'A tomb', `On the lid of every tomb down here, the same carving: a knight in armour, holding a sword of fire.`);
+  if(r5Once('tomb')){
+    await sceneSay([faceMon('whalelord')], whaleName(), `<b>"The Family's Guardian — the Ghost Master's knight. It has stood over every one of them, for hundreds of years."</b>`);
+    await r5FairySay(`<b>"It's everywhere down here. I don't like it."</b>`);
+  }
+}
+async function r5Grave(){
+  const w = walkState();
+  if(ui.sceneRunning || w.busy || document.querySelector('.scene-say')) return;
+  const W = whaleName(), wl = ()=> faceMon('whalelord');
+  await sceneSay([], 'A small grave', `A small grave, with a little wooden boat on it. Its stone has been pushed aside. Carved on it:<br><br>` +
+    `<b>NINO — OUR LITTLE ONE — WE WILL ALWAYS WAIT FOR YOU</b>`);
+  if(!r5Once('grave')) return;
+  ui.sceneRunning = true; w.busy = true;
+  await sceneSay([wl()], W, `<b>"This is his grave."</b>`);
+  await sceneSay([wl()], W, `<b>"…It is empty."</b>`);
+  await sceneSay([wl()], W, `<b>"Someone has taken his bones away. But not Nino. Nino is here, with us."</b>`);
+  if(r5NinoLeads() && document.getElementById('sa-nino'))
+    await sceneSay([r5NinoFace()], '', `Nino looks at the great iron door at the far end of the crypt, then back at you. He waits.`);
+  w.busy = false; ui.sceneRunning = false;
+}
+
+/* --- Jax, at the vault's great door --- */
+const R5_JAX_LV = 100;
+function r5JaxNote(){
+  return `<i>Jax: <b>6 monsters, one at a time, level ${R5_JAX_LV}</b> — his Dragon, Tricerarmor, Thundercat, Firehound and Loong, ` +
+    `and last his <b>crowned Eagle</b> (10 supplements). <b>He always moves first.</b> No stones — he lost his on the ship. ` +
+    `No running. Win for <b>+3 Protein Supplements</b>.</i>`;
+}
+function r5JaxBattle(){
+  const L = R5_JAX_LV;
+  return { isNpc:true, name:'Jax', npcId:'rival_padrino', noFlee:true, figlio:true, bgKey:'battle_catacombs', catacomb:true,
+    waves:[
+      [{ species:'dragon', level:L, ai:'best' }],
+      [{ species:'tricerarmor', level:L, ai:'best' }],
+      [{ species:'thundercat', level:L, ai:'maxer' }],
+      [{ species:'firehound', level:L, ai:'best' }],
+      [{ species:'loong', level:L, ai:'best' }],
+      [{ species:'eagle', level:L, ai:'best', crowned:true, supplements:10 }],
+    ] };
+}
+async function r5JaxDoor(){
+  const r = r5(), w = walkState();
+  if(r.jaxBeaten || ui.sceneRunning || w.busy) return;
+  const J = 'Jax', jax = ()=> faceNpc('rival_padrino', '🧑'), W = whaleName(), wl = ()=> faceMon('whalelord');
+  walkFaceToward(12.5);
+  if(!r.said.jaxMet){
+    ui.sceneRunning = true; w.busy = true; releaseKeys();
+    r.said.jaxMet = true; saveProfile();
+    await sceneSay([jax()], J, `He is leaning against the great iron door with his arms folded, like he has been there for hours.<br><br><b>"Took you long enough."</b>`);
+    await sceneSay([jax()], J, `<b>"The boss said nobody goes through this door tonight. Not the monkey. Not the old lady. Not the capos. Not even me."</b>`);
+    await sceneSay([wl()], W, `<b>"Jax. You brought my core here."</b>`);
+    await sceneSay([jax()], J, `<b>"And I'd do it again. The boss is family. You wouldn't understand."</b>`);
+    await sceneSay([jax()], J, `He glances at the door, and lowers his voice.<br><br><b>"…But something's wrong in there. Every night this week I've heard a sword humming, behind this door. ` +
+      `And the boss talks in his sleep — to somebody who isn't there."</b>`);
+    if(r5Fairy()){
+      await r5FairySay(`<b>"The cold is coming from in there."</b>`);
+      await sceneSay([jax()], J, `<b>"Yeah. You feel it too, huh."</b>`);
+    }
+    await sceneSay([jax()], J, `He straightens up.<br><br><b>"Doesn't matter. Nobody gets past me. You want in? Beat me. Properly, this time."</b>`);
+    w.busy = false; ui.sceneRunning = false;
+  }
+  const yes = await r5Ask([jax()], J, `<b>"Well? I haven't got all night."</b><br><br>${r5JaxNote()}`, '⚔️ Fight', 'Not yet');
+  if(!yes || !ensurePool()) return;
+  walkTeardown();
+  beginBattle(Object.assign(r5JaxBattle(), { onWin: ()=> r5JaxBeaten() }));
+}
+async function r5JaxBeaten(){
+  const r = r5();
+  const first = !r.jaxBeaten;
+  r.jaxBeaten = true;
+  if(first) state.inventory.protein = (state.inventory.protein || 0) + 3;
+  await saveProfile();
+  const w = walkState();
+  w.at = w.at || {}; w.at.cata_crypt = { x:12, y:33 }; w.face = 'd';
+  w.ghostAt = w.ghostAt || {}; w.ghostAt.cata_crypt = { x:13, y:32 };
+  ui.walkFresh = false;
+  ui.currentZone = r5Zone('catacombs') || ui.currentZone;
+  storyModal(npcPortrait('rival_padrino', '🧑', 130, 'transparent'), 'Jax defeated',
+    `He picks himself up off the floor, slowly.<br><br><b>"…Fine."</b><br><br>` +
+    `<b>"Go on, then. But I'm coming too. If something's wrong in there, the boss is going to need everyone."</b><br><br>` +
+    `He pushes the great door open just wide enough to slip through, and goes in ahead of you.` +
+    (first ? `<br><br><b>+3 Protein Supplements</b>` : '') + `<br><br><i>The vault's door is open.</i>`,
+    ()=> go('cata_crypt'), { subtitle:'The Family Crypt' });
+}
+/* ============================================================
+   THE VAULT (3.19) — step 4 of the build (part 6 §12c C; §12's fight)
+   Through the great iron door at the bottom of the Family Crypt: the
+   Padrino's vault, one round room (cata_vault) — machines humming along the
+   walls, a great clock carved into the floor with its hands running
+   backwards, Cyborg asleep in its iron cradle, a stone table with a little
+   wooden box on it (Nino's bones, from the empty grave), and the Forest
+   Guardian in a cage of iron and roots. The Padrino, the Madrina, Jax, and
+   his four chiefs at the back.
+   THE FIRST TIME (r5VaultScene): Nino slips in ahead of you; the Padrino
+   rages at the Forest Guardian's calm; Cyborg wakes and makes Nino's body
+   again from the bones (the room shakes); the Monkey King crashes in and
+   knocks the Padrino's five down — Cyborg turns back time — again — until
+   Cyborg strikes him down ("You are cheating"), and the cold reminds him of
+   something long ago; the Padrino sees you; the Whalelord's speech (the
+   Forest Guardian gave her seed to a child), the Monkey King's answer, your
+   team round you in a circle (the Whalelord at the top), your stones float
+   to him — and the fight.
+   THE FIGHT (r5ClimaxBattle — §12 steps 1–5, decision 3): his five, crowned
+   at 100 with 10 protein, one at a time, then Cyborg at 200 — three times,
+   Cyborg turning back time between (r5ClimaxCleared). The Monkey King at
+   your side (04-battle.js, "AN ALLY AT YOUR SIDE"). Cyborg's first arrival:
+   its past, its present and its future, for a moment (r5CyborgSplit). After
+   the third: his taunt, the Padrino's rewind turned on you, the Monkey King
+   steps into it and for a moment wears his crown — Heavensplitter Max, the
+   cores burst out, he catches them (r5ClimaxBreak) — and the last phase:
+   Cyborg broken (`broken`: no turn, no passive; `shattered`: tilted, and
+   short-circuiting — r5Sparks), held at 1 HP; clear its whole bar. Every
+   cooldown is reset for it; the Monkey King keeps your stones in the air and
+   leaves the blows to you. No victory screen: white, and the vault again
+   (r5ClimaxWon) — (3.19) the story goes on in the next update.
+   LOST: Cyborg turns back time for everyone in the room — you are at the
+   door again, whole, nothing lost, not even XP (r5ClimaxLost); speak to the
+   Padrino, or come back in, to try again.
+   r5(): vault { scene, tries, won, split }, mkLines (the Monkey King's stone
+   lines — once each, ever — and which stones he has cast before: "🔁").
+   ============================================================ */
+const R5_VAULT_TEAM = ['ground_starter', 'psychic_starter', 'ghost_starter', 'physical_starter', 'flying_starter'];
+const R5_VAULT_LV = 100, R5_VAULT_CYBORG = 200;
+const R5_CLIMAX_XP = 38;            // 19 waves, at an NPC fight's 2 a wave
+/* Where everyone stands (tiles: an actor's top-left). The room is 11 × 11,
+   all of it in view. */
+const R5_VP = {
+  you:{ x:5, y:2 }, ring:{ x:5, y:3 },
+  padrino:{ x:5, y:5.55 }, padrinoBack:{ x:5, y:6.4 },
+  madrina:{ x:3.25, y:6.6 }, jax:{ x:6.75, y:6.6 },
+  chiefs:[ ['sottocapo', 2.1, 8.2], ['capo_purple', 3.05, 8.45], ['capo_black', 6.95, 8.45], ['consigliere', 7.9, 8.2] ],
+  cyborg:{ x:4.6, y:7.75, s:1.8 },
+  guardian:{ x:7.2, y:4.0, s:1.65 }, cage:{ x:6.85, y:3.45, w:2.3, h:2.65 },
+  box:{ x:2.6, y:3.85 }, body:{ x:2.45, y:3.6 },
+  nino:{ x:3.2, y:1.85 }, mk:{ x:7.3, y:1.7 }, mkLand:{ x:4.35, y:3.25 }, mkDown:{ x:6.6, y:2.3 },
+  team:[[2.7,4.5],[3.55,5.15],[4.5,5.35],[5.45,5.15],[6.25,4.5]],
+};
+/* What the Monkey King says the first time he casts each stone (§12, "His
+   lines" — the designer's draft, its figures checked against the stones as
+   they are now: Ice Tomb freezes for two turns since 3.16, and Overcharge and
+   a Dragon Dance do a little more). */
+const R5_MK_STONE_LINES = {
+  Dragon:   `<b>"The Dragon Stone first. While I carry it, we always move first. Now we dance: everything we hit takes 35% more — and their shields break, three at a time. A dance multiplies every other stone, so it goes up before the rest."</b>`,
+  Fire:     `<b>"Fire! We hit half as hard again, and take only a little more for it — and every one of them burns each turn. Light it when you mean to finish fast, not when you are hurt."</b>`,
+  Ghost:    `<b>"The Ghost Stone's Curse. They take 30% more from every blow, we take 15% less from theirs — and their tricks fall silent, even a Futuresight. Curse them first, then swing."</b>`,
+  Electric: `<b>"Lightning! The first blow that lands strikes twice — certain — and after that, three times in ten. And we all move sooner. Save your biggest move for the turn it is fresh."</b>`,
+  Physical: `<b>"My own stone. Two Counter stacks for our side: the next two attacks on any of us are taken on the guard, four fifths turned away, and our next blow lands a quarter harder. Let them swing at the guard first."</b>`,
+  Water:    `<b>"I kept this one for the big one. Ice Tomb: frozen solid for two turns — it cannot strike back — and then a chill that slows it and takes 30% off its blows. Spend your ice on the enemy that matters, never on the small ones."</b>`,
+  Grass:    `<b>"Leech Seed. Every blow we land on a seeded one heals us all, and gnaws it again. The longer the fight, the more it gives — plant it early."</b>`,
+  Ground:   `<b>"Spike Armour: we take 30% less, and whoever hits us is pricked back for it. Best against the ones that hit many times."</b>`,
+  Flying:   `<b>"Mirage! The first attack on us passes straight through, and every dodge after leaves two copies of us that strike back. Up before they attack — it cannot help once they have."</b>`,
+  Steel:    `<b>"Steel Aegis: four layers of block to soak their blows, and 40% less from whatever gets through."</b>`,
+  Psychic:  `<b>"Discombobulate — they cannot tell friend from foe. Watch them hit themselves!"</b>`,
+  FairyLine:`<b>"And the stone you took from the tower. Diamond Dust sweeps away everything they put on us, and holds our own stones in the air. Cast it just before your buffs run out — they stay up as long as it does."</b>`,
+  FairyHeld:`<b>"They were about to fade. The dust holds them — five more rounds."</b>`,
+};
+function r5Vault(){ const r = r5(); r.vault = r.vault || { scene:false, tries:0, won:false }; return r.vault; }
+/* 'before' the first time in; 'ready' for the fight; 'won' once Cyborg is
+   broken — and (3.20) 'crowned' once the cores are home, 'nemesis' once
+   Nemesis has come and gone, 'promised' once Nino is home and the Forest
+   Guardian gone, 'after' once the Family has gone down to the harbour. */
+const R5_VAULT_ORDER = ['before', 'ready', 'won', 'crowned', 'nemesis', 'promised', 'after'];
+function r5VaultState(){
+  const v = r5Vault();
+  if(v.family) return 'after';
+  if(v.promised) return 'promised';
+  if(v.nemesis) return 'nemesis';
+  if(v.crowned) return 'crowned';
+  return v.won ? 'won' : v.scene ? 'ready' : 'before';
+}
+/* Has the story in the vault got as far as `st`? */
+function r5VaultAt(st, now){ return R5_VAULT_ORDER.indexOf(now || r5VaultState()) >= R5_VAULT_ORDER.indexOf(st); }
+const r5PadrinoFace = ()=> faceNpc('padrino2', '🕴️');
+/* (3.20) his crown back for good once the cores are home (read without
+   making a Region 5 record — the arena's copy of the fight uses it too) */
+function r5MKCrowned(){
+  const r = state && state.progress && state.progress.region5;
+  return !!(ui.r5MKCrown || (r && r.vault && r.vault.crowned));
+}
+function r5MKFace(){ return faceMon('monkey_king', { stage:1, crowned:r5MKCrowned() }); }
+/* …and in the fight itself, as he was then (the arena's copy too) */
+function r5MKFaceBare(){ return faceMon('monkey_king', { stage:1 }); }
+const r5GuardianFace = ()=> faceMon('forest_fairy', { stage:1, crowned:true });
+const R5_PADRINO = 'Don Padrino', R5_MK = 'Monkey King', R5_GUARDIAN = 'The Forest Guardian';
+
+/* ---------- the door ---------- */
+async function r5VaultDoor(){
+  const r = r5();
+  if(ui.sceneRunning || document.querySelector('.scene-say')) return;
+  if(!r.jaxBeaten) return r5JaxDoor();
+  if(r5VaultState() !== 'before'){ ui.r5VaultFresh = true; return goFloor('cata_vault', 'top'); }
+  const W = whaleName(), wl = ()=> faceMon('whalelord');
+  await sceneSay([], 'The vault', `The great iron door stands open a crack. Through it come voices, the hum of a machine — and cold, pouring out like water.`);
+  await sceneSay([wl()], W, `<b>"The Padrino. Cyborg. My core. And that cold."</b>`);
+  /* "if you lack any, the Whalelord warns you before the fight (you may ignore it)" */
+  const miss = r5StonesMissing();
+  if(miss.length){
+    await sceneSay([wl()], W, `<b>"Wait. The Monkey King asked for the stones — and we still have no ${miss.map(r5StoneName).join(', no ')}."</b>`);
+    await sceneSay([wl()], W, `<b>"He will fight with the power of every stone we bring him. Without ${miss.length === 1 ? 'that one' : 'those'}, this will be much harder. ` +
+      `We could go back for ${miss.length === 1 ? 'it' : 'them'} first — ask me, and I will tell you where."</b>`);
+  }
+  const yes = await r5Ask([wl()], W, `<b>"Whatever is in there, we face it together. Are you ready?"</b><br><br>${r5VaultNote()}`, '🚪 Go in', 'Not yet');
+  if(!yes) return;
+  ui.r5VaultFresh = true;
+  goFloor('cata_vault', 'top');
+}
+/* What the fight will be — said before it, as every fight's note is. */
+function r5VaultNote(){
+  return `<i>Inside: the Padrino. His <b>Rhino, Fox, Shadow, Jackal and Raven</b>, one at a time — crowned, level ${R5_VAULT_LV} — ` +
+    `and then <b>Cyborg</b>, the time monster, level ${R5_VAULT_CYBORG}. <b>Beat them three times.</b> ` +
+    `The <b>Monkey King</b> fights beside you, with the power of every stone you carry. No running — ` +
+    `but if you lose, <b>nothing is lost</b>, not even XP: you can try again.</i>`;
+}
+
+/* ---------- the room ---------- */
+function r5VaultRender(world, d){
+  const r = r5();
+  if(!r.reached.includes(d.key)){ r.reached.push(d.key); saveProfile(); }
+  ['#backBtn', '#walkParty'].forEach(sel=>{ const b = $(sel); if(b) b.addEventListener('click', ()=> saveProfile()); });
+  const st = r5VaultState();
+  r5VaultSet(st);
+  const fresh = !!ui.r5VaultFresh;
+  ui.r5VaultFresh = false;
+  const next = ui.r5VaultNext;
+  ui.r5VaultNext = null;
+  if(next) return setTimeout(()=>{ if(ui.screen === d.key) next(); }, 450);
+  if(st === 'before') return setTimeout(()=>{ if(ui.screen === d.key && !ui.sceneRunning) r5VaultScene(); }, 500);
+  if(st === 'ready' && fresh) return setTimeout(()=>{ if(ui.screen === d.key && !ui.sceneRunning && !document.querySelector('.scene-say')) r5VaultPadrino(true); }, 500);
+  /* (3.20) the story after the fight, picked up where it stopped */
+  if(r5VaultAt('won', st) && !(st === 'after' && r5().mkJoined))
+    return setTimeout(()=>{ if(ui.screen === d.key && !ui.sceneRunning && !document.querySelector('.scene-say')) r5VaultContinue(); }, 600);
+}
+/* The room as the story has it now. */
+function r5VaultSet(st){
+  r5Css(); r5VaultCss(); r5EndCss();
+  const P = R5_VP, E = R5_VE;
+  const at = k=> r5VaultAt(k, st);
+  const broken = st === 'won' || st === 'crowned';
+  const npc = (id, sprite, a, icon)=> sceneActor(id, { x:a.x, y:a.y, w:1, h:1, src:`assets/npc/${sprite}.png`, icon:icon || '🕴️' });
+  /* the Family: the Padrino in the middle, the Madrina and Jax, the chiefs at
+     the back — (3.20) after the fight, the Padrino on his knees by his broken
+     machine; gone, all of them, once they have gone down to the harbour */
+  const family = ['padrino', 'madrina', 'jax'].concat(P.chiefs.map(c=> 'chief_' + c[0]));
+  if(st === 'after') family.forEach(sceneActorGone);
+  else {
+    const pa = npc('padrino', 'padrino2', st === 'promised' ? E.padrinoHug : at('won') ? E.padrino : P.padrino);
+    if(pa){ actorFace(pa, st !== 'promised'); pa.classList.toggle('r5-kneel', at('won') && !at('promised')); }
+    npc('madrina', 'madrina', st === 'promised' ? E.madrinaUp : at('won') ? E.madrina : P.madrina, '👵');
+    const jx = npc('jax', 'rival_padrino', st === 'promised' ? E.jaxCage : P.jax, '🧑'); if(jx) actorFace(jx, false);
+    P.chiefs.forEach(([sp, x, y])=>{ const el = npc('chief_' + sp, sp, { x, y }); if(el){ el.classList.add('r5-back'); actorFace(el, x < 5); } });
+  }
+  /* Cyborg, in its cradle: asleep, awake, or broken — (3.20) and then gone,
+     into the tear, and the tear left hanging over its empty cradle */
+  if(!at('nemesis')){
+    const cy = r5MonActor('cyborg', 'cyborg', P.cyborg.x, P.cyborg.y, P.cyborg.s,
+      { html:monPortrait('cyborg', Math.round(WALK_T * P.cyborg.s), { view:'front', bare:true, crowned:true }), z:18 });
+    if(cy){ cy.classList.toggle('r5-asleep', st === 'before'); cy.classList.toggle('r5-awake', st === 'ready'); cy.classList.toggle('r5-broken', broken); }
+    sceneActorGone('tear');
+  } else {
+    sceneActorGone('cyborg');
+    r5TearActor(E.tear.cx, E.tear.cy, E.tear.s);
+  }
+  r5Sparks(broken ? 'map' : null);
+  /* the Forest Guardian, in her cage — (3.20) or the cage open, and empty */
+  if(!at('promised')){
+    r5MonActor('guardian', 'forest_fairy', P.guardian.x, P.guardian.y, P.guardian.s,
+      { html:monPortrait('forest_fairy', Math.round(WALK_T * P.guardian.s), { view:'front', bare:true, stage:1, crowned:true }), z:16 });
+    r5CageActor(false);
+  } else { sceneActorGone('guardian'); r5CageActor(true); }
+  /* the table: the little box — or, once Cyborg has made it, Nino's body —
+     (3.20) and empty once he is up and about */
+  if(st === 'before') r5VaultBox();
+  else if(!at('promised')) r5VaultBody();
+  else { sceneActorGone('box'); sceneActorGone('body'); }
+  /* Nino, by the wall — and none of them can see him; (3.20) beside the
+     Ghost Master, once she can; alive, at his brother's side */
+  sceneActorGone('ninoAlive');
+  if(st === 'ready' || broken){ r5NinoActor(P.nino.x, P.nino.y); actorFaceToward('nino', P.padrino.x + 0.5); }
+  else if(st === 'nemesis'){ r5NinoActor(E.ninoGM.x, E.ninoGM.y); actorFaceToward('nino', E.gm.x + 0.5); }
+  else if(st === 'promised'){ sceneActorGone('nino'); r5NinoAlive(E.ninoBody.x, E.ninoBody.y); }
+  else sceneActorGone('nino');
+  /* (3.20) the Ghost Master — (3.21) alone: her Guardian, bound to Nemesis,
+     went into the tear with it */
+  if(st === 'nemesis' || st === 'promised') r5GMActor(E.gm.x, E.gm.y);
+  else sceneActorGone('gm');
+  sceneActorGone('gguard');
+  /* the Monkey King, beside where you came in — won, holding the cores; then
+     (3.20) his crown, for good; gone down to the harbour with the rest */
+  if(st !== 'before' && st !== 'after'){
+    const crowned = at('crowned');
+    const mk = r5MonActor('mk', 'monkey_king', P.mk.x, P.mk.y, R5_VE.mkS, { html:monPortrait('monkey_king', Math.round(WALK_T * R5_VE.mkS), { view:'front', bare:true, stage:1, crowned }), z:30 });
+    if(mk){ actorFace(mk, false); mk.classList.toggle('r5-golden', st === 'won'); }
+    r5CoresHeld(broken);
+  } else sceneActorGone('mk');
+}
+/* An actor drawn from HTML (a cage, a box): r5MonActor's kind, any shape. */
+function r5HtmlActor(id, x, y, w, h, html, z){
+  sceneCss();
+  const world = $('#walkWorld'); if(!world) return null;
+  let el = document.getElementById('sa-' + id);
+  if(!el){ el = document.createElement('div'); el.className = 'scene-actor'; el.id = 'sa-' + id; world.appendChild(el); }
+  const T = WALK_T;
+  el._o = { x, y, w, h };
+  el.style.left = (x * T) + 'px'; el.style.top = (y * T) + 'px';
+  el.style.width = (w * T) + 'px'; el.style.height = (h * T) + 'px';
+  el.style.zIndex = z != null ? z : (10 + Math.floor(y + h));
+  el.innerHTML = `<div class="sa-in">${html}</div>`;
+  return el;
+}
+function r5CageActor(open){
+  const P = R5_VP.cage;
+  const el = r5HtmlActor('cage', P.x, P.y, P.w, P.h, r5CageSvg(open), 17);
+  if(el) el.classList.add('r5-cage');
+}
+/* iron bars, and roots winding up through them, in leaf — (3.20) or, open,
+   its door (the middle bars) swung out to the left */
+function r5CageSvg(open){
+  const bar = x=> `<rect x="${x - 1.6}" y="8" width="3.2" height="104" rx="1.4" fill="url(#cgIron)"/>`;
+  const bars = (open ? [10, 80, 94] : [10, 24, 38, 52, 66, 80, 94]).map(bar).join('') +
+    (open ? `<g transform="translate(-34 0) skewY(-6)">${[24, 38, 52, 66].map(bar).join('')}<rect x="20" y="10" width="50" height="5" rx="2" fill="url(#cgIron)"/></g>` : '');
+  const roots = [
+    'M8 116 C 14 92, 2 78, 12 58 S 22 26, 16 6',
+    'M96 116 C 88 96, 102 80, 92 60 S 84 30, 92 10',
+    'M44 118 C 40 100, 52 90, 46 72',
+    'M70 118 C 76 104, 64 92, 72 80',
+  ].map(d=> `<path d="${d}" fill="none" stroke="#6b4a2b" stroke-width="4" stroke-linecap="round"/><path d="${d}" fill="none" stroke="#8a6440" stroke-width="1.6" stroke-linecap="round"/>`).join('');
+  const leaves = [[12,60,30],[16,30,-20],[92,62,200],[90,32,160],[46,74,10],[72,82,170],[14,90,40],[94,92,150]]
+    .map(([x, y, a])=> `<ellipse cx="${x}" cy="${y}" rx="6.5" ry="3" transform="rotate(${a} ${x} ${y})" fill="#5fae5a" stroke="#2f6a2f" stroke-width=".8"/>`).join('');
+  return `<svg viewBox="0 0 104 120" width="100%" height="100%" preserveAspectRatio="none" style="display:block;overflow:visible;">
+    <defs><linearGradient id="cgIron" x1="0" x2="1"><stop offset="0" stop-color="#4a4652"/><stop offset=".45" stop-color="#9b96a6"/><stop offset="1" stop-color="#3a3740"/></linearGradient></defs>
+    <rect x="2" y="2" width="100" height="9" rx="3" fill="url(#cgIron)"/>
+    <rect x="2" y="109" width="100" height="9" rx="3" fill="url(#cgIron)"/>
+    ${bars}${roots}${leaves}
+  </svg>`;
+}
+/* the little wooden box on the table — a boat carved on its lid */
+function r5VaultBox(){
+  sceneActorGone('body');
+  const P = R5_VP.box;
+  r5HtmlActor('box', P.x, P.y, 0.8, 0.8, `<svg viewBox="0 0 40 40" width="100%" height="100%" style="display:block;">
+    <rect x="5" y="16" width="30" height="18" rx="2" fill="#7a5434" stroke="#3e2a18" stroke-width="2"/>
+    <rect x="3" y="11" width="34" height="7" rx="2" fill="#94683f" stroke="#3e2a18" stroke-width="2"/>
+    <path d="M13 23 L27 23 L24 27 L16 27 Z" fill="#c9a24a"/><path d="M20 18 L20 23 L24 23 Z" fill="#e8e2d2"/></svg>`, 15);
+}
+/* …and Nino's body, lying on it as if asleep: the boy as he was (NINO_BODY) */
+function r5VaultBody(){
+  sceneActorGone('box');
+  const P = R5_VP.body;
+  const el = sceneActor('body', { x:P.x, y:P.y, w:1.05, h:1.05, src:`assets/npc/${NINO_BODY}.png`, icon:'👦', faint:1, z:15 });
+  if(el) el.classList.add('r5-body');
+}
+/* The cores in his arms: a bundle of little stars. */
+function r5CoresHeld(on){
+  const el = document.getElementById('sa-mk');
+  if(!el) return;
+  const old = el.querySelector('.r5-held-cores');
+  if(old) old.remove();
+  if(!on) return;
+  const c = document.createElement('div');
+  c.className = 'r5-held-cores';
+  c.innerHTML = [[38,62],[50,58],[62,63],[44,70],[56,71],[50,80],[33,74],[67,74]].map(([x, y], k)=>
+    `<i style="left:${x}%;top:${y}%;animation-delay:${(k * 0.23).toFixed(2)}s"></i>`).join('');
+  el.appendChild(c);
+}
+
+/* ---------- what you can look at ---------- */
+async function r5VaultCage(){
+  if(ui.sceneRunning || document.querySelector('.scene-say')) return;
+  const st = r5VaultState();
+  if(st === 'before') return;
+  if(r5VaultAt('promised', st)) return sceneSay([], 'The cage', `The cage stands open, and empty. A few green leaves lie on the floor inside it.`);
+  await sceneSay([r5GuardianFace()], R5_GUARDIAN, st === 'won'
+    ? `She smiles at you through the bars.<br><br><b>"Well done, little ones. Well done."</b>`
+    : `She watches you through the bars, calm as a summer morning.<br><br><b>"Go on, little ones. I am not going anywhere."</b>`);
+  if(r5Fairy() && r5Once('vaultCageFairy'))
+    await r5FairySay(`<b>"We'll get you out of there. I promise."</b>`);
+}
+async function r5VaultTable(){
+  if(ui.sceneRunning || document.querySelector('.scene-say')) return;
+  if(r5VaultState() === 'before') return sceneSay([], 'The table', `A little wooden box, with a boat carved on its lid.`);
+  if(r5VaultAt('promised')) return sceneSay([], 'The table', `Nothing on the stone table now but dust — and the little wooden box, empty, with a boat carved on its lid.`);
+  await sceneSay([], 'The table', `A little boy lying on the stone, as if he were asleep — the boy in the photograph. He does not move.`);
+  if(r5Once('vaultBodyWhale'))
+    await sceneSay([faceMon('whalelord')], whaleName(), `<b>"His body. But not him. Nino is over there, by the wall."</b>`);
+}
+async function r5VaultCyborg(){
+  if(ui.sceneRunning || document.querySelector('.scene-say')) return;
+  const st = r5VaultState();
+  await sceneSay([], 'Cyborg', st === 'before'
+    ? `Something made of metal, asleep in an iron cradle. Where its heart should be, there is a clock.`
+    : st === 'ready' ? `Cyborg stands in its cradle, humming. The clock in its chest ticks backwards.`
+    : `Cyborg slumps in its cradle, cracked open and sparking. It does not move.`);
+}
+/* (3.20) …and once Nemesis has taken it: the tear, over the empty cradle —
+   the way to the space-time tear's page (Challenge the past; Region 6). */
+async function r5VaultTear(){
+  if(ui.sceneRunning || document.querySelector('.scene-say')) return;
+  const yes = await r5Ask([r5TearFace()], 'The space-time tear',
+    `A hole in the air, swirling purple, over Cyborg's empty cradle. It hums like a held breath.<br><br>Nemesis went through here — in Cyborg's body.`,
+    '🌀 Go to the tear', 'Not now');
+  if(!yes) return;
+  ui.tearBack = 'cata_vault';
+  go('tear');
+}
+async function r5VaultMK(){
+  if(ui.sceneRunning || document.querySelector('.scene-say')) return;
+  const st = r5VaultState();
+  if(st === 'ready') return sceneSay([r5MKFace()], R5_MK, `<b>"Ready when you are. Speak to the Padrino — and remember: together."</b>`);
+  if(st === 'won' || st === 'crowned') return sceneSay([r5MKFace()], R5_MK, `He holds the cores close, glowing like a bundle of stars.<br><br><b>"Not yet, little one. Something here is not finished."</b>`);
+}
+/* The Padrino: the fight, again — or, after it, nothing to say. */
+async function r5VaultPadrino(auto){
+  if(ui.sceneRunning || document.querySelector('.scene-say')) return;
+  const st = r5VaultState();
+  if(st === 'won' || st === 'crowned') return sceneSay([r5PadrinoFace()], R5_PADRINO, `He kneels by the broken machine, and does not look up.`);
+  if(st !== 'ready') return;
+  if(auto) await sceneSay([r5MKFace()], R5_MK, `<b>"On your feet. Again — together. Every time we fall, we learn. He cannot turn that back."</b>`);
+  const yes = await r5Ask([r5PadrinoFace()], R5_PADRINO,
+    `<b>"${auto ? 'Back again? Cyborg will turn back time as often as it takes.' : 'Well? Cyborg is waiting.'}"</b><br><br>${r5VaultNote()}`, '⚔️ Fight', 'Not yet');
+  if(!yes) return;
+  r5ClimaxStart();
+}
+
+/* ---------- the first time in ---------- */
+/* A beam of light from one point to another (tiles), drawn over the room. */
+function r5Beam(id, x1, y1, x2, y2, kind){
+  r5VaultCss();
+  const world = $('#walkWorld'); if(!world) return null;
+  const T = WALK_T, dx = (x2 - x1) * T, dy = (y2 - y1) * T;
+  const el = document.createElement('div');
+  el.className = 'r5-beam' + (kind ? ' ' + kind : '');
+  el.id = 'rb-' + id;
+  el.style.left = (x1 * T) + 'px'; el.style.top = (y1 * T) + 'px';
+  el.style.width = Math.hypot(dx, dy) + 'px';
+  el.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
+  world.appendChild(el);
+  void el.offsetWidth;
+  el.classList.add('on');
+  return el;
+}
+function r5BeamGone(id){ const el = document.getElementById('rb-' + id); if(el){ el.classList.remove('on'); setTimeout(()=> el.remove(), 400); } }
+/* Time turned back, over the room: the swirl, a sound if there is one. */
+function r5RewindFx(){ playSfx('rewind'); tearRewindFx(); }
+async function r5VaultScene(){
+  const r = r5(), w = walkState(), P = R5_VP;
+  if(ui.sceneRunning || r5VaultState() !== 'before') return;
+  ui.sceneRunning = true;
+  w.busy = true;
+  releaseKeys();
+  const W = whaleName(), wl = ()=> faceMon('whalelord');
+  const pa = html=> sceneSay([r5PadrinoFace()], R5_PADRINO, html);
+  const gd = html=> sceneSay([r5GuardianFace()], R5_GUARDIAN, html);
+  const mk = html=> sceneSay([r5MKFace()], R5_MK, html);
+  const say = html=> sceneSay([], '', html);
+  const whale = html=> sceneSay([wl()], W, html);
+  /* 1. Nino slips in ahead, and waits by the wall; you come in after him */
+  r5NinoActor(5, 1.1, 500);
+  await r5MoveActor('nino', P.nino.x, P.nino.y, 900);
+  actorFaceToward('nino', P.padrino.x + 0.5);
+  w.at.cata_vault = { x:P.you.x, y:P.you.y };
+  w.ghostAt = w.ghostAt || {}; w.ghostAt.cata_vault = { x:P.you.x - 1, y:P.you.y };
+  refreshWalk();
+  await say(`Nino slips through the door ahead of you, and waits by the wall, in the shadows.`);
+  await say(`A great round room, under the crypt. Machines hum along the walls, full of glass jars — every one of them empty. ` +
+    `A huge clock is carved into the floor, and its hands are running backwards.`);
+  await say(`In the middle of the room stands the Padrino. The whole Family is here — the Madrina, Jax, the Sottocapo, the capos and the Consigliere. Nobody turns round.`);
+  await say(`In front of the Padrino is a cage of iron, with roots and green leaves growing through its bars. Inside it, very still, sits a tall fairy made of leaves and light.`);
+  if(r5Fairy()) await r5FairySay(`<b>"It's her! The Forest Guardian!"</b>`);
+  /* the Padrino and the Forest Guardian: he rages; she is calm */
+  await pa(`<b>"Forty years ago I came to your forest, on my knees. Do you remember?"</b>`);
+  await gd(`<b>"I remember. You were very brave. And very sad."</b>`);
+  await pa(`<b>"My little brother was dying. And you said NO."</b>`);
+  await gd(`<b>"My core was never mine to give. It is the life of my grove — and it was meant for the one who would come after me."</b>`);
+  await pa(`<b>"So you let a little boy die. For a SEED."</b>`);
+  await gd(`<b>"I gave you all I could: a little stone, to help him. I am sorry it was not enough."</b>`);
+  sceneShake(500, t=> 0.06 * Math.max(0, 1 - t / 500));
+  await pa(`<b>"SORRY? Look at me! Cry! Beg! Tell me you were WRONG!"</b>`);
+  await gd(`She only looks at him, calm as a summer morning.<br><br><b>"I was not wrong. And you are not well, child. Something has been whispering to you — for a very long time."</b>`);
+  await say(`The Padrino stares at her. For a long moment he says nothing at all.`);
+  await pa(`<b>"Enough. It does not matter now. Nothing you say matters any more."</b>`);
+  /* 2. Cyborg wakes, and makes Nino's body again from the bones */
+  actorFace('padrino', false);
+  await pa(`<b>"Cyborg. Wake up."</b>`);
+  const cy = document.getElementById('sa-cyborg');
+  r5DarkGlow('cybwake', P.cyborg.x + P.cyborg.s / 2, P.cyborg.y + P.cyborg.s * 0.55, 2.6);
+  if(cy){ cy.classList.remove('r5-asleep'); cy.classList.add('r5-waking'); }
+  playSfx('stone_veryhigh');
+  await sceneWait(1100);
+  if(cy){ cy.classList.remove('r5-waking'); cy.classList.add('r5-awake'); }
+  await say(`In the iron cradle, something made of metal opens its eyes. In its chest, where a heart should be, a clock is ticking — backwards.`);
+  await pa(`<b>"Every core I took, from every island across the sea. Every year of my life. All for this."</b>`);
+  await pa(`<b>"Now — my first wish. Bring back my brother."</b>`);
+  r5Beam('wish', P.cyborg.x + P.cyborg.s / 2, P.cyborg.y + 0.7, P.box.x + 0.4, P.box.y + 0.4);
+  sceneGlow('wish', P.box.x + 0.4, P.box.y + 0.4, 1.5, 16);
+  playSfx('rewind');
+  sceneShake(2600, t=> 0.15 * Math.sin(Math.PI * Math.min(1, t / 2600)));
+  await say(`Cyborg's clock spins faster and faster. The whole room shakes. Light pours out of the little box on the table — brighter, and brighter—`);
+  await sceneFlash(450, 450, ()=>{ r5VaultBody(); r5BeamGone('wish'); const g = document.getElementById('sg-wish'); if(g) g.remove(); }, 900);
+  await say(`When the light fades, a little boy is lying on the table — just like the little boy in the photograph. Very still. As if he were asleep.`);
+  await whale(`<b>"The bones from the empty grave… It has made his body again. Just as it was."</b>`);
+  await sceneSay([r5NinoFace()], '', `By the wall, Nino looks at the boy on the table. Slowly, he shakes his head.`);
+  await whale(`<b>"That is only his body. Nino is not in it — he is over there, by the wall. And he does not want this."</b>`);
+  await sceneGlowOut(['cybwake'], 600);
+  actorFace('padrino', false);
+  await pa(`He takes a step toward the table.<br><br><b>"Nino…?"</b>`);
+  /* 3. the Monkey King crashes in, and is beaten — again, and again, and again */
+  r5MonActor('mk', 'monkey_king', P.mkLand.x, -1.6, 1.3, { html:monPortrait('monkey_king', Math.round(WALK_T * 1.3), { view:'front', bare:true, stage:1 }), z:70 });
+  actorFace('mk', true);
+  sceneShake(700, t=> 0.12 * Math.max(0, 1 - t / 700));
+  await r5LeapActor('mk', P.mkLand.x, P.mkLand.y, 520, 0, false);
+  sceneShake(500, t=> 0.14 * Math.max(0, 1 - t / 500));
+  await say(`CRASH! Part of the ceiling falls in — and somebody drops through it, and lands between the Padrino and the table.`);
+  await mk(`<b>"Not so fast, Padrino!"</b>`);
+  await mk(`<b>"Those cores are not yours — not one of them. And neither is that power."</b>`);
+  actorFace('padrino', false);
+  await pa(`<b>"The monkey. Still alive?"</b>`);
+  await pa(`<b>"Then I will finish what I started. All of you — get him!"</b>`);
+  const team = R5_VAULT_TEAM.map((sp, k)=>{
+    const [x, y] = P.team[k];
+    const el = r5MonActor('t' + k, sp, x, y, 0.95, { html:monPortrait(sp, Math.round(WALK_T * 0.95), { view:'front', bare:true, crowned:true, stage:evolutionStage(sp, R5_VAULT_LV) }), z:40 });
+    if(el){ el.classList.add('r5-pop'); actorFace(el, x < 5); }
+    return 't' + k;
+  });
+  r5MoveActor('padrino', P.padrinoBack.x, P.padrinoBack.y, 600);
+  await sceneWait(700);
+  const knockDown = async ()=>{
+    for(let k = 0; k < team.length; k++){
+      const [x, y] = P.team[k];
+      await r5LeapActor('mk', x + (x < 5 ? 0.55 : -0.55), y - 0.55, 240, 0.7, false);
+      sceneShake(160, t=> 0.08 * Math.max(0, 1 - t / 160));
+      const el = document.getElementById('sa-' + team[k]);
+      if(el) el.classList.add('r5-down');
+      playSfx('hit_dealt');
+    }
+    await r5LeapActor('mk', P.mkLand.x, P.mkLand.y, 320, 0.8, false);
+  };
+  const standUp = async ()=>{
+    r5RewindFx();
+    await sceneWait(700);
+    team.forEach(id=>{ const el = document.getElementById('sa-' + id); if(el) el.classList.remove('r5-down'); });
+    await sceneWait(900);
+  };
+  await knockDown();
+  await say(`The Padrino's monsters leap at the Monkey King — and he knocks them down, one after another, quick as lightning.`);
+  await mk(`<b>"Ha! Is that all?"</b>`);
+  await standUp();
+  await say(`Cyborg's clock spins backwards — and the Padrino's monsters stand up again, as if nothing had ever happened.`);
+  await mk(`<b>"…What?"</b>`);
+  await knockDown();
+  await standUp();
+  await say(`He knocks them all down again. And again, Cyborg turns back time.`);
+  await mk(`He is breathing hard now.<br><br><b>"Again…?!"</b>`);
+  /* Cyborg itself */
+  r5Beam('strike', P.cyborg.x + P.cyborg.s / 2, P.cyborg.y + 0.6, P.mkLand.x + 0.65, P.mkLand.y + 0.7, 'strike');
+  playSfx('hit_taken');
+  await sceneWait(300);
+  r5BeamGone('strike');
+  sceneShake(600, t=> 0.16 * Math.max(0, 1 - t / 600));
+  await r5LeapActor('mk', P.mkDown.x, P.mkDown.y, 520, 1.0, false);
+  { const el = document.getElementById('sa-mk'); if(el) el.classList.add('r5-down'); }
+  await say(`This time Cyborg itself moves. A crack of purple light — and the Monkey King is thrown across the room.`);
+  for(const id of team) r5MoveActor(id, document.getElementById('sa-' + id)._o.x, document.getElementById('sa-' + id)._o.y, 500, true);
+  await sceneWait(550);
+  team.forEach(id=> sceneActorGone(id));
+  await say(`The Padrino calls his monsters back to him.`);
+  await mk(`The Monkey King lies on the floor, breathing hard.<br><br><b>"You are cheating… Turning back time, over and over…"</b>`);
+  await mk(`<b>"It goes against the laws of nature."</b>`);
+  /* the cold: a hint of what hides behind it all */
+  await r5Dread(2200);
+  await mk(`He lifts his head, as if somebody had called his name.<br><br><b>"…That cold again. I know that cold. Long, long ago, when I fought—"</b>`);
+  await mk(`<b>"No. It cannot be. That one is gone."</b>`);
+  /* 4. the Padrino sees you */
+  r5MoveActor('padrino', P.padrino.x, P.padrino.y, 500);
+  await sceneWait(500);
+  actorFaceToward('padrino', P.you.x + 0.5);
+  await pa(`He turns — and sees you for the first time.<br><br><b>"And you. The child who has been knocking on my door all night."</b>`);
+  await pa(`<b>"You are too late. All of you."</b>`);
+  /* 5. the Whalelord's speech, and the Monkey King's answer */
+  await whale(`<b>"Monkey King. Listen to me."</b>`);
+  await whale(`<b>"All of us legendaries — so proud of our power — fought him alone. One by one. And one by one, we fell to his tricks."</b>`);
+  await whale(`<b>"Only one of us was wise enough to do something different. She is sitting there, in that cage."</b>`);
+  await whale(`<b>"The Forest Guardian did not fight him. She gave her seed to a child — the child who would bring us all together."</b>`);
+  if(r5Fairy()){
+    await r5FairySay(`<b>"That's me. I grew from that seed."</b>`);
+    await gd(`<b>"And you have grown well, little one."</b>`);
+  }
+  await whale(`<b>"Now is the time to stand together. And show him what we can do — together."</b>`);
+  { const el = document.getElementById('sa-mk'); if(el) el.classList.remove('r5-down'); }
+  await r5LeapActor('mk', P.mk.x, P.mk.y, 480, 0.5, false);
+  actorFace('mk', false);
+  await mk(`He gets up, slowly, and looks at you for a long time.<br><br><b>"…You came further than I ever thought you would, little one."</b>`);
+  await mk(`<b>"Not because you are strong. Because you and your monsters trust each other. I never had that."</b>`);
+  await mk(`<b>"Very well. One last time — side by side."</b>`);
+  /* 6. your team round you in a circle, the Whalelord at the top */
+  w.at.cata_vault = { x:P.ring.x, y:P.ring.y };
+  refreshWalk();
+  await r5VaultRing();
+  await say(`Your whole team comes out around you — the Whalelord first of all.`);
+  await mk(`<b>"I hope you took my advice, and found the stones."</b>`);
+  const held = heldStones();
+  if(held.length){
+    await r5StonesToMK(held);
+    await say(`Your stones float out of your bag, one after another, in a shining chain — round and round the Monkey King — and with a flash, their power is his. He glows like the sun.`);
+    await mk(`<b>"Good. Very good. Now — let us show him what we can do together!"</b>`);
+  } else await mk(`<b>"…No stones? Then we will do this the hard way. Together!"</b>`);
+  await r5VaultRingGone();
+  r5Vault().scene = true;
+  await saveProfile();
+  w.busy = false;
+  ui.sceneRunning = false;
+  r5ClimaxStart();
+}
+/* Your team, round you in a circle: the Whalelord at the top, the rest
+   clockwise from him. */
+async function r5VaultRing(extra){
+  const w = walkState(), P = R5_VP.ring;
+  const cx = P.x + 0.5, cy = P.y + 0.5;
+  /* (3.20) the Whalelord always — a passenger or not — and, for the cores
+     coming home, a legendary of yours from storage too (`extra`) */
+  const team = (state.party || []).filter(m=> m && (!isPassenger(m) || isCuain(m)));
+  const whale = team.find(m=> isCuain(m));
+  const order = (whale ? [whale] : []).concat(team.filter(m=> m !== whale), (extra || []).filter(m=> m && !team.includes(m))).slice(0, 9);
+  const R = order.length > 7 ? 1.85 : 1.55;
+  const ids = {};
+  const gh = $('#walkGhost'); if(gh){ gh.style.transition = `opacity ${300 * SCENE_SPEED}ms ease`; gh.style.opacity = '0'; }   // (its picture is visibility:visible: opacity, not visibility)
+  for(let k = 0; k < order.length; k++){
+    ids[order[k].uid] = 'ring' + k;
+    const m = order[k], a = -Math.PI / 2 + k * 2 * Math.PI / order.length;
+    const s = isCuain(m) ? 1.3 : 1.0;
+    const el = r5MonActor('ring' + k, m.species, cx + Math.cos(a) * R - s / 2, cy + Math.sin(a) * R - s / 2 - 0.15, s,
+      { html:monPortrait(m.species, Math.round(WALK_T * s), { view:'front', bare:true, stage:monStage(m), crowned:isCrowned(m) }), z:45 });
+    if(el){ el.classList.add('r5-pop'); actorFace(el, Math.cos(a) < 0); el.dataset.uid = m.uid; }
+    playSfx('answer_correct');
+    await sceneWait(260);
+  }
+  ui.r5Ring = order.length;
+  await sceneWait(500);
+  return ids;
+}
+async function r5VaultRingGone(){
+  const n = ui.r5Ring || 0;
+  for(let k = 0; k < n; k++){ const el = document.getElementById('sa-ring' + k); if(el){ el.style.transition = `opacity ${400 * SCENE_SPEED}ms ease`; el.style.opacity = '0'; } }
+  await sceneWait(420);
+  for(let k = 0; k < n; k++) sceneActorGone('ring' + k);
+  ui.r5Ring = 0;
+  const gh = $('#walkGhost'); if(gh) gh.style.opacity = '';
+}
+/* Your stones, out of your bag in a chain, round him, and into him. */
+async function r5StonesToMK(held){
+  const world = $('#walkWorld'); if(!world) return;
+  const T = WALK_T, from = { x:R5_VP.ring.x + 0.5, y:R5_VP.ring.y + 0.5 }, to = { x:R5_VP.mk.x + 0.675, y:R5_VP.mk.y + 0.75 };
+  const S = 0.55;
+  const els = held.map((st, k)=>{
+    const el = document.createElement('div');
+    el.className = 'r5-stone-fly';
+    el.style.width = el.style.height = (S * T) + 'px';
+    el.style.left = ((from.x - S / 2) * T) + 'px'; el.style.top = ((from.y - S / 2) * T) + 'px';
+    el.innerHTML = uiIcon(st.icon, Math.round(S * T), st.emoji);
+    world.appendChild(el);
+    return el;
+  });
+  const n = els.length, dur = 2600 + n * 120;
+  playSfx('stone_veryhigh');
+  await r5Tween(dur, t=>{
+    els.forEach((el, k)=>{
+      const lag = k / Math.max(1, n) * 0.35;
+      const u = Math.max(0, Math.min(1, (t - lag) / (1 - lag)));
+      let x, y;
+      if(u < 0.4){                                    // the chain, out to him
+        const v = u / 0.4;
+        x = from.x + (to.x - from.x) * v; y = from.y + (to.y - from.y) * v - Math.sin(Math.PI * v) * 0.8;
+      } else if(u < 0.85){                            // round and round him
+        const v = (u - 0.4) / 0.45, a = k * 2 * Math.PI / n + v * Math.PI * 3, R = 0.95 - 0.25 * v;
+        x = to.x + Math.cos(a) * R; y = to.y + Math.sin(a) * R * 0.75;
+      } else {                                        // and into him
+        const v = (u - 0.85) / 0.15, a = k * 2 * Math.PI / n + Math.PI * 3, R = 0.7 * (1 - v);
+        x = to.x + Math.cos(a) * R; y = to.y + Math.sin(a) * R * 0.75;
+        el.style.opacity = String(1 - v);
+      }
+      el.style.left = ((x - S / 2) * T) + 'px'; el.style.top = ((y - S / 2) * T) + 'px';
+    });
+  });
+  els.forEach(el=> el.remove());
+  r5DarkGlow('mkgold', to.x, to.y - 0.1, 2.2, true);
+  const mk = document.getElementById('sa-mk'); if(mk) mk.classList.add('r5-golden');
+  playSfx('stone_veryhigh');
+  await sceneWait(900);
+  await sceneGlowOut(['mkgold'], 700);
+}
+
+/* ---------- the fight ---------- */
+function r5ClimaxStart(){
+  if(!ensurePool()) return;
+  const v = r5Vault();
+  v.tries = (v.tries || 0) + 1;
+  saveProfile();
+  r5Sparks(null);
+  walkTeardown();
+  beginBattle(r5ClimaxBattle());
+}
+/* The fight as the story has it (and, `arena`, the Test Arena's copy: his
+   lines every time, and its own end). */
+function r5ClimaxBattle(opts){
+  opts = opts || {};
+  const waves = [];
+  for(let k = 0; k < 3; k++){
+    R5_VAULT_TEAM.forEach(sp=> waves.push([{ species:sp, level:R5_VAULT_LV, ai:'best', crowned:true, supplements:10, nerfed:false }]));
+    waves.push([{ species:'cyborg', level:R5_VAULT_CYBORG, ai:'best', crowned:true, nerfed:false, boss:true }]);
+  }
+  waves.push([{ species:'cyborg', level:R5_VAULT_CYBORG, ai:'best', crowned:true, nerfed:false, boss:true }]);   // the last phase: broken
+  /* his first-time lines are remembered in the story only — the arena's copy
+     writes nothing to your save */
+  const said = opts.arena ? {} : (()=>{ const r = r5(); return (r.mkLines = r.mkLines || {}); })();
+  return { isNpc:true, name:'Don Padrino · Round 1 of 3', npcId:'padrino2', noFlee:true, figlio:true, bgKey:'battle_vault', waves,
+    climax:{ lost:()=> r5ClimaxLost() },
+    ally:{ species:'monkey_king', level:100, name:R5_MK, lines:R5_MK_STONE_LINES, said,
+           onSaid:()=>{ if(!opts.arena) saveProfile(); }, face:r5MKFaceBare, golden:true },
+    onWaveStart:(i)=> r5ClimaxWave(i), onWaveCleared:(next)=> r5ClimaxCleared(next), waveLabel:(i)=> r5ClimaxLabel(i),
+    doneWhen:()=> r5ClimaxBeaten(), onDone:()=> r5ClimaxWon() };
+}
+function r5ClimaxLabel(i){
+  return i >= 18 ? `Cyborg is broken — clear its bar, all the way down!` : `Round ${Math.floor(i / 6) + 1} of 3 · wave ${i % 6 + 1} of 6!`;
+}
+/* Held at 1 HP: it can be struck, never felled (the last phase). */
+function r5HoldAtOne(e){
+  let hp = Math.max(1, e.hp);
+  Object.defineProperty(e, 'hp', { configurable:true, enumerable:true,
+    get(){ return hp; },
+    set(v){ const n = +v; if(Number.isFinite(n)) hp = Math.max(1, n); } });
+}
+function r5ClimaxWave(i){
+  const b = ui.battle, e = b.enemies[0];
+  b.name = i >= 18 ? 'Don Padrino · Cyborg, broken' : `Don Padrino · Round ${Math.min(3, Math.floor(i / 6) + 1)} of 3`;
+  /* Cyborg's first arrival: its three forms, for a moment */
+  if(i === 5 && !b.splitShown){ b.splitShown = true; b.introDue = done=> r5CyborgSplit(done); }
+  /* the last phase: no turn, nothing in it working, and never below 1 HP —
+     then the scene that breaks it (before its first turn) */
+  if(i === 18 && e){
+    e.broken = true;
+    r5HoldAtOne(e);
+    b.introDue = done=> r5ClimaxBreak(done);
+  }
+}
+function r5ClimaxBeaten(){
+  const b = ui.battle, e = b && b.enemies && b.enemies[0];
+  return !!(b && b.waveIndex === 18 && e && e.shattered && e.hp <= 1);
+}
+/* Speech over the fight: the battle is held while it is read. */
+function r5BattleSay(faces, name, html){
+  const b = ui.battle;
+  if(b) b.hold = (b.hold || 0) + 1;
+  return sceneSay(faces, name, html).then(()=>{ if(b) b.hold = Math.max(0, (b.hold || 1) - 1); });
+}
+/* A round's Cyborg beaten: it turns back time, and the team stands again —
+   after the third, for the last time (the break follows, with the last wave). */
+function r5ClimaxCleared(next){
+  const b = ui.battle, i = b.waveIndex;
+  if((i + 1) % 6 !== 0) return next();
+  const round = (i + 1) / 6;
+  b.phase = 'resolving';
+  renderBattle();
+  battleMsg(round < 3 ? `⏳ Cyborg turns back time — the Padrino's team stands up again! Round ${round + 1} of 3.` : `⏳ Cyborg turns back time — again…`);
+  r5RewindFx();
+  const once = key=> b.arenaChallenge ? true : r5Once(key);
+  (async ()=>{
+    await sceneWait(1700);
+    if(ui.battle !== b) return;
+    if(round === 1 && once('vaultRound1')) await r5BattleSay([r5PadrinoFace()], R5_PADRINO, `<b>"Did you think it would be that easy? While Cyborg stands, time is mine."</b>`);
+    if(round === 2 && once('vaultRound2')) await r5BattleSay([r5MKFaceBare()], R5_MK, `<b>"Again! Keep going. Every time they come back just the same — and every time, we come back stronger."</b>`);
+    if(ui.battle !== b) return;
+    next();
+  })();
+}
+/* Cyborg arrives as its past, its present and its future — for a moment. */
+async function r5CyborgSplit(done){
+  const b = ui.battle;
+  r5VaultCss();
+  b.hold = (b.hold || 0) + 1;
+  const stage = $('#battleStage'), bob = document.getElementById('enemyBob-0');
+  let forms = [];
+  if(stage && bob){
+    const s = stage.getBoundingClientRect(), r = bob.getBoundingClientRect();
+    forms = ['past', 'future'].map(k=>{
+      const f = document.createElement('div');
+      f.className = 'r5-cyb-form ' + k;
+      f.innerHTML = bob.innerHTML;
+      f.style.left = (r.left - s.left) + 'px'; f.style.top = (r.top - s.top) + 'px';
+      f.style.width = r.width + 'px'; f.style.height = r.height + 'px';
+      stage.appendChild(f);
+      return f;
+    });
+    void stage.offsetWidth;
+    playSfx('stone_veryhigh');
+    forms.forEach(f=> f.classList.add('out'));
+  }
+  await sceneWait(800);
+  const first = b.arenaChallenge || !r5Vault().split;
+  if(!b.arenaChallenge){ r5Vault().split = true; saveProfile(); }
+  if(first) await r5BattleSay([r5PadrinoFace()], R5_PADRINO, `<b>"Behold — Cyborg's true form! Its past, its present and its future, all at once. Nothing in this world can stand against it!"</b>`);
+  else await sceneWait(1600);
+  forms.forEach(f=> f.classList.add('tremble'));
+  await sceneWait(900);
+  forms.forEach(f=> f.classList.remove('out'));
+  await sceneWait(750);
+  forms.forEach(f=> f.remove());
+  if(first){
+    await r5BattleSay([r5PadrinoFace()], R5_PADRINO, `<b>"…No. Hold it! HOLD IT!"</b>`);
+    await r5BattleSay([r5PadrinoFace()], R5_PADRINO, `<b>"Bah. It spent too much of its power bringing my brother back. It cannot hold its three forms for long."</b>`);
+    await r5BattleSay([r5PadrinoFace()], R5_PADRINO, `<b>"No matter. One Cyborg is more than enough for you."</b>`);
+  }
+  b.hold = Math.max(0, (b.hold || 1) - 1);
+  done();
+}
+/* After the third round: the taunt, the rewind turned on you, the Monkey
+   King steps into it — his crown, for a moment — and Heavensplitter Max. */
+async function r5ClimaxBreak(done){
+  const b = ui.battle, A = battleAlly(), e = b.enemies[0];
+  r5VaultCss();
+  b.hold = (b.hold || 0) + 1;
+  const mkSay = html=> r5BattleSay([r5MKFaceBare()], R5_MK, html);
+  const paSay = html=> r5BattleSay([r5PadrinoFace()], R5_PADRINO, html);
+  const tell = html=> r5BattleSay([], '', html);
+  await mkSay(`<b>"Padrino! Do you see it yet?"</b>`);
+  await mkSay(`<b>"Every time you turn back the clock, this child only gets stronger. Every fight teaches them something new — and every fight, they and their monsters trust each other a little more."</b>`);
+  await mkSay(`<b>"Time is on THEIR side. Not yours."</b>`);
+  await paSay(`<b>"Then I will take their time away!"</b>`);
+  await paSay(`<b>"Cyborg! Turn back that child's clock — all the way back, to before they ever had a single monster!"</b>`);
+  /* the rewind comes for you — and he leaps into it */
+  r5BattleBeam('enemyBob-0', 'playerBob', 'rewind-beam');
+  playSfx('rewind');
+  await sceneWait(450);
+  const ab = document.getElementById('allyBob');
+  if(ab) ab.classList.add('r5-leap');
+  await sceneWait(550);
+  r5RewindFx();
+  await sceneWait(900);
+  r5BattleBeamGone();
+  if(A){ A.mon.crowned = true; A.crownedNow = true; }
+  renderBattle();
+  await tell(`The rewind hits the Monkey King instead of you — and for a moment he is younger. On his head shines a golden crown: the Monkey King from long, long ago.`);
+  await mkSay(`<b>"…Ha! You turned my clock back — to the days when I still wore my crown!"</b>`);
+  await mkSay(`<b>"Thank you, Padrino. I have missed this."</b>`);
+  await r5HeavensplitterMax();
+  e.shattered = true;
+  e.blockStacks = 0;
+  if(A){ A.mon.crowned = false; A.crownedNow = false; }
+  renderBattle();
+  r5Sparks('battle');
+  await tell(`Heavensplitter Max! Cyborg cracks open — and the cores burst out of it like shooting stars. The Monkey King catches them, one by one. Then his crown fades away again.`);
+  await paSay(`<b>"No… NO! Cyborg! Get up!"</b>`);
+  await mkSay(`<b>"Without the cores it is only a broken machine. It cannot move."</b>`);
+  await mkSay(`<b>"It is yours, little one. Finish it! I will keep your stones in the air."</b>`);
+  /* the last phase: every cooldown reset — your Very Highs and Ultras, Steel
+     Soul, Rebirth — every stone of his again, and the blows are yours */
+  b.usedVeryHigh = {}; b.usedUltra = {}; b.usedSoul = {}; b.rebirthUsed = false;
+  if(A){ A.passive = true; allyRecharge(); }
+  renderBattle();
+  battleMsg(`⚡ Every move is ready again! Clear Cyborg's bar — all the way down.`);
+  b.hold = Math.max(0, (b.hold || 1) - 1);
+  done();
+}
+/* A beam across the battle, from one element to another. */
+function r5BattleBeam(fromId, toId, cls){
+  r5VaultCss();
+  const a = document.getElementById(fromId), c = document.getElementById(toId);
+  if(!a || !c) return;
+  const ra = a.getBoundingClientRect(), rc = c.getBoundingClientRect();
+  const x1 = ra.left + ra.width / 2, y1 = ra.top + ra.height / 2, x2 = rc.left + rc.width / 2, y2 = rc.top + rc.height / 2;
+  const el = document.createElement('div');
+  el.className = 'r5-bbeam ' + (cls || '');
+  el.id = 'r5BattleBeam';
+  el.style.left = x1 + 'px'; el.style.top = y1 + 'px';
+  el.style.width = Math.hypot(x2 - x1, y2 - y1) + 'px';
+  el.style.transform = `rotate(${Math.atan2(y2 - y1, x2 - x1)}rad)`;
+  document.body.appendChild(el);
+  void el.offsetWidth;
+  el.classList.add('on');
+}
+function r5BattleBeamGone(){ const el = document.getElementById('r5BattleBeam'); if(el){ el.classList.remove('on'); setTimeout(()=> el.remove(), 400); } }
+/* He flies at it; white; CRACK — the cores burst out of it, and come to him. */
+async function r5HeavensplitterMax(){
+  const ab = document.getElementById('allyBob'), eb = document.getElementById('enemyBob-0');
+  if(ab) ab.classList.remove('r5-leap');
+  if(ab && eb){
+    const ra = ab.getBoundingClientRect(), re = eb.getBoundingClientRect();
+    ab.style.transition = `translate ${380 * SCENE_SPEED}ms cubic-bezier(.5,0,.9,.5)`;
+    ab.style.translate = `${(re.left + re.width / 2) - (ra.left + ra.width / 2)}px ${(re.top + re.height / 2) - (ra.top + ra.height / 2)}px`;
+  }
+  playSfx('core_blast');
+  await sceneWait(380);
+  await sceneFlash(120, 260, ()=>{
+    const stage = $('#battleStage');
+    if(stage && eb){
+      const s = stage.getBoundingClientRect(), re = eb.getBoundingClientRect();
+      const k = document.createElement('div');
+      k.className = 'r5-crack';
+      k.textContent = 'CRACK!';
+      k.style.left = (re.left - s.left + re.width / 2) + 'px'; k.style.top = (re.top - s.top + re.height * 0.35) + 'px';
+      stage.appendChild(k);
+      setTimeout(()=> k.remove(), 1600);
+    }
+  }, 500);
+  { const st = $('#battleStage'); if(st){ st.classList.add('r5-quake'); setTimeout(()=> st.classList.remove('r5-quake'), 700); } }
+  if(ab){ ab.style.transition = `translate ${420 * SCENE_SPEED}ms ease-out`; ab.style.translate = ''; }
+  await r5CoresBurst(eb, ab);
+  if(ab) ab.style.transition = '';
+}
+/* The cores: out of it like shooting stars, then each to his hands. */
+async function r5CoresBurst(fromEl, toEl){
+  r5VaultCss();
+  if(!fromEl) return sceneWait(800);
+  const rf = fromEl.getBoundingClientRect();
+  const fx = rf.left + rf.width / 2, fy = rf.top + rf.height / 2;
+  const rt = toEl ? toEl.getBoundingClientRect() : rf;
+  const tx = rt.left + rt.width / 2, ty = rt.top + rt.height * 0.45;
+  const n = 9;
+  const orbs = Array.from({ length:n }, (_, k)=>{
+    const o = document.createElement('div');
+    o.className = 'r5-core-orb';
+    o.style.left = fx + 'px'; o.style.top = fy + 'px';
+    document.body.appendChild(o);
+    const a = k / n * Math.PI * 2 + Math.random() * 0.4, d = 70 + Math.random() * 70;
+    return { o, ox:Math.cos(a) * d, oy:Math.sin(a) * d * 0.8 };
+  });
+  playSfx('stone_veryhigh');
+  await r5Tween(1500, t=>{
+    orbs.forEach(({ o, ox, oy }, k)=>{
+      const lag = k / n * 0.25, u = Math.max(0, Math.min(1, (t - lag) / (1 - lag)));
+      let x, y;
+      if(u < 0.4){ const v = 1 - Math.pow(1 - u / 0.4, 2); x = fx + ox * v; y = fy + oy * v; }
+      else { const v = (u - 0.4) / 0.6, e = v * v; x = fx + ox + (tx - fx - ox) * e; y = fy + oy + (ty - fy - oy) * e - Math.sin(Math.PI * v) * 40; }
+      o.style.left = x + 'px'; o.style.top = y + 'px';
+      o.style.opacity = u >= 1 ? '0' : '1';
+    });
+  });
+  orbs.forEach(({ o })=> o.remove());
+}
+/* ---------- Cyborg, broken: a short circuit, hand-drawn ----------
+   (the designer: "a tilt to the sprite and a hand drawn (not emoticon) short
+   circuit electricity animation that flashes in at times over the sprite")
+   Two or three jagged bolts — SVG paths of 5 to 8 segments, new every flash
+   — a white-blue core inside a cyan and a yellow glow, drawn on in about
+   60 ms, held 120–220 ms, then faded; a few sparks thrown off; the sprite
+   twitches as it flashes. Every 0.7–2.4 s, now and then a double flash.
+   `where`: 'battle' (over its card) or 'map' (over it in the vault); null
+   stops it. */
+let _r5SparkTimer = null;
+function r5Sparks(where){
+  clearTimeout(_r5SparkTimer);
+  _r5SparkTimer = null;
+  if(!where) return;
+  r5VaultCss();
+  const host = ()=> where === 'battle'
+    ? ((ui.screen === 'battle' && ui.battle && ui.battle.enemies && ui.battle.enemies[0] && ui.battle.enemies[0].shattered) ? document.getElementById('enemyBob-0') : null)
+    : (ui.screen === 'cata_vault' && ['won', 'crowned'].includes(r5VaultState()) ? document.getElementById('sa-cyborg') : null);
+  const tick = ()=>{
+    const h = host();
+    if(!h){ _r5SparkTimer = null; return; }
+    r5SparkFlash(h);
+    if(Math.random() < 0.25) setTimeout(()=>{ const h2 = host(); if(h2) r5SparkFlash(h2); }, 300);
+    _r5SparkTimer = setTimeout(tick, 700 + Math.random() * 1700);
+  };
+  _r5SparkTimer = setTimeout(tick, 350);
+}
+function r5SparkBolt(w, h){
+  const n = 5 + Math.floor(Math.random() * 4);
+  let x = w * (0.25 + Math.random() * 0.5), y = h * (0.12 + Math.random() * 0.3);
+  const pts = [[x, y]];
+  for(let k = 0; k < n; k++){
+    x = Math.max(2, Math.min(w - 2, x + (Math.random() * 2 - 1) * w * 0.16));
+    y = Math.min(h - 2, y + h * (0.05 + Math.random() * 0.08));
+    pts.push([x, y]);
+  }
+  return { d:'M' + pts.map(p=> p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' L'), end:pts[pts.length - 1], mid:pts[Math.floor(pts.length / 2)] };
+}
+function r5SparkFlash(hostEl){
+  const r = hostEl.getBoundingClientRect();
+  const w = Math.max(40, Math.round(r.width)), h = Math.max(40, Math.round(r.height));
+  const bolts = Array.from({ length:2 + (Math.random() < 0.5 ? 1 : 0) }, ()=> r5SparkBolt(w, h));
+  const sparks = [];
+  bolts.forEach(b=> [b.end, b.mid].forEach(p=>{
+    for(let k = 0; k < 2; k++){
+      const a = Math.random() * Math.PI * 2, d = 8 + Math.random() * 16;
+      sparks.push(`<circle class="sp" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${(1 + Math.random() * 1.4).toFixed(1)}" fill="#fffbe0" style="--dx:${(Math.cos(a) * d).toFixed(1)}px;--dy:${(Math.sin(a) * d).toFixed(1)}px"/>`);
+    }
+  }));
+  const svg = document.createElement('div');
+  svg.className = 'r5-spark';
+  svg.innerHTML = `<svg viewBox="0 0 ${w} ${h}" width="100%" height="100%" style="overflow:visible;display:block;">` +
+    bolts.map(b=> `<path d="${b.d}" pathLength="1" fill="none" stroke="#ffd84a" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" opacity=".35"/>` +
+      `<path d="${b.d}" pathLength="1" fill="none" stroke="#4ff0ff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" opacity=".8"/>` +
+      `<path d="${b.d}" pathLength="1" fill="none" stroke="#f4fbff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`).join('') +
+    sparks.join('') + `</svg>`;
+  hostEl.appendChild(svg);
+  hostEl.classList.add('r5-twitch');
+  playSfx('spark');
+  const hold = 120 + Math.random() * 100;
+  setTimeout(()=>{ hostEl.classList.remove('r5-twitch'); svg.classList.add('gone'); }, 60 + hold);
+  setTimeout(()=> svg.remove(), 60 + hold + 260);
+}
+
+/* ---------- won: no victory screen ---------- */
+async function r5ClimaxWon(){
+  const b = ui.battle;
+  if(b && b.arenaChallenge){ r5Sparks(null); return arenaChallengeOver('won'); }
+  const v = r5Vault();
+  const first = !v.won;
+  v.won = true;
+  const levelUps = first ? (awardXpToParty(R5_CLIMAX_XP) || []) : [];
+  const brk = tallyBattleForEyeBreak();
+  await saveProfile();
+  /* Cyborg trembles where it stands; the screen fades to white */
+  const card = document.getElementById('enemy-0');
+  if(card) card.classList.add('r5-tremble');
+  r5VaultCss();
+  const f = document.createElement('div');
+  f.className = 'r5-whiteout';
+  document.body.appendChild(f);
+  void f.offsetWidth;
+  f.classList.add('on');
+  stopMusic();
+  playSfx('victory');
+  await sceneWait(1800);
+  r5Sparks(null);
+  const w = walkState();
+  w.at = w.at || {}; w.at.cata_vault = { x:R5_VP.you.x, y:R5_VP.you.y }; w.face = 'd';
+  w.ghostAt = w.ghostAt || {}; w.ghostAt.cata_vault = { x:R5_VP.you.x - 1, y:R5_VP.you.y };
+  ui.walkFresh = false;
+  ui.currentZone = r5Zone('catacombs') || ui.currentZone;
+  ui.r5VaultNext = ()=> r5VaultAfter(f, levelUps, brk);
+  go('cata_vault');
+}
+/* Back in the vault, the white lifting — and (3.20) the rest of the story,
+   chapter after chapter (r5VaultChapters, below): the cores home, Nemesis,
+   the promise, the Family, the harbour. The fight's evolutions first, and an
+   eye break that fell due with it (the story waits under it). */
+async function r5VaultAfter(f, levelUps, brk){
+  const w = walkState();
+  ui.sceneRunning = true; w.busy = true;
+  releaseKeys();
+  if(f){ f.classList.remove('on'); setTimeout(()=> f.remove(), 1700); }
+  try {
+    await sceneWait(1200);
+    const W = whaleName(), wl = ()=> faceMon('whalelord');
+    await sceneSay([], '', `The light fades. Cyborg slumps in its cradle, cracked open and sparking. It does not move.`);
+    await sceneSay([], '', `The Monkey King stands by the door with his arms full of cores, glowing like a bundle of stars.`);
+    await sceneSay([wl()], W, `<b>"We did it. Together."</b>`);
+    await sceneSay([r5MKFace()], R5_MK, `<b>"…Together."</b> He looks down at the cores in his arms. <b>"Hm. It suits me better than I thought."</b>`);
+    const evolvers = (levelUps || []).filter(e=> e.evos && e.evos.length);
+    if(evolvers.length) await r5Evolve(evolvers);
+    if(brk) showEyeBreak();
+    await r5VaultChapters(false);
+  } finally { r5SceneDone(); }
+}
+/* ---------- lost: nothing is lost ---------- */
+function r5ClimaxLost(){
+  const b = ui.battle;
+  if(b) b.climax = null;                         // once
+  r5Sparks(null);
+  playSfx('defeat');
+  stopMusic();
+  const brk = tallyBattleForEyeBreak();
+  const fade = document.createElement('div');
+  fade.style.cssText = 'position:fixed;inset:0;background:#2a1650;z-index:80;opacity:0;transition:opacity .8s;';
+  document.body.appendChild(fade);
+  requestAnimationFrame(()=>{ fade.style.opacity = '1'; });
+  setTimeout(async ()=>{
+    /* Cyborg turns back time for everyone in the room: your team whole, no XP taken */
+    battleParty().forEach(m=>{ m.currentHp = monMaxHp(m); });
+    restCompanions();
+    await saveProfile();
+    const w = walkState();
+    w.at = w.at || {}; w.at.cata_vault = { x:5, y:1 }; w.face = 'd';
+    w.ghostAt = w.ghostAt || {}; w.ghostAt.cata_vault = { x:4, y:1 };
+    ui.walkFresh = false;
+    ui.currentZone = r5Zone('catacombs') || ui.currentZone;
+    ui.r5VaultNext = ()=> r5VaultAfterLoss(brk);
+    go('cata_vault');
+    fade.style.opacity = '0';
+    setTimeout(()=> fade.remove(), 800);
+  }, 1000);
+}
+async function r5VaultAfterLoss(brk){
+  const w = walkState();
+  ui.sceneRunning = true; w.busy = true;
+  releaseKeys();
+  await sceneSay([], '', `Cyborg's clock spins backwards — for everyone in the room, you too. You are standing at the door again, your team whole, as if the fight had never begun.`);
+  await sceneSay([faceMon('whalelord')], whaleName(), `<b>"Nothing is lost. We can try again — whenever you are ready."</b>`);
+  w.busy = false; ui.sceneRunning = false;
+  if(brk) showEyeBreak();
+}
+
+/* ============================================================
+   AFTER THE FIGHT — THE END OF REGION 5 (3.20; part 6 §12c C5–7, D)
+   No victory screen: the vault again, the white lifting (r5VaultAfter), and
+   then one chapter after another (r5VaultChapters). Each is saved as it
+   ends, so an app closed half way picks up at the start of the chapter it
+   was in (r5VaultContinue — the vault's render, or the harbour's).
+   THE CORES HOME (r5VaultShowcase — the designer: "each core-less legendary
+     receives its cores, starting with water dragon, thunder newt (if
+     caught), whalelord, and finally monkey king. it feels like a triumphant
+     moment"): your team round you, the Whalelord at the top (a legendary of
+     yours in storage comes out too); a core from his arms to each, and a
+     crowning each (playEvolutions: "…'s core has come home!", its ATK before
+     and after). The Whalelord remembers his name — Cuain (whaleName() reads
+     his crown). Then his own: the crown. → vault.crowned
+   NEMESIS (r5VaultNemesis): he will take the rest home, to the children of
+     the monsters they were torn from. The Ghost Master runs in, her Guardian
+     at her shoulder — staring at the cores, not at her — and she sees Nino
+     at last ("his voice had been blocked all this time by the ghost
+     guardian/nemesis"); he warns his brother. Too late: the Guardian rips
+     the air open behind Cyborg with its burning sword. The cold: the Monkey
+     King knows it — the Bone Demon. Red eyes in the dark of the tear
+     (nemesis_spirit); the hill's grudge pours into it; a hand of bones
+     (nemesis_hand) takes the cores from him and, with three older ones of
+     its own (a cobra's, a jackal's, a black one), pushes them into Cyborg.
+     Black smoke; three shapes in the cradle (nemesis_anubis, nemesis,
+     nemesis_wadjet), then the winged one. The Monkey King leaps — and a
+     purple sphere stops time (r5TimeStop). Nemesis, in the stopped time: who
+     made Nino sick, whose voice said a core would cure him, the dreams, the
+     fire that burned his eyes; the wish it kept; Tang Seng; it will be back
+     — and into the tear, and (3.21) its Guardian with it, bound to it to
+     the last. Time runs again. The tear stays over the empty cradle. → vault.nemesis,
+     r5().tearOpen (16-tear.js: Challenge the past)
+   THE PROMISE (r5VaultPromise): everybody can see Nino now. He can come
+     back, if his brother stops hurting monsters. The Padrino still hates the
+     Forest Guardian — the promise is to Nino (decision 4); Nino steps into
+     his body: "Big brother. …I'm home." Jax opens the cage; the Forest
+     Guardian gives your Forest Fairy the rest of her power
+     (state.forestBlessingGranted — the gift, 05-battle-flow.js FOREST GIFT)
+     and fades; your team is healed. → vault.promised
+   THE FAMILY (r5VaultFamily): it is Jax's and the Ghost Master's now —
+     Nino's rule. → vault.family
+   THE HARBOUR (r5ToFarewell, r5FarewellRun): the next morning, a little
+     boat; Nino waves goodbye; the Monkey King asks to come with you and
+     joins (r5MKJoin): crowned, Lv 100, his Physical Stone, the first
+     Legendary core slot, leading one of your team (you choose; it goes to
+     storage as his companion) — and the Companions open
+     (state.companionsUnlocked). → r5().mkJoined, r5().ending
+   ============================================================ */
+/* After the fight, where they stand (tiles: an actor's top-left). */
+const R5_VE = {
+  padrino:{ x:3.7, y:6.95 }, madrina:{ x:2.35, y:6.3 },          // he kneels by his broken machine
+  mkS:1.35, mkMid:{ x:4.85, y:4.25 },
+  tear:{ cx:5.5, cy:8.15, s:2.9 },                                 // over Cyborg's cradle
+  gm:{ x:3.35, y:2.3 }, guard:{ x:2.1, y:1.9, s:1.3 }, guardSlash:{ x:3.45, y:6.1 },
+  ninoGM:{ x:3.8, y:3.15 }, ninoMid:{ x:5.0, y:4.35 },
+  nemesis:{ x:4.4, y:7.2, s:2.2 }, nemA:{ x:2.5, y:7.35 }, nemW:{ x:6.6, y:7.35 }, nemS:1.9,
+  hand:{ w:1.5, h:2.0 },
+  padrinoUp:{ x:3.95, y:4.35 }, padrinoHug:{ x:3.7, y:4.55 }, ninoBody:{ x:2.85, y:4.5 }, madrinaUp:{ x:2.0, y:5.15 },
+  jaxCage:{ x:6.05, y:5.55 }, fgOut:{ x:5.7, y:2.95, s:1.65 }, fairy:{ x:4.4, y:3.35, s:1.1 },
+};
+const R5_GM = 'Ghost Master', R5_MADRINA = 'Madrina', R5_JAX = 'Jax', R5_NEMESIS = 'Nemesis', R5_NINO = 'Nino';
+const r5GMFace = ()=> faceNpc('ghost_master', '👻');
+const r5JaxFace = ()=> faceNpc('rival_padrino', '🧑');
+const r5MadrinaFace = ()=> faceNpc('madrina', '👵');
+const r5NinoAliveFace = ()=> faceNpc(NINO_BODY, '👦');
+/* His face as he is now: crowned, once his core is home. */
+function r5WhaleFace(){
+  const c = (state.party || []).concat(state.storage || []).find(m=> m && m.species === 'whalelord');
+  return faceMon('whalelord', { crowned:!!(c && c.crowned) });
+}
+function r5SceneDone(){ const w = walkState(); w.busy = false; ui.sceneRunning = false; }
+function r5Evolve(list){ return new Promise(done=> playEvolutions(list, done)); }
+
+/* ---------- the chapters, in order ---------- */
+async function r5VaultChapters(resumed){
+  let first = !!resumed;
+  const run = async (st, fn)=>{ if(r5VaultState() === st){ await fn(first); first = false; } };
+  await run('won', r5VaultShowcase);
+  await run('crowned', r5VaultNemesis);
+  await run('nemesis', r5VaultPromise);
+  await run('promised', r5VaultFamily);
+  if(r5VaultState() === 'after' && !r5().mkJoined) await r5ToFarewell();
+}
+/* Picked up again where it stopped: on entering the vault. */
+async function r5VaultContinue(){
+  if(ui.sceneRunning) return;
+  ui.sceneRunning = true;
+  walkState().busy = true;
+  releaseKeys();
+  try { await r5VaultChapters(true); }
+  finally { r5SceneDone(); }
+}
+
+/* ---------- the cores home ---------- */
+const R5_CORE_HOME = ['water_dragon_nerfed', 'newt', 'whalelord'];
+/* Yours whose cores were stolen, in the designer's order: the Water Dragon,
+   the Thunder Newt (if caught), the Whalelord — party or storage. */
+function r5CoreHomes(){
+  const all = (state.party || []).concat(state.storage || []);
+  return R5_CORE_HOME.map(sp=> all.find(m=> m && m.species === sp && coreStolen(m))).filter(Boolean);
+}
+const R5_CORE_LINES = {
+  water_dragon_nerfed:[`<b>"Water Dragon! You hatched with an empty place where your core should be. Here — this one is yours."</b>`,
+                       `The Water Dragon throws back its head and roars — a real dragon's roar, for the very first time.`],
+  newt:               [`<b>"Thunder Newt. They took yours when you were hurt and all alone. Take it back."</b>`,
+                       `Lightning crackles all over the Thunder Newt, and it squeaks with joy.`],
+  whalelord:          [`<b>"Whalelord. This one is yours. I would know it anywhere — it hums like the deep sea."</b>`, null],
+};
+/* Where his arms are, to throw from (tiles). */
+function r5MKHands(){
+  const el = document.getElementById('sa-mk'), o = el && el._o;
+  return o ? { x:o.x + o.w / 2, y:o.y + o.h * 0.62 } : { x:R5_VP.mk.x + 0.7, y:R5_VP.mk.y + 0.85 };
+}
+async function r5VaultShowcase(resumed){
+  const w = walkState(), P = R5_VP;
+  const mk = html=> sceneSay([r5MKFace()], R5_MK, html);
+  const say = html=> sceneSay([], '', html);
+  if(resumed) await say(`Cyborg slumps in its cradle, cracked open and sparking. The Monkey King stands by the door with his arms full of cores, glowing like a bundle of stars.`);
+  await mk(`He looks down at the cores in his arms.<br><br><b>"Every one of these was stolen — torn out of a monster that never wanted to give it away."</b>`);
+  await mk(`<b>"And some of them belong to monsters who are standing right here."</b> He looks at your team. <b>"Call them out, little one."</b>`);
+  const homes = r5CoreHomes();
+  w.at.cata_vault = { x:P.ring.x, y:P.ring.y };
+  refreshWalk();
+  const ids = await r5VaultRing(homes.filter(m=> !(state.party || []).includes(m)));
+  await say(`Your whole team comes out around you — the Whalelord first of all.`);
+  for(const m of homes) await r5CoreHome(m, ids[m.uid]);
+  await r5MKCrown();
+  await say(`Your whole team cheers — and by the wall, Nino is smiling.`);
+  await r5VaultRingGone();
+  w.at.cata_vault = { x:P.you.x, y:P.you.y };
+  refreshWalk();
+  r5Vault().crowned = true;
+  ui.r5MKCrown = false;                              // (the save says so now)
+  await saveProfile();
+}
+/* A core flies from his arms to one of yours; it is crowned. */
+async function r5CoreHome(m, aid){
+  const el = aid ? document.getElementById('sa-' + aid) : null, o = el && el._o;
+  const to = o ? { x:o.x + o.w / 2, y:o.y + o.h * 0.45 } : { x:5.5, y:4.6 };
+  const lines = R5_CORE_LINES[m.species] || [`<b>"This one is yours."</b>`, null];
+  const cuain = isCuain(m);
+  await sceneSay([r5MKFace()], R5_MK, lines[0]);
+  r5CoresHeld(true);
+  await r5CoreFly(r5MKHands(), to, 1100);
+  r5DarkGlow('core-' + aid, to.x, to.y, 2.0, true);
+  playSfx('stone_veryhigh');
+  if(el) el.classList.add('r5-golden');
+  await sceneWait(600);
+  if(cuain){
+    await sceneSay([faceMon('whalelord')], whaleName(), `He goes very still.<br><br><b>"…Oh."</b>`);
+    await sceneSay([faceMon('whalelord')], whaleName(), `<b>"I remember. I remember everything — the deep, cold sea, and my mother's song."</b>`);
+    await sceneSay([faceMon('whalelord')], whaleName(), `<b>"And my name."</b>`);
+  }
+  const before = rawMonAtk(m);
+  m.crowned = true;
+  const grown = growMonster(m);                     // a bar that filled at 100 grows on at once
+  m.currentHp = monMaxHp(m);
+  const after = rawMonAtk(m);
+  /* …and its Max, which waited for its core (moveUnlockedFor) */
+  const maxRow = (MOVES[m.species] || []).find(r=> r[0] === 'Max' && r[1] && r[3] !== 'Passive');
+  const maxNow = maxRow && moveUnlockedFor(m, maxRow) ? maxRow[1] : null;
+  await saveProfile();
+  const name = cuain ? whaleName() : displayName(m);
+  if(cuain) await sceneSay([r5WhaleFace()], name, `<b>"My name is Cuain."</b>`);
+  await r5Evolve([{ uid:m.uid, species:m.species, name, crowned:true, from:m.level, to:m.level, evos:[m.level], newMoves:[],
+    headline:`<b>${escapeHtml(name)}</b>'s core has come home!`,
+    note:`Crowned: ATK <b>${before} → ${after}</b>. It grows as a legendary now, takes up to <b>10</b> Protein Supplements, and can go on past level ${CROWN_GATE}.` +
+         (maxNow ? ` Its Max move is unlocked: <b>${escapeHtml(maxNow)}</b>.` : '') +
+         (grown ? ` It grows to <b>Lv ${grown.to}</b> at once.` : '') }]);
+  if(el && o){ const sin = el.querySelector('.sa-in'); if(sin) sin.innerHTML = monPortrait(m.species, Math.round(WALK_T * o.w), { view:'front', bare:true, stage:monStage(m), crowned:true }); }
+  await sceneGlowOut(['core-' + aid], 600);
+  if(el) el.classList.remove('r5-golden');
+  if(lines[1]) await sceneSay([], '', lines[1]);
+  if(cuain) await sceneSay([r5WhaleFace()], name, `<b>"Thank you, little one. You carried me all this way — and you never even knew my name."</b>`);
+}
+/* …and last of all, his own: it rises over his head, and is his crown. */
+async function r5MKCrown(){
+  const el = document.getElementById('sa-mk'), o = el && el._o;
+  await sceneSay([r5MKFace()], R5_MK, `<b>"And last of all…"</b><br><br>He holds up one more core — bigger than all the rest, and gold.`);
+  await sceneSay([r5MKFace()], R5_MK, `<b>"…mine."</b>`);
+  const head = o ? { x:o.x + o.w / 2, y:o.y + o.h * 0.1 } : { x:R5_VP.mk.x + 0.7, y:R5_VP.mk.y + 0.1 };
+  await r5CoreFly(r5MKHands(), { x:head.x, y:head.y - 0.35 }, 900, 'gold', 0.4);
+  r5DarkGlow('mkcrown', head.x, head.y + 0.3, 2.3, true);
+  playSfx('stone_ultra');
+  ui.r5MKCrown = true;
+  if(el && o){ const sin = el.querySelector('.sa-in'); if(sin) sin.innerHTML = monPortrait('monkey_king', Math.round(WALK_T * o.w), { view:'front', bare:true, stage:1, crowned:true }); el.classList.remove('r5-golden'); }
+  await sceneWait(500);
+  await r5Evolve([{ uid:'r5-mk', species:'monkey_king', name:R5_MK, crowned:true, from:100, to:100, evos:[100], newMoves:[],
+    headline:`The <b>Monkey King</b>'s crown is his again!`,
+    note:`The crown his master gave him long ago, with his core's power poured into it. Without it he fought as an elite; with it, as the legend he is.` }]);
+  await sceneGlowOut(['mkcrown'], 600);
+  await sceneSay([r5MKFace()], R5_MK, `<b>"Ha! HA HA! Now THAT is more like it!"</b>`);
+  await sceneSay([r5MKFace()], R5_MK, `He touches the crown, gently.<br><br><b>"My master gave me this, long ago, to teach me to listen. I am still learning."</b>`);
+}
+/* A core (a little star) on an arc from one point to another (tiles). */
+function r5CoreFly(from, to, ms, cls, arc){
+  r5EndCss();
+  const world = $('#walkWorld'); if(!world) return sceneWait(ms);
+  const T = WALK_T, D = 0.42 * T;
+  const o = document.createElement('div');
+  o.className = 'r5-core-fly' + (cls ? ' ' + cls : '');
+  o.style.width = o.style.height = D + 'px';
+  o.style.margin = (-D / 2) + 'px 0 0 ' + (-D / 2) + 'px';
+  o.style.left = (from.x * T) + 'px'; o.style.top = (from.y * T) + 'px';
+  world.appendChild(o);
+  const h = arc == null ? 1.2 : arc;
+  return r5Tween(ms, t=>{
+    const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    o.style.left = ((from.x + (to.x - from.x) * e) * T) + 'px';
+    o.style.top = ((from.y + (to.y - from.y) * e - h * 4 * e * (1 - e)) * T) + 'px';
+  }).then(()=> o.remove());
+}
+
+/* ---------- Nemesis ---------- */
+/* Its pictures (the designer's names, 2026-10-14) — each, until it is there,
+   stood in for: the winged one by Cyborg darkened, with black wings; the
+   jackal and the cobra by Cyborg in gold and in green; the skeleton in the
+   tear by two red eyes; the hand by a hand of bones drawn here. */
+const R5_NEM_ART = {
+  horus:'assets/mon/nemesis_front.png', anubis:'assets/mon/nemesis_anubis_front.png', wadjet:'assets/mon/nemesis_wadjet_front.png',
+  spirit:'assets/mon/nemesis_spirit_front.png', hand:'assets/mon/nemesis_hand.png',
+};
+function r5NemImg(form, px){
+  return `<img src="${R5_NEM_ART[form]}" alt="" class="r5-nem-img" style="width:${px}px;height:${px}px;object-fit:contain;" ` +
+    `data-form="${form}" data-px="${px}" onerror="r5NemStandin(this)">`;
+}
+function r5NemStandin(img){
+  const form = img.dataset.form, px = +img.dataset.px || 64;
+  const s = document.createElement('span');
+  s.className = 'r5-nem-standin ' + form;
+  s.style.width = s.style.height = px + 'px';
+  if(form === 'hand') s.innerHTML = r5HandSvg();
+  else if(form === 'spirit') s.innerHTML = `<span class="r5-spirit-eyes"><i></i><i></i></span>`;
+  else s.innerHTML = (form === 'horus' ? r5WingsSvg() : '') + monPortrait('cyborg', px, { view:'front', bare:true, crowned:true });
+  img.replaceWith(s);
+}
+function r5NemFace(){ r5EndCss(); return `<span class="r5-nem-face">${r5NemImg('horus', 64)}</span>`; }
+function r5TearFace(){ tearCss(); return `<span style="display:inline-block;width:64px;height:64px;">${tearGalaxy()}</span>`; }
+/* black wings, behind the stand-in */
+function r5WingsSvg(){
+  const wing = d=> `<path d="${d}" fill="#170a1f" stroke="#8a1434" stroke-width="2.2" stroke-linejoin="round"/>`;
+  return `<svg class="r5-wings" viewBox="0 0 160 100" preserveAspectRatio="none">
+    ${wing('M80 50 C 62 28, 40 12, 4 6 C 16 20, 18 30, 12 40 C 24 40, 28 46, 22 56 C 36 54, 44 60, 42 72 C 56 64, 68 62, 80 64 Z')}
+    ${wing('M80 50 C 98 28, 120 12, 156 6 C 144 20, 142 30, 148 40 C 136 40, 132 46, 138 56 C 124 54, 116 60, 118 72 C 104 64, 92 62, 80 64 Z')}
+  </svg>`;
+}
+/* a gigantic hand of bones, reaching down (turned over on the deck, to reach
+   up out of the tear) */
+function r5HandSvg(){
+  const bone = (d, w)=> `<path d="${d}" fill="none" stroke="#3a0618" stroke-width="${(w + 3.2).toFixed(1)}" stroke-linecap="round" stroke-linejoin="round"/>` +
+                         `<path d="${d}" fill="none" stroke="#efe3cb" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"/>`;
+  const parts = [
+    ['M42 0 L45 40', 7], ['M60 0 L57 40', 7],                                   // the two long bones of the arm
+    ['M40 48 L60 48', 9], ['M38 56 L62 56', 8],                                 // the wrist
+    ['M36 60 L28 86', 5], ['M45 61 L42 90', 5], ['M54 61 L56 90', 5], ['M62 60 L68 86', 5],   // the palm
+    ['M28 88 L23 104 L20 116 L19 126', 4.2], ['M42 92 L40 110 L39 123 L39 134', 4.2],
+    ['M56 92 L58 110 L59 123 L60 133', 4.2], ['M68 88 L74 103 L77 114 L79 123', 4],             // four fingers
+    ['M34 58 L18 72 L10 86 L6 96', 4.4],                                                         // and a thumb
+  ];
+  const joints = [[28,87],[42,91],[56,91],[68,87],[23,104],[40,110],[58,110],[74,103],[20,116],[39,123],[59,123],[77,114],[18,72],[10,86]]
+    .map(([x, y])=> `<circle cx="${x}" cy="${y}" r="3.3" fill="#efe3cb" stroke="#3a0618" stroke-width="1.5"/>`).join('');
+  return `<svg viewBox="0 0 100 140" width="100%" height="100%" style="display:block;overflow:visible;">${parts.map(([d, w])=> bone(d, w)).join('')}${joints}</svg>`;
+}
+/* The tear: the galaxy (16-tear.js), with something in the dark of it. */
+function r5TearActor(cx, cy, s, opening){
+  tearCss(); r5EndCss();
+  const px = Math.round(WALK_T * s * 0.6);
+  const el = r5HtmlActor('tear', cx - s / 2, cy - s / 2, s, s,
+    `<div class="r5-tear">${tearGalaxy()}<div class="r5-tear-spirit">${r5NemImg('spirit', px)}</div></div>`, 14);
+  if(el && opening){
+    const t = el.querySelector('.r5-tear');
+    t.style.transform = 'scale(1, .04)';
+    void t.offsetWidth;
+    t.style.transition = `transform ${900 * SCENE_SPEED}ms cubic-bezier(.2,.8,.3,1)`;
+    t.style.transform = 'scale(1, 1)';
+  }
+  return el;
+}
+function r5TearSpirit(on){ const s = document.querySelector('#sa-tear .r5-tear-spirit'); if(s) s.classList.toggle('on', !!on); }
+/* Its burning sword, twice across the air: two streaks of purple fire. */
+async function r5Slash(cx, cy){
+  r5EndCss();
+  const world = $('#walkWorld'); if(!world) return;
+  const T = WALK_T;
+  for(const a of [-32, 32]){
+    const s = document.createElement('div');
+    s.className = 'r5-slash';
+    s.style.left = ((cx - 1.7) * T) + 'px'; s.style.top = (cy * T) + 'px'; s.style.width = (3.4 * T) + 'px';
+    s.style.transform = `rotate(${a}deg) scaleX(0)`;
+    world.appendChild(s);
+    void s.offsetWidth;
+    s.style.transition = `transform ${170 * SCENE_SPEED}ms ease-out, opacity ${500 * SCENE_SPEED}ms ease ${350 * SCENE_SPEED}ms`;
+    s.style.transform = `rotate(${a}deg) scaleX(1)`;
+    s.style.opacity = '0';
+    playSfx('rip');
+    sceneShake(240, t=> 0.09 * Math.max(0, 1 - t / 240));
+    setTimeout(()=> s.remove(), 1000 * SCENE_SPEED + 50);
+    await sceneWait(330);
+  }
+}
+/* The Ghost Master, and her Guardian (purple fire — or, `kind` 'blaze', its
+   fire flaring with Nemesis's, drawn over the stopped time). */
+function r5GMActor(x, y, fadeMs){
+  const el = sceneActor('gm', { x, y, w:1, h:1, src:'assets/npc/ghost_master.png', icon:'👻' });
+  if(el && fadeMs){ el.style.transition = 'none'; el.style.opacity = '0'; void el.offsetWidth; el.style.transition = `opacity ${fadeMs * SCENE_SPEED}ms ease`; el.style.opacity = '1'; }
+  return el;
+}
+function r5VaultGuard(x, y, kind, fadeMs){
+  const s = R5_VE.guard.s, px = Math.round(WALK_T * s);
+  const el = r5MonActor('gguard', 'ghost_guardian', x, y, s, { html:monPortrait('ghost_guardian', px, { view:'front', bare:true, stage:1, crowned:true }), z:44 });
+  if(!el) return null;
+  r5Css();
+  el.classList.add('r5-guard');
+  el.classList.toggle('blaze', kind === 'blaze');
+  if(kind === 'blaze') el.style.zIndex = 68;          // above the stopped time: it is Nemesis's
+  if(fadeMs){ el.style.transition = 'none'; el.style.opacity = '0'; void el.offsetWidth; el.style.transition = `opacity ${fadeMs * SCENE_SPEED}ms ease`; el.style.opacity = '1'; }
+  return el;
+}
+/* The hill's grudge: its ghosts, from every side of the room, round and
+   round into the tear like water down a drain. */
+function r5GrudgeSpiral(cx, cy, n, ms){
+  r5Css();
+  const world = $('#walkWorld'); if(!world) return sceneWait(ms);
+  const T = WALK_T;
+  const kinds = R5_HILL_GHOSTS.length ? R5_HILL_GHOSTS : ['ghost'];
+  const box = document.createElement('div');
+  box.className = 'r5-pour'; box.id = 'r5Grudge';
+  world.appendChild(box);
+  const lag = 0.55;
+  const items = Array.from({ length:n }, (_, i)=>{
+    const sp = kinds[i % kinds.length], s = 0.5 + Math.random() * 0.4, px = Math.round(s * T);
+    const el = document.createElement('div');
+    el.className = 'r5-pg';
+    el.style.width = el.style.height = px + 'px';
+    el.innerHTML = monPortrait(sp, px, { view:'front', bare:true, stage:hauntStage(sp) });
+    box.appendChild(el);
+    return { el, s, a0:Math.random() * Math.PI * 2, R0:4.6 + Math.random() * 1.6,
+             turn:(1.1 + Math.random() * 0.9) * Math.PI * 2, delay:i / n * lag };
+  });
+  return r5Tween(ms, t=>{
+    items.forEach(it=>{
+      const u = Math.max(0, Math.min(1, (t - it.delay) / (1 - lag)));
+      const r = it.R0 * Math.pow(1 - u, 1.25), a = it.a0 + it.turn * u;
+      const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r * 0.85;
+      it.el.style.left = ((x - it.s / 2) * T) + 'px'; it.el.style.top = ((y - it.s / 2) * T) + 'px';
+      it.el.style.opacity = u <= 0 ? '0' : String(Math.min(1, u * 8, (1 - u) * 5));
+      it.el.style.transform = `scale(${(1 - 0.75 * u).toFixed(3)})`;
+    });
+  }).then(()=> box.remove());
+}
+/* The hand: out of the tear (its wrist in it), up to (x, y) — its fingers'
+   ends, tiles. */
+function r5HandTo(x, y, ms){
+  const H = R5_VE.hand;
+  return r5MoveActor('hand', x - H.w / 2, y, ms);
+}
+function r5HandOut(){
+  r5EndCss();
+  const E = R5_VE, H = E.hand;
+  const el = r5HtmlActor('hand', E.tear.cx - H.w / 2, E.tear.cy - H.h * 0.55, H.w, H.h,
+    `<div class="r5-hand">${r5NemImg('hand', Math.round(WALK_T * H.h))}</div>`, 62);
+  if(el){ el.style.opacity = '0'; void el.offsetWidth; el.style.transition = `opacity ${500 * SCENE_SPEED}ms ease`; el.style.opacity = '1'; }
+  return el;
+}
+/* Black smoke over the machine. */
+function r5Miasma(on){
+  r5EndCss();
+  const world = $('#walkWorld'); if(!world) return;
+  let m = document.getElementById('r5Miasma');
+  if(!on){ if(m){ m.style.transition = `opacity ${800 * SCENE_SPEED}ms ease`; m.style.opacity = '0'; setTimeout(()=> m.remove(), 900 * SCENE_SPEED); } return; }
+  const P = R5_VP.cyborg, T = WALK_T, D = 3.2;
+  if(!m){ m = document.createElement('div'); m.id = 'r5Miasma'; m.className = 'r5-miasma'; world.appendChild(m); }
+  m.style.left = ((P.x + P.s / 2 - D / 2) * T) + 'px'; m.style.top = ((P.y + P.s * 0.55 - D / 2) * T) + 'px';
+  m.style.width = m.style.height = (D * T) + 'px';
+  m.style.opacity = '0'; void m.offsetWidth;
+  m.style.transition = `opacity ${900 * SCENE_SPEED}ms ease`; m.style.opacity = '1';
+}
+/* Three shapes in the cradle at once — then the winged one. */
+async function r5NemesisForms(){
+  const E = R5_VE, T = WALK_T, S = SCENE_SPEED;
+  sceneActorGone('cyborg');
+  const c = r5HtmlActor('nemesis', E.nemesis.x, E.nemesis.y, E.nemesis.s, E.nemesis.s, r5NemImg('horus', Math.round(T * E.nemesis.s)), 19);
+  if(c) c.classList.add('r5-nem', 'r5-pop');
+  const sides = [['nemA', 'anubis', E.nemA], ['nemW', 'wadjet', E.nemW]];
+  sides.forEach(([id, form])=>{
+    const el = r5HtmlActor(id, E.nemesis.x + 0.15, E.nemesis.y + 0.15, E.nemS, E.nemS, r5NemImg(form, Math.round(T * E.nemS)), 18);
+    if(el){ el.classList.add('r5-nem'); el.style.opacity = '0'; actorFace(el, id === 'nemW'); }
+  });
+  playSfx('stone_veryhigh');
+  await sceneWait(250);
+  sides.forEach(([id, , a])=>{
+    const el = document.getElementById('sa-' + id); if(!el) return;
+    el.style.transition = `left ${700 * S}ms cubic-bezier(.2,.8,.3,1), top ${700 * S}ms cubic-bezier(.2,.8,.3,1), opacity ${500 * S}ms ease`;
+    el.style.left = (a.x * T) + 'px'; el.style.top = (a.y * T) + 'px'; el.style.opacity = '.95';
+  });
+  await sceneWait(800);
+}
+async function r5NemesisFold(){
+  const E = R5_VE, T = WALK_T, S = SCENE_SPEED;
+  ['nemA', 'nemW'].forEach(id=>{
+    const el = document.getElementById('sa-' + id); if(!el) return;
+    el.style.transition = `left ${600 * S}ms ease-in, top ${600 * S}ms ease-in, opacity ${600 * S}ms ease-in`;
+    el.style.left = ((E.nemesis.x + 0.15) * T) + 'px'; el.style.top = ((E.nemesis.y + 0.15) * T) + 'px'; el.style.opacity = '0';
+  });
+  playSfx('core_blast');
+  await sceneWait(650);
+  sceneActorGone('nemA'); sceneActorGone('nemW');
+}
+/* A leap that stops in the air (time stopped). */
+function r5LeapFreeze(id, x, y, ms, up, stopAt){
+  const el = document.getElementById('sa-' + id);
+  if(!el || !el._o) return sceneWait(ms * stopAt);
+  const T = WALK_T, x0 = el._o.x, y0 = el._o.y;
+  const at = t=> ({ x:x0 + (x - x0) * t, y:y0 + (y - y0) * t - up * 4 * t * (1 - t) });
+  actorFace(el, x > x0);
+  el.style.transition = 'none';
+  return r5Tween(ms * stopAt, u=>{ const p = at(u * stopAt); el.style.left = (p.x * T) + 'px'; el.style.top = (p.y * T) + 'px'; })
+    .then(()=>{ const p = at(stopAt); el._o.x = p.x; el._o.y = p.y; });
+}
+/* Time stops: a purple sphere from (cx, cy) over the whole room — every
+   picture in it greys and stills (only Nemesis and its tear move) — and
+   (on = false) it shrinks away again. */
+async function r5TimeStop(on, cx, cy){
+  r5EndCss();
+  const world = $('#walkWorld'); if(!world) return;
+  const T = WALK_T;
+  if(on){
+    playSfx('timestop');
+    const W = world.offsetWidth || 11 * T, H = world.offsetHeight || 11 * T;
+    const X = cx * T, Y = cy * T, R = Math.hypot(Math.max(X, W - X), Math.max(Y, H - Y)) + T;
+    const s = document.createElement('div');
+    s.id = 'r5TimeSphere'; s.className = 'r5-timesphere';
+    s.style.left = (X - R) + 'px'; s.style.top = (Y - R) + 'px'; s.style.width = s.style.height = (2 * R) + 'px';
+    s.style.transform = 'scale(.02)';
+    world.appendChild(s);
+    void s.offsetWidth;
+    s.style.transition = `transform ${1500 * SCENE_SPEED}ms cubic-bezier(.15,.75,.35,1)`;
+    s.style.transform = 'scale(1)';
+    await sceneWait(650);
+    world.classList.add('r5-frozen');
+    await sceneWait(900);
+  } else {
+    world.classList.remove('r5-frozen');
+    const s = document.getElementById('r5TimeSphere');
+    if(s){
+      s.style.transition = `transform ${900 * SCENE_SPEED}ms ease-in, opacity ${900 * SCENE_SPEED}ms ease-in`;
+      s.style.transform = 'scale(.02)'; s.style.opacity = '0';
+      await sceneWait(900);
+      s.remove();
+    }
+  }
+}
+/* …and it goes up into the tear. */
+async function r5NemesisGo(){
+  const E = R5_VE, T = WALK_T, S = SCENE_SPEED;
+  const el = document.getElementById('sa-nemesis');
+  if(el){
+    el.classList.remove('r5-pop');
+    el.style.transition = `left ${1600 * S}ms ease-in, top ${1600 * S}ms ease-in, opacity ${1600 * S}ms ease-in, transform ${1600 * S}ms ease-in`;
+    el.style.left = ((E.tear.cx - E.nemesis.s / 2) * T) + 'px'; el.style.top = ((E.tear.cy - E.nemesis.s / 2) * T) + 'px';
+    el.style.transform = 'scale(.12) rotate(220deg)'; el.style.opacity = '0';
+  }
+  playSfx('rewind');
+  await sceneWait(1700);
+  sceneActorGone('nemesis');
+  r5TearSpirit(false);
+}
+/* …and its Guardian after it (3.21: bound to it — it moves in the stopped
+   time too, in its colours). */
+async function r5GuardGo(){
+  const E = R5_VE, T = WALK_T, S = SCENE_SPEED;
+  const el = document.getElementById('sa-gguard');
+  if(el){
+    el.style.transition = `left ${1500 * S}ms ease-in, top ${1500 * S}ms ease-in, opacity ${1500 * S}ms ease-in, transform ${1500 * S}ms ease-in`;
+    void el.offsetWidth;
+    el.style.left = ((E.tear.cx - E.guard.s / 2) * T) + 'px'; el.style.top = ((E.tear.cy - E.guard.s / 2) * T) + 'px';
+    el.style.transform = 'scale(.12) rotate(-160deg)'; el.style.opacity = '0';
+  }
+  await sceneWait(1600);
+  sceneActorGone('gguard');
+}
+async function r5VaultNemesis(resumed){
+  const w = walkState(), P = R5_VP, E = R5_VE;
+  const mk = html=> sceneSay([r5MKFace()], R5_MK, html);
+  const say = html=> sceneSay([], '', html);
+  const gm = html=> sceneSay([r5GMFace()], R5_GM, html);
+  const pa = html=> sceneSay([r5PadrinoFace()], R5_PADRINO, html);
+  const whale = html=> sceneSay([r5WhaleFace()], whaleName(), html);
+  const nem = html=> sceneSay([r5NemFace()], R5_NEMESIS, html);
+  if(resumed) await say(`The Monkey King stands by the door, his crown shining, the last of the cores in his arms.`);
+  /* 1. the rest of the cores: home, to the heirs of the monsters they were torn from */
+  await r5MoveActor('mk', E.mkMid.x, E.mkMid.y, 900);
+  actorFaceToward('mk', P.you.x + 0.5);
+  await mk(`<b>"The rest of these belong to monsters who are gone now."</b><br><br>He holds them close.`);
+  await mk(`<b>"But their children are still out there — on islands all across the sea. I will take every one of these home, to the children and grandchildren of the monsters they were stolen from."</b>`);
+  /* 2. the Ghost Master runs in, her Guardian at her shoulder — and sees Nino */
+  r5GMActor(5, 0.85, 400);
+  await r5MoveActor('gm', E.gm.x, E.gm.y, 900);
+  actorFaceToward('gm', E.padrino.x + 0.5);
+  r5VaultGuard(E.guard.x, E.guard.y, null, 700);
+  await say(`Running footsteps on the stairs — and the Ghost Master bursts in. Her Ghost Guardian floats at her shoulder, its sword burning purple.`);
+  await gm(`<b>"Great-uncle! I felt something terrible, all the way up in the tower. What is happening down here?"</b>`);
+  actorFaceToward('gguard', E.mkMid.x + 0.7);
+  await say(`Her Guardian stands very still. It is staring at the cores in the Monkey King's arms. For the first time ever, it is not watching her.`);
+  await r5MoveActor('nino', E.ninoGM.x, E.ninoGM.y, 900);
+  actorFaceToward('nino', E.gm.x + 0.5);
+  actorFaceToward('gm', E.ninoGM.x + 0.5);
+  await gm(`She stops. She stares.<br><br><b>"…Nino?"</b>`);
+  await gm(`<b>"I can see you. I can SEE you! Twenty years we searched this hill for you. Why could I never see you before?"</b>`);
+  actorFaceToward('nino', E.guard.x + 0.6);
+  await sceneSay([r5NinoFace()], '', `Nino points at the Guardian. He looks frightened.`);
+  await gm(`She listens.<br><br><b>"He says the Guardian was always in the way. It never let me see him — or hear him."</b>`);
+  await gm(`<b>"He says — Great-uncle, get away from it! It isn't ours! It never was!"</b>`);
+  /* 3. too late: the Guardian tears the air open behind Cyborg */
+  await r5MoveActor('gguard', E.guardSlash.x, E.guardSlash.y, 700);
+  await gm(`<b>"Guardian? Guardian, what are you doing? STOP! I command you!"</b>`);
+  await r5Slash(E.tear.cx, E.tear.cy);
+  r5TearActor(E.tear.cx, E.tear.cy, E.tear.s, true);
+  await sceneWait(900);
+  r5MoveActor('gguard', E.guard.x, E.guard.y, 700);
+  await say(`The Guardian slashes the air behind Cyborg with its burning sword — once, twice — and the air itself tears open: a hole into blackness, swirling purple.`);
+  await r5Dread(2400);
+  await mk(`He goes very still.<br><br><b>"That cold. Now I know it. I would know it anywhere."</b>`);
+  await mk(`<b>"The Bone Demon!"</b>`);
+  r5TearSpirit(true);
+  await say(`Deep in the hole, something huge stirs: a great skull of bones, with eyes as red as fire.`);
+  /* 4. the hill's grudge pours into it */
+  const pour = r5GrudgeSpiral(E.tear.cx, E.tear.cy, 44, 4200);
+  sceneShake(4200, ms=> 0.07 * Math.sin(Math.PI * Math.min(1, ms / 4200)));
+  await sceneWait(1300);
+  await say(`Out of every crack in the walls, the angry ghosts of the hill come pouring — hundreds of them — and the hole drinks them in, round and round, like water down a drain.`);
+  await pour;
+  await whale(`<b>"All the anger of every monster the Family ever hurt… It is feeding on it!"</b>`);
+  /* 5. the hand: the cores out of his arms — and, with three of its own, into Cyborg */
+  r5HandOut();
+  await sceneWait(400);
+  const arms = r5MKHands();
+  await r5HandTo(arms.x, arms.y - 0.25, 900);
+  await say(`Then, out of the hole, reaches a hand — a gigantic hand, made all of bones.`);
+  const palm = ()=>{ const h = document.getElementById('sa-hand'), o = h && h._o; return o ? { x:o.x + o.w / 2, y:o.y + o.h * 0.3 } : arms; };
+  r5CoresHeld(false);
+  playSfx('hit_taken');
+  for(let k = 0; k < 6; k++) r5CoreFly(arms, palm(), 450 + k * 70, null, 0.2);
+  r5LeapActor('mk', E.mkMid.x + 0.6, E.mkMid.y - 0.7, 320, 0.3, false);
+  await sceneWait(700);
+  await mk(`<b>"NO—!"</b>`);
+  await say(`It snatches the cores out of the Monkey King's arms — every last one.`);
+  const cy = { x:P.cyborg.x + P.cyborg.s / 2, y:P.cyborg.y + P.cyborg.s * 0.5 };
+  await r5HandTo(cy.x, cy.y - 1.2, 900);
+  await say(`It opens over Cyborg. In its palm, with the stolen cores, lie three more, older than all the rest: one shaped like a cobra, one like a jackal, and one as black as night.`);
+  ['gold', 'gold', 'gold', 'cobra', 'jackal', 'black'].forEach((c, k)=> r5CoreFly(palm(), cy, 500 + k * 90, c === 'gold' ? null : c, 0.15));
+  playSfx('core_blast');
+  r5Sparks(null);
+  r5Miasma(true);
+  await sceneWait(900);
+  { const h = document.getElementById('sa-hand'); if(h){ h.style.transition = `opacity ${700 * SCENE_SPEED}ms ease`; h.style.opacity = '0'; } }
+  await say(`It pushes them all into the broken machine — and thick black smoke pours out of Cyborg, all over it.`);
+  sceneActorGone('hand');
+  /* 6. Nemesis: three shapes, then the winged one */
+  await r5NemesisForms();
+  r5Miasma(false);
+  await say(`Cyborg stands up. It is not broken any more. Three shapes stand in its cradle at once: one with a jackal's head, one with great black wings, and one with a cobra's hood.`);
+  await r5NemesisFold();
+  await say(`Then the three fold back into one: a black machine with great black wings, and eyes that burn red.`);
+  /* (3.21, the designer: "guardian remains bound to nemesis and disappears
+     with him") its fire flares with its master's — it is Nemesis's, not hers */
+  r5VaultGuard(E.guard.x, E.guard.y, 'blaze');
+  await say(`Beside the Ghost Master, the Guardian's sword blazes up — purple and red, like the black machine's eyes. It is not looking at her at all.`);
+  await gm(`<b>"Guardian…?"</b>`);
+  await pa(`He scrambles back from it.<br><br><b>"Cyborg? What is this? I never told you to do this!"</b>`);
+  /* 7. the Monkey King leaps at it — and time stops */
+  await mk(`<b>"Not again! Not while I still stand!"</b>`);
+  await r5LeapFreeze('mk', E.nemesis.x + 0.3, E.nemesis.y - 0.2, 760, 1.2, 0.55);
+  await r5TimeStop(true, E.nemesis.x + E.nemesis.s / 2, E.nemesis.y + E.nemesis.s / 2);
+  await say(`A purple bubble bursts out of the black machine and spreads over the whole room — and everything stops.`);
+  await say(`The Monkey King hangs in the air, in the middle of his leap. Nobody can move a finger. Not even you.`);
+  /* 8. Nemesis, in the stopped time (the designer's speech; and, so the boys
+     see it without being told, who made Nino sick, whose voice said a core
+     would cure him, and who found the fire that burned the Monkey King) */
+  await nem(`<b>"Hush, now. Time is mine."</b>`);
+  await nem(`<b>"Hello again, Monkey King. It has been a long, long time."</b>`);
+  await nem(`<b>"And Padrino. Thank you — for everything you have done for me."</b>`);
+  await pa(`<b>"…Who are you?"</b>`);
+  await nem(`<b>"I am Nemesis. Long ago, they called me the Bone Demon."</b>`);
+  await nem(`<b>"For a hundred years I have lived inside your Family's Guardian, whispering to your Family — every one of them. And they listened."</b>`);
+  await nem(`<b>"Your little brother was never meant to be sick, Padrino. I made him sick."</b>`);
+  await nem(`<b>"It was my voice — through the Guardian — that told your sister only a monster's core could make him well."</b>`);
+  await nem(`<b>"It was I who sent you the dreams: a tower full of ghost-catchers and mind-readers, and a machine that could turn back time."</b>`);
+  await nem(`<b>"And it was I who found you the monster with the white fire — the fire that burned the Monkey King's eyes."</b>`);
+  await nem(`<b>"Every core you took, you took for me. You did so very well."</b>`);
+  await pa(`<b>"No… No. Nino…"</b>`);
+  await nem(`<b>"Oh, do not cry. I keep my word. Your Guardian loved your Family — and a little of that love was mine, too."</b>`);
+  await nem(`<b>"You wished for your brother. There he lies: his body, whole again. Now I owe you nothing."</b>`);
+  await nem(`<b>"And you, little king. Long ago, you and your friends beat me. Do you remember?"</b>`);
+  await nem(`<b>"Then your master — that monk, Tang Seng — put that crown on your head, and you bowed it. All the cores in the world, there for the taking, and you never took a single one."</b>`);
+  await nem(`<b>"So you stood still. And I grew."</b>`);
+  await nem(`<b>"Bringing back that boy, and mending this machine, cost me much of my strength. I will rest a while, in my rift."</b>`);
+  await nem(`<b>"But I will be back. And next time, nobody will stand in my way."</b>`);
+  await nem(`<b>"Come, Guardian. You were always mine."</b>`);
+  /* 9. it goes into the tear — and its Guardian with it, bound to it to the
+     last (3.21); time runs again */
+  await Promise.all([r5NemesisGo(), r5GuardGo()]);
+  await say(`Nemesis rises into the tear — and the Guardian goes with it, up from the Ghost Master's side, after its master. Both of them are gone.`);
+  await r5TimeStop(false);
+  await r5LeapActor('mk', E.nemesis.x + 0.2, E.nemesis.y - 0.95, 420, 0.25, false);
+  sceneShake(420, t=> 0.1 * Math.max(0, 1 - t / 420));
+  await say(`Time runs again. The Monkey King lands — on nothing at all. Nemesis is gone — and Cyborg, and the Ghost Master's Guardian with it.`);
+  actorFaceToward('gm', E.tear.cx);
+  await gm(`She stares at the empty air at her shoulder.<br><br><b>"My Guardian… It went with that thing. It was always there, ever since I was little."</b>`);
+  actorFaceToward('mk', P.you.x + 0.5);
+  await mk(`He stares at the hole in the air.<br><br><b>"Gone. Nemesis — the Bone Demon. My friends and I beat it once, long ago. I thought it was gone forever."</b>`);
+  await whale(`<b>"That cold under the island… It was Nemesis, all along."</b>`);
+  await whale(`<b>"And that Guardian was never really yours. Nemesis bound it to itself long ago — and it has gone with its master."</b>`);
+  await r5MoveActor('mk', P.mk.x, P.mk.y, 900);
+  actorFace('mk', false);
+  const r = r5();
+  r.tearOpen = true;
+  r5Vault().nemesis = true;
+  await saveProfile();
+}
+
+/* ---------- the promise, and the Forest Guardian ---------- */
+function r5NinoAlive(x, y){
+  const el = sceneActor('ninoAlive', { x, y, w:1, h:1, src:`assets/npc/${NINO_BODY}.png`, icon:'👦', z:20 });
+  if(el) el.classList.add('r5-alive');
+  return el;
+}
+async function r5VaultPromise(resumed){
+  const P = R5_VP, E = R5_VE;
+  const say = html=> sceneSay([], '', html);
+  const pa = html=> sceneSay([r5PadrinoFace()], R5_PADRINO, html);
+  const gm = html=> sceneSay([r5GMFace()], R5_GM, html);
+  const gd = html=> sceneSay([r5GuardianFace()], R5_GUARDIAN, html);
+  const md = html=> sceneSay([r5MadrinaFace()], R5_MADRINA, html);
+  const nino = html=> sceneSay([r5NinoAliveFace()], R5_NINO, html);
+  const mk = html=> sceneSay([r5MKFace()], R5_MK, html);
+  const whale = html=> sceneSay([r5WhaleFace()], whaleName(), html);
+  if(resumed) await say(`The hole in the air hangs over Cyborg's empty cradle, humming. Nemesis is gone — and Cyborg with it.`);
+  /* everyone can see Nino now */
+  await r5MoveActor('nino', E.ninoMid.x, E.ninoMid.y, 1100);
+  { const ni = document.getElementById('sa-nino'); if(ni) ni.classList.add('r5-bright'); }
+  await say(`Nino floats out into the middle of the room. With Nemesis gone, he shines brighter than ever — and everyone in the room can see him. Even the Padrino.`);
+  const pe = document.getElementById('sa-padrino');
+  if(pe) pe.classList.remove('r5-kneel');
+  await r5MoveActor('padrino', E.padrinoUp.x, E.padrinoUp.y, 1200);
+  actorFaceToward('padrino', E.ninoMid.x + 0.5);
+  actorFaceToward('nino', E.padrinoUp.x + 0.5);
+  await pa(`<b>"…Nino?"</b>`);
+  await pa(`He reaches out — and his hand goes straight through his little brother.<br><br><b>"Nino. It really is you."</b>`);
+  actorFaceToward('gm', E.ninoMid.x + 0.5);
+  await gm(`She listens.<br><br><b>"He says… 'Big brother. It was never your fault.'"</b>`);
+  await pa(`<b>"Everything I did — every core, every year — I did for you. And that thing was pulling my strings the whole time."</b>`);
+  await gm(`<b>"He says he can come back. He can live again — in that body, on the table."</b>`);
+  await gm(`<b>"But only if you make him a promise. No more hurting monsters. Never again. Not the living, and not the dead."</b>`);
+  /* he still hates her — so it is Nino he swears to (decision 4) */
+  actorFaceToward('padrino', P.cage.x + P.cage.w / 2);
+  await pa(`He turns, and glares at the cage.<br><br><b>"And her? She could have saved you, Nino. She said NO."</b>`);
+  await gd(`<b>"Nothing could have saved him, child. Not while that creature lived in your house."</b>`);
+  await pa(`<b>"Be quiet! I will never forgive you. Never!"</b>`);
+  await whale(`<b>"He still hates her. But this promise is not for her. It is for Nino."</b>`);
+  actorFaceToward('padrino', E.ninoMid.x + 0.5);
+  if(pe) pe.classList.add('r5-kneel');
+  await pa(`He kneels down in front of his little brother.<br><br><b>"Nino. I promise you."</b>`);
+  await pa(`<b>"From today, the Family will not hurt monsters. Not one. Living or dead."</b>`);
+  await say(`Nino puts his small hand on top of his brother's big one.`);
+  await pa(`<b>"I swear it."</b>`);
+  /* Nino steps into his body */
+  await say(`Nino smiles. He walks to the table — and steps into the boy lying there.`);
+  await r5MoveActor('nino', P.body.x, P.body.y - 0.1, 1300);
+  { const ni = document.getElementById('sa-nino'); if(ni){ ni.style.transition = `opacity ${500 * SCENE_SPEED}ms ease`; ni.style.opacity = '0'; } }
+  sceneGlow('ninohome', P.body.x + 0.5, P.body.y + 0.55, 1.8, 21);
+  playSfx('stone_ultra');
+  await sceneWait(500);
+  await sceneFlash(300, 350, ()=>{ sceneActorGone('nino'); sceneActorGone('body'); r5NinoAlive(E.ninoBody.x, E.ninoBody.y); }, 700);
+  await sceneGlowOut(['ninohome'], 600);
+  actorFaceToward('ninoAlive', E.padrinoUp.x + 0.5);
+  await say(`The boy's eyes open — bright, and warm. He sits up, and climbs down from the table.`);
+  await nino(`<b>"Big brother. …I'm home."</b>`);
+  if(pe) pe.classList.remove('r5-kneel');
+  await r5MoveActor('padrino', E.padrinoHug.x, E.padrinoHug.y, 700);
+  actorFaceToward('padrino', E.ninoBody.x + 0.5);
+  await say(`The Padrino runs to him and holds him tight — and does not let go for a long, long time.`);
+  await nino(`<b>"Brother, the ghosts never wanted revenge. Not really."</b>`);
+  await nino(`<b>"They only wanted you to stop hurting monsters."</b>`);
+  await r5MoveActor('madrina', E.madrinaUp.x, E.madrinaUp.y, 900);
+  actorFaceToward('madrina', E.ninoBody.x + 0.5);
+  await md(`<b>"My little brothers. Both of them. Together again."</b>`);
+  await whale(`<b>"That body was the one good thing that machine ever made."</b>`);
+  /* the Forest Guardian: let out */
+  await mk(`He looks at the cage.<br><br><b>"Padrino. A promise is a promise."</b>`);
+  await pa(`He does not look at her.<br><br><b>"…Jax. Let her out."</b>`);
+  await r5MoveActor('jax', E.jaxCage.x, E.jaxCage.y, 900);
+  actorFaceToward('jax', P.cage.x + 1);
+  r5CageActor(true);
+  playSfx('hit_dealt');
+  await say(`Jax unlocks the cage, and its iron door swings open.`);
+  await r5MoveActor('guardian', E.fgOut.x, E.fgOut.y, 1300);
+  r5LeavesFall(E.fgOut.x, E.fgOut.y, E.fgOut.s, 2600, 10);
+  await say(`The Forest Guardian steps out. Her leaves are falling, one by one, like autumn.`);
+  await gd(`<b>"Thank you, child."</b><br><br>The Padrino turns his back on her.`);
+  await r5GuardianGift();
+  /* your team, whole */
+  (state.party || []).forEach(m=>{ if(m && !isSeed(m) && !isEgg(m)) m.currentHp = monMaxHp(m); });
+  if(typeof restCompanions === 'function') restCompanions();
+  sceneGlow('greenheal', R5_VP.you.x + 0.5, R5_VP.you.y + 0.5, 3.4, 40);
+  playSfx('recovery_heal');
+  await say(`A warm green light washes over your whole team. Every one of your monsters is whole again.`);
+  await sceneGlowOut(['greenheal'], 700);
+  r5Vault().promised = true;
+  await saveProfile();
+}
+/* The rest of her power, to your Forest Fairy — and she fades away. */
+async function r5GuardianGift(){
+  const E = R5_VE, f = r5Fairy();
+  const gd = html=> sceneSay([r5GuardianFace()], R5_GUARDIAN, html);
+  const say = html=> sceneSay([], '', html);
+  const whale = html=> sceneSay([r5WhaleFace()], whaleName(), html);
+  const fg = { x:E.fgOut.x + E.fgOut.s / 2, y:E.fgOut.y + E.fgOut.s * 0.5 };
+  if(f){
+    const s = E.fairy.s, px = Math.round(WALK_T * s);
+    const el = r5MonActor('fairy', 'forest_fairy', E.fairy.x, E.fairy.y, s, { html:monPortrait('forest_fairy', px, { view:'front', bare:true, stage:monStage(f), crowned:isCrowned(f) }), z:46 });
+    if(el){ el.classList.add('r5-pop'); actorFaceToward(el, fg.x); }
+    actorFaceToward('guardian', E.fairy.x + s / 2);
+    playSfx('answer_correct');
+    await gd(`<b>"Little one. Come here."</b>`);
+    await r5FairySay(`<b>"…Forest Guardian?"</b>`);
+    await gd(`<b>"Long ago, when you were only a seed, I gave you my core."</b>`);
+    await gd(`<b>"Now I give you the rest of me. Everything I have left."</b>`);
+    const to = { x:E.fairy.x + s / 2, y:E.fairy.y + s * 0.5 };
+    r5Beam('gift', fg.x, fg.y, to.x, to.y, 'gift');
+    r5DarkGlow('gift', to.x, to.y, 2.1, true);
+    sceneSparkles(E.fairy.x, E.fairy.y, s, s, 1600);
+    playSfx('stone_ultra');
+    state.forestBlessingGranted = true;
+    await saveProfile();
+    await sceneWait(1500);
+    r5BeamGone('gift');
+    await r5GiftCard(f);
+    await sceneGlowOut(['gift'], 600);
+    await gd(`<b>"Grow strong, little one. Protect them — as they protected you."</b>`);
+  } else {
+    state.forestBlessingGranted = true;
+    await saveProfile();
+    await gd(`She smiles at you.<br><br><b>"Look after each other, little ones."</b>`);
+  }
+  /* she fades, like leaves on the wind */
+  r5LeavesFall(E.fgOut.x, E.fgOut.y, E.fgOut.s, 2600, 26, true);
+  { const g = document.getElementById('sa-guardian'); if(g){ g.style.transition = `opacity ${2400 * SCENE_SPEED}ms ease`; g.style.opacity = '0'; } }
+  await sceneWait(2500);
+  sceneActorGone('guardian');
+  await say(`And she fades away, like leaves blown on the wind.`);
+  if(f){
+    await r5FairySay(`<b>"…Goodbye. Thank you."</b>`);
+    await whale(`<b>"She is not gone, little one. She is in you now — and in every tree of her grove."</b>`);
+    const el = document.getElementById('sa-fairy');
+    if(el){ el.style.transition = `opacity ${500 * SCENE_SPEED}ms ease`; el.style.opacity = '0'; }
+    await sceneWait(500);
+    sceneActorGone('fairy');
+  }
+}
+/* What the gift is, mechanics first, with her own numbers. */
+function r5GiftCard(f){
+  const G = FOREST_GIFT, atk = rawMonAtk(f);
+  const rows = MOVES.forest_fairy || [];
+  const giga = rows.find(r=> r[1] === 'Giga Drain'), og = rows.find(r=> r[1] === 'Overgrowth');
+  const ogLv = og ? og[5] : null, has = !!og && (f.level || 1) >= ogLv;
+  const step = Math.round(G.step * 100);
+  return r5Card(monPortrait('forest_fairy', 96, { view:'front', bare:true, stage:monStage(f), crowned:isCrowned(f) }), `The Forest Guardian's gift`,
+    `<p><b>${escapeHtml(displayName(f))}</b> holds the rest of the Forest Guardian's power. Two of her moves change for good:</p>` +
+    `<p>🌿 <b>Giga Drain</b> now hits <b>every enemy</b> at <b>${G.drain}× her ATK</b>${giga ? ` (it hit one, at ${giga[2]}×)` : ''} — and drinks ` +
+    `<b>${Math.ceil(G.drainEach * atk)} HP</b> (${G.drainEach}× her ATK) for <b>each</b> enemy it reaches: three of them, three drinks. ` +
+    `Each drink goes to her first, then to whoever of yours is worst off.</p>` +
+    `<p>🌿 <b>Overgrowth</b> is now a <b>passive</b>${has || ogLv == null ? '' : ` (when she learns it, at Lv ${ogLv})`}: once a turn while she is on the field, ` +
+    `you may write <b>${G.words} words</b> you know to 🥈 silver or 🥇 gold — or skip. Both right: your <b>whole team's ATK +${step}%</b> for the rest ` +
+    `of the battle, up to <b>${G.maxStacks} times (+${step * G.maxStacks}%)</b>. Their Diamond Dust can't sweep it away. And every time it comes ` +
+    `round — written, missed or skipped — she heals <b>${Math.round(G.regen * 100)}%</b> (<b>${Math.ceil(monMaxHp(f) * G.regen)} HP</b>).</p>`, 'Continue');
+}
+/* Falling leaves round someone (tiles); `away`, blown off to the right and up. */
+function r5LeavesFall(x, y, s, ms, n, away){
+  const world = $('#walkWorld'); if(!world) return;
+  r5EndCss();
+  const T = WALK_T;
+  const leaves = Array.from({ length:n }, ()=>{
+    const l = document.createElement('i');
+    l.className = 'r5-leaf';
+    l.style.width = (0.2 * T) + 'px'; l.style.height = (0.1 * T) + 'px';
+    world.appendChild(l);
+    return { l, x0:x + Math.random() * s, y0:y + Math.random() * s * 0.8, d:Math.random() * 0.4,
+             dx:away ? 1.5 + Math.random() * 2.5 : (Math.random() - 0.5) * 0.8, dy:away ? -(0.8 + Math.random() * 1.8) : 0.6 + Math.random() * 0.7,
+             spin:(Math.random() < 0.5 ? -1 : 1) * (180 + Math.random() * 360) };
+  });
+  r5Tween(ms, t=>{
+    leaves.forEach(L=>{
+      const u = Math.max(0, Math.min(1, (t - L.d) / (1 - L.d)));
+      L.l.style.left = ((L.x0 + L.dx * u + Math.sin(u * 7) * 0.12) * T) + 'px';
+      L.l.style.top = ((L.y0 + L.dy * u) * T) + 'px';
+      L.l.style.transform = `rotate(${(L.spin * u).toFixed(0)}deg)`;
+      L.l.style.opacity = u <= 0 ? '0' : String(Math.min(1, u * 6, (1 - u) * 3));
+    });
+  }).then(()=> leaves.forEach(L=> L.l.remove()));
+}
+/* A card over everything, until Continue. */
+function r5Card(emblem, title, html, button){
+  r5EndCss();
+  return new Promise(done=>{
+    const ov = document.createElement('div');
+    ov.className = 'refine-scrim r5-card-scrim';
+    ov.innerHTML = `<div class="refine-card r5-card">
+        ${emblem ? `<div class="r5-card-emblem">${emblem}</div>` : ''}
+        <div class="refine-name">${escapeHtml(title)}</div>
+        <div class="r5-card-body">${html}</div>
+        <button class="btn btn-primary" id="r5CardGo">${button || 'Continue'}</button>
+      </div>`;
+    document.body.appendChild(ov);
+    ov.querySelector('#r5CardGo').addEventListener('click', ()=>{ ov.remove(); done(); });
+  });
+}
+
+/* ---------- the Family, after ---------- */
+async function r5VaultFamily(resumed){
+  const E = R5_VE;
+  const say = html=> sceneSay([], '', html);
+  const pa = html=> sceneSay([r5PadrinoFace()], R5_PADRINO, html);
+  const gm = html=> sceneSay([r5GMFace()], R5_GM, html);
+  const jax = html=> sceneSay([r5JaxFace()], R5_JAX, html);
+  const nino = html=> sceneSay([r5NinoAliveFace()], R5_NINO, html);
+  if(resumed) await say(`Nino stands beside his big brother, holding his hand tight.`);
+  await r5MoveActor('jax', E.padrinoUp.x + 1.7, E.padrinoUp.y + 0.6, 900);
+  actorFaceToward('jax', E.padrinoHug.x + 0.5);
+  actorFaceToward('padrino', E.padrinoUp.x + 1.7);
+  await pa(`He stands up, with Nino's hand in his, and looks at Jax and the Ghost Master.<br><br><b>"Jax. And you, my dear."</b>`);
+  await pa(`<b>"The Family is yours now. Keep it strong."</b>`);
+  await jax(`<b>"Ours. And we'll do things differently."</b>`);
+  await gm(`<b>"No Guardian whispering in our ears any more — from now on, we choose for ourselves. And no more hurting monsters. That's Nino's rule now."</b>`);
+  await jax(`<b>"Nino's rule."</b> He grins. <b>"…Mostly."</b>`);
+  await pa(`<b>"As for me — I have a little brother to look after. And a whole world to show him."</b>`);
+  await nino(`<b>"The whole world? Can we go on a boat?"</b>`);
+  await pa(`For the first time, the Padrino laughs.<br><br><b>"The biggest boat in the harbour."</b>`);
+  r5Vault().family = true;
+  await saveProfile();
+}
+
+/* ---------- the harbour: goodbye — and the Monkey King ---------- */
+/* On the pier (tiles, an actor's top-left): you, the Whalelord, the Monkey
+   King beside you; Nino, the Padrino and the Madrina; their little boat, off
+   the pier's west side. */
+const R5_FW = {
+  you:{ x:4, y:34 }, ghost:{ x:4, y:33 }, mk:{ x:5.0, y:33.75 }, mkS:1.25,
+  nino:{ x:4.05, y:35.25 }, padrino:{ x:4.95, y:35.2 }, madrina:{ x:4.5, y:36.1 },
+  boat:{ x:1.35, y:35.75, w:2.6, h:1.7 },
+  aboard:{ nino:{ x:1.75, y:35.95 }, padrino:{ x:2.5, y:35.85 }, madrina:{ x:2.1, y:36.15 } },
+};
+function r5FarewellDue(){ const r = r5(); return !!(r.vault && r.vault.family && !r.mkJoined); }
+/* From the vault: the curtain, the next morning, the pier. */
+async function r5ToFarewell(){
+  await sceneCurtain(true, 1000);
+  sceneClear();
+  r5Sparks(null);
+  await sceneCurtainText('The next morning…', 700);
+  await sceneWait(1400);
+  await sceneCurtainText('', 400);
+  r5FarewellPlace();
+  go('harbour');
+  walkState().busy = true;
+  await sceneWait(500);
+  await r5FarewellRun();
+}
+function r5FarewellPlace(){
+  const w = walkState(), F = R5_FW;
+  w.at = w.at || {}; w.at.harbour = { x:F.you.x, y:F.you.y }; w.face = 'd';
+  w.ghostAt = w.ghostAt || {}; w.ghostAt.harbour = { x:F.ghost.x, y:F.ghost.y };
+  ui.walkFresh = false;
+  ui.currentZone = r5Zone('harbour') || ui.currentZone;
+}
+/* Picked up again at the harbour, if the app was closed before the end. */
+async function r5FarewellStart(){
+  if(ui.sceneRunning || !r5FarewellDue()) return;
+  ui.sceneRunning = true;
+  const w = walkState();
+  w.busy = true;
+  releaseKeys();
+  try {
+    await sceneCurtain(true, 600);
+    r5FarewellPlace();
+    refreshWalk();
+    await r5FarewellRun();
+  } finally { r5SceneDone(); }
+}
+function r5BoatSvg(){
+  return `<svg class="r5-boat" viewBox="0 0 120 80" width="100%" height="100%" style="display:block;overflow:visible;">
+    <path d="M60 4 L60 52" stroke="#5a3a1e" stroke-width="3"/>
+    <path d="M63 8 L98 46 L63 46 Z" fill="#f4efe2" stroke="#b9ad92" stroke-width="1.5"/>
+    <path d="M57 12 L34 42 L57 42 Z" fill="#ece3cf" stroke="#b9ad92" stroke-width="1.5"/>
+    <path d="M60 3 L75 7 L60 11 Z" fill="#c8453a"/>
+    <path d="M4 50 L116 50 L101 74 L19 74 Z" fill="#8a5a32" stroke="#4a2e16" stroke-width="2.5" stroke-linejoin="round"/>
+    <path d="M9 57 L111 57 M14 65 L106 65" stroke="#6e4524" stroke-width="2"/>
+  </svg>`;
+}
+async function r5FarewellRun(){
+  const F = R5_FW, T = WALK_T, S = SCENE_SPEED;
+  const say = html=> sceneSay([], '', html);
+  const pa = html=> sceneSay([r5PadrinoFace()], R5_PADRINO, html);
+  const md = html=> sceneSay([r5MadrinaFace()], R5_MADRINA, html);
+  const nino = html=> sceneSay([r5NinoAliveFace()], R5_NINO, html);
+  const whale = html=> sceneSay([r5WhaleFace()], whaleName(), html);
+  r5EndCss();
+  const boat = r5HtmlActor('boat', F.boat.x, F.boat.y, F.boat.w, F.boat.h, r5BoatSvg(), 16);
+  const npc = (id, sprite, a, icon)=> sceneActor(id, { x:a.x, y:a.y, w:1, h:1, src:`assets/npc/${sprite}.png`, icon, z:22 });
+  npc('fnino', NINO_BODY, F.nino, '👦'); npc('fpadrino', 'padrino2', F.padrino, '🕴️'); npc('fmadrina', 'madrina', F.madrina, '👵');
+  r5MonActor('mk', 'monkey_king', F.mk.x, F.mk.y, F.mkS, { html:monPortrait('monkey_king', Math.round(T * F.mkS), { view:'front', bare:true, stage:1, crowned:true }), z:30 });
+  actorFace('mk', false);
+  playMusicChain(['r5_ending', 'zone_harbour', 'region5']);
+  if(document.getElementById('sceneCurtain')) await sceneCurtain(false, 900);
+  await say(`Down at the harbour, early in the morning, a little boat is waiting at the end of the pier.`);
+  await pa(`<b>"We are going to see the world — all three of us. Somewhere far away, where nobody has ever heard of the Family."</b>`);
+  await md(`She takes your hands in hers.<br><br><b>"Thank you, child. For bringing my brothers home."</b>`);
+  await nino(`He waves and waves.<br><br><b>"Bye! Thank you for following me!"</b>`);
+  /* aboard, and away */
+  for(const [id, k] of [['fmadrina', 'madrina'], ['fpadrino', 'padrino'], ['fnino', 'nino']]){
+    r5MoveActor(id, F.aboard[k].x, F.aboard[k].y, 700);
+    await sceneWait(260);
+  }
+  await sceneWait(600);
+  await say(`They climb down into the little boat, and the Padrino takes the oars.`);
+  const who = ['boat', 'fnino', 'fpadrino', 'fmadrina'].map(id=> document.getElementById('sa-' + id)).filter(Boolean);
+  who.forEach(el=>{
+    el.style.transition = `left ${3600 * S}ms ease-in, top ${3600 * S}ms ease-in, opacity ${3600 * S}ms ease-in`;
+    void el.offsetWidth;
+    el.style.left = (((el._o ? el._o.x : 0) - 5) * T) + 'px';
+    el.style.top = (((el._o ? el._o.y : 0) + 2.2) * T) + 'px';
+    el.style.opacity = '0';
+  });
+  await sceneWait(1800);
+  await whale(`<b>"Look at him. A little boy again — with his whole life ahead of him."</b>`);
+  await sceneWait(400);
+  ['boat', 'fnino', 'fpadrino', 'fmadrina'].forEach(sceneActorGone);
+  await r5MKJoins();
+}
+/* "Alone, I could not stop it. Together, maybe we can." — he joins you, and
+   (3.21, the designer: "he teaches the player about the companion system")
+   teaches you companions as he does: what a core shared is, whom he leads
+   (you choose), calling it out and its turn, its rest and the recharge meter,
+   core slots and his spars, and where it all is. Every number is the game's
+   own (COMPANION, CORE_SLOT_DEF, SPAR_COUNT). */
+async function r5MKJoins(){
+  const mk = html=> sceneSay([r5MKFace()], R5_MK, html);
+  const me = html=> sceneSay([facePlayer()], state.name || 'You', html);
+  const whale = html=> sceneSay([r5WhaleFace()], whaleName(), html);
+  const C = COMPANION;
+  /* he asks */
+  await mk(`He watches the little boat until it is gone.<br><br><b>"Well, little one."</b>`);
+  await mk(`<b>"Nemesis is out there somewhere, beyond that tear — with Cyborg, and every core it took. It will be back."</b>`);
+  await mk(`<b>"For thousands of years I fought alone. I thought that was what made me strong."</b>`);
+  await mk(`<b>"Then along came a child, and a team of monsters who trust each other — and together, you did what I never could."</b>`);
+  await mk(`<b>"Alone, I could not stop Nemesis. Together… maybe we can."</b>`);
+  await sceneSay([r5MKFace()], R5_MK, `<b>"So, little one — may I come with you?"</b>`, '🐒 Yes!');
+  await me(`<b>"Yes! Welcome to the team, Monkey King!"</b>`);
+  await whale(`<b>"Welcome, Monkey King. Now we are all together."</b>`);
+  await mk(`<b>"Ha! Then I come as I truly am — crowned, and stronger than ever."</b>`);
+  await mk(`<b>"And do not bother feeding me Protein Supplements. I have eaten so many over the centuries that not one more will fit!"</b>`);
+  /* the lesson: a core, shared */
+  await mk(`<b>"Now listen closely, little one. Here is how we will fight together."</b>`);
+  await mk(`<b>"Every monster has a core — not only the legendaries. Every single one."</b>`);
+  await mk(`<b>"A monster that trusts you completely will share its core with another of your team. Whoever holds that core can call its owner out, to fight right beside it. We call that a <u>companion</u>."</b>`);
+  await mk(`<b>"Holding another's core takes great focus. That is why a companion can only stay out for a short while."</b>`);
+  await mk(`<b>"I will hold the core of one of your team. It will rest in storage — but in a fight, it is never far away."</b>`);
+  await mk(`<b>"Choose who it will be. You can always change it later."</b>`);
+  const partner = await r5ChoosePartner();
+  const m = r5MKJoin(partner);
+  await saveProfile();
+  playSfx('stone_ultra');
+  sceneSparkles(R5_FW.mk.x, R5_FW.mk.y, R5_FW.mkS, R5_FW.mkS, 1200);
+  /* …and how a companion fights — said with his partner beside him */
+  const pn = partner ? escapeHtml(displayName(partner)) : '';
+  const two = partner
+    ? (html=> sceneSay([r5MKFace(), faceMon(partner.species, { stage:monStage(partner), crowned:isCrowned(partner) })], R5_MK, html))
+    : mk;
+  if(partner) await two(`<b>"${pn}! We will make a fine pair, you and I."</b>`);
+  await two(`<b>"In a fight, look for the button with ${partner ? `${pn}'s` : 'its'} face on it: <u>Summon${partner ? ` ${pn}` : ''}</u>. Write ${C.summonWords} words, and out it comes — and you still get your own turn!"</b>`);
+  await two(`<b>"It stays out for ${C.turns} turns, and it gets turns of its own. On its turn, choose any of its moves and write ${C.turnWords} words. All ${C.turnWords} must be right, or its whole turn fails!"</b>`);
+  await two(`<b>"After ${C.turns} turns it goes back into my core, to rest. Fill the recharge meter, and you can call it out again — up to ${C.maxSummons} times in one fight."</b>`);
+  await two(`<b>"If it falls, it is out for the rest of that fight. But if I fall while it is out, it fights on for me until its turns are over!"</b>`);
+  await two(`<b>"It starts every fight with full health. And it learns from every fight we win — even resting in storage."</b>`);
+  /* core slots, and his spars */
+  await mk(`<b>"Only a crowned monster can hold another's core — and it needs a core slot to hold it in. There are four kinds: Wild, Starter, Elite and Legendary."</b>`);
+  await mk(`<b>"A Wild slot holds only a wild monster's core. A Starter slot holds a starter's or a wild one's — and so on, up to Legendary, which holds anyone's. That one is mine!"</b>`);
+  await mk(`<b>"Your other crowned monsters can learn slots too — Wild first, then up, one at a time. And I will be the one to train them!"</b>`);
+  await mk(`<b>"You must win ${SPAR_COUNT} spars against me, one after another. Your monster fights me alone, with a companion it borrows just for the spar. You choose one of three — and I take one of the other two!"</b>`);
+  await mk(`<b>"You need the slot's medals to start, but you only pay them when all ${SPAR_COUNT} are won. Lose one, and it costs you nothing but a little practice."</b>`);
+  await mk(`<b>"It is all on the Party page — 🤝 Companions. Choose there who holds whose core, as often as you like. It costs nothing."</b>`);
+  await mk(`<b>"Strength in numbers. That is what you taught me, little one. Now let me teach it back. Ha!"</b>`);
+  { const el = document.getElementById('sa-mk'); if(el){ el.style.transition = `opacity ${600 * SCENE_SPEED}ms ease`; el.style.opacity = '0'; } }
+  await sceneWait(600);
+  sceneActorGone('mk');
+  await r5Card(monPortrait('monkey_king', 110, { view:'front', bare:true, stage:1, crowned:true }), 'The Monkey King joins your team!', r5JoinHtml(m, partner), 'Continue');
+  await r5Card(`<span style="display:inline-block;width:96px;height:96px;">${(tearCss(), tearGalaxy())}</span>`, 'The end of Region 5',
+    `<p>Cyborg is gone: Nemesis took it into the <b>space-time tear</b>, with every core it stole. The tear stays open in the vault, over the empty cradle, humming.</p>` +
+    `<p>🌀 There you can <b>Challenge the past</b> once a week — the Padrino's fight again, seven rounds, for medals and the Mind Stone. (It is on the Challenge page too.)</p>` +
+    `<p>Beyond the tear — and Nemesis — lies <b>Region 6</b>. It is still to come.</p>`, 'The end — for now');
+}
+/* Who he leads: one of your team (it goes to storage, as his companion). */
+function r5ChoosePartner(){
+  const opts = (state.party || []).filter(m=> m && !isFixedMember(m) && !coreStolen(m) && m.species !== 'monkey_king');
+  if(!opts.length) return Promise.resolve(null);
+  r5EndCss();
+  return new Promise(done=>{
+    const ov = document.createElement('div');
+    ov.className = 'refine-scrim r5-card-scrim';
+    ov.innerHTML = `<div class="refine-card r5-card r5-pick">
+        <div class="refine-name">Who will the Monkey King lead?</div>
+        <div class="r5-card-body"><p>He holds its core: it rests in storage as his <b>companion</b>, and in battle you call it out beside him. ` +
+        `He takes its place in your team. You can change it any time — Party → 🤝 Companions.</p></div>
+        <div class="r5-pick-list">${opts.map((m, i)=> `<button class="btn btn-ghost r5-pick-opt" data-i="${i}" data-uid="${escapeHtml(m.uid)}" data-sp="${m.species}">
+            ${monPortrait(m.species, 40, { stage:monStage(m), crowned:isCrowned(m) })}
+            <span><b>${escapeHtml(displayName(m))}</b> · Lv ${m.level}</span></button>`).join('')}</div>
+      </div>`;
+    document.body.appendChild(ov);
+    ov.querySelectorAll('.r5-pick-opt').forEach(b=> b.addEventListener('click', ()=>{ ov.remove(); done(opts[+b.dataset.i]); }));
+  });
+}
+/* He joins (part 6 §12, "The Monkey King joins"): crowned, Lv 100, carrying
+   his own Physical Stone, with the very first Legendary core slot, leading
+   the one you chose — which leaves the party for his core — and the
+   Companions open. There is only ever one of him: a save that has him
+   already keeps that one. */
+function r5MKJoin(partner){
+  const r = r5();
+  const all = (state.party || []).concat(state.storage || []);
+  let mk = all.find(m=> m && m.species === 'monkey_king');
+  if(r.mkJoined && mk) return mk;
+  if(!mk) mk = newMonster('monkey_king', 100);
+  mk.nickname = mk.nickname || R5_MK;
+  mk.crowned = true;
+  mk.supplements = Math.max(mk.supplements || 0, proteinCap('monkey_king', mk));
+  mk.coreSlot = 'legendary';
+  mk.currentHp = monMaxHp(mk);
+  state.storage = state.storage || [];
+  state.storage = state.storage.filter(m=> m !== mk);
+  const inParty = state.party.includes(mk);
+  const i = partner ? state.party.indexOf(partner) : -1;
+  if(i >= 0){
+    if(inParty) state.party.splice(i, 1); else state.party[i] = mk;
+    state.storage.push(partner);
+    delete partner.companionUid;
+    state.party.concat(state.storage).forEach(x=>{ if(x !== mk && x.companionUid === partner.uid) delete x.companionUid; });
+    mk.companionUid = partner.uid;
+  } else if(!inParty) state.party.push(mk);
+  addStone('physicalStone', 1);
+  attachStone('physicalStone', mk);
+  ['caughtSpecies', 'encounteredSpecies'].forEach(k=>{ state[k] = state[k] || []; if(!state[k].includes('monkey_king')) state[k].push('monkey_king'); });
+  state.companionsUnlocked = true;
+  r.mkJoined = true;
+  r.ending = true;
+  return mk;
+}
+/* His card, after the lesson: what he brings, and companions in short — for
+   whoever reads it again later. */
+function r5JoinHtml(mk, partner){
+  const pn = partner ? escapeHtml(displayName(partner)) : '';
+  const C = COMPANION;
+  const price = pr=> Object.entries(pr).map(([cur, n])=> `${curIcon(cur)} ${n}`).join(' + ');
+  const slots = CORE_SLOTS.map(t=> `${CORE_SLOT_DEF[t].label} ${price(CORE_SLOT_DEF[t].price)}`).join('; ');
+  return `<p>He comes in at <b>level ${mk.level}, crowned</b>, with his protein full (<b>${mk.supplements || 0} of ${proteinCap(mk.species, mk)}</b>) — ` +
+    `ATK <b>${rawMonAtk(mk)}</b>, HP <b>${monMaxHp(mk)}</b> — and he can grow on past level ${CROWN_GATE}. <b>Heavensplitter Max</b> is his.</p>` +
+    `<p>👊 He carries his own <b>Physical Stone</b> — the first there is: he learns <b>1.5×</b> as fast.</p>` +
+    `<p>🤝 The very first <b>Legendary core slot</b>: he can hold the core of any monster.${partner ? ` <b>${pn}</b> is his companion.` : ''}</p>` +
+    `<p><b>Companions, in short.</b> Summon: <b>${C.summonWords} words</b>, no turn spent. Out for <b>${C.turns} turns</b>, with its own turn: any of its moves for ` +
+    `<b>${C.turnWords} words</b> (all right, or the turn fails). Then back into the core, until the recharge meter wakes it — <b>${C.maxSummons}</b> summons a fight. ` +
+    `Full health every fight; it learns from every fight; it stands in if its leader falls.</p>` +
+    `<p><b>Core slots</b> — crowned monsters only; a slot holds its own kind of core or lower — trained in ${SPAR_COUNT} spars with the Monkey King, paid when all are won: ${slots}.</p>` +
+    `<p>All of it: the Party page — <b>🤝 Companions</b>.</p>`;
+}
+
+/* ---------- looks (3.20) ---------- */
+let _r5EndCssDone = false;
+function r5EndCss(){
+  if(_r5EndCssDone || typeof document === 'undefined') return;
+  _r5EndCssDone = true;
+  const st = document.createElement('style');
+  st.id = 'r5EndCss';
+  st.textContent = `
+  .r5-core-fly{ position:absolute; border-radius:50%; pointer-events:none; z-index:72;
+    background:radial-gradient(circle, #fff 0%, #ffeaa8 40%, rgba(255,190,60,0) 72%); box-shadow:0 0 10px 3px rgba(255,210,110,.8); }
+  .r5-core-fly.gold{ background:radial-gradient(circle, #fff 0%, #ffe27a 38%, rgba(255,170,30,0) 72%); box-shadow:0 0 16px 6px rgba(255,200,60,.95); }
+  .r5-core-fly.cobra{ background:radial-gradient(circle, #f4ffe0 0%, #7fd35a 40%, rgba(40,120,40,0) 72%); box-shadow:0 0 10px 3px rgba(120,220,90,.85); }
+  .r5-core-fly.jackal{ background:radial-gradient(circle, #fff6e0 0%, #d9a441 40%, rgba(120,70,20,0) 72%); box-shadow:0 0 10px 3px rgba(220,170,70,.85); }
+  .r5-core-fly.black{ background:radial-gradient(circle, #2a0010 0%, #120008 45%, rgba(120,0,40,0) 72%); box-shadow:0 0 12px 4px rgba(200,20,60,.9); }
+  .r5-slash{ position:absolute; height:10px; margin-top:-5px; transform-origin:50% 50%; border-radius:5px; pointer-events:none; z-index:66; opacity:1;
+    background:linear-gradient(90deg, rgba(190,120,255,0), #c98bff 18%, #fff 50%, #c98bff 82%, rgba(190,120,255,0)); box-shadow:0 0 14px 5px rgba(170,90,255,.85); }
+  .r5-tear{ position:relative; width:100%; height:100%; filter:drop-shadow(0 0 10px rgba(150,80,240,.7)); }
+  .r5-tear .tear-svg{ display:block; }
+  .r5-tear-spirit{ position:absolute; left:20%; top:20%; width:60%; height:60%; display:flex; align-items:center; justify-content:center;
+    opacity:0; transition:opacity 1.2s ease; filter:drop-shadow(0 0 8px rgba(255,40,70,.85)); pointer-events:none; }
+  .r5-tear-spirit.on{ opacity:.85; }
+  .r5-tear-spirit img, .r5-tear-spirit .r5-nem-standin{ width:100% !important; height:100% !important; object-fit:contain; }
+  .r5-spirit-eyes{ display:flex; gap:22%; width:100%; height:100%; align-items:center; justify-content:center; }
+  .r5-spirit-eyes i{ display:block; width:13%; height:9%; border-radius:50%; background:#ff3a52;
+    box-shadow:0 0 8px 4px rgba(255,40,70,.9), 0 0 18px 8px rgba(160,0,40,.6); animation:r5Flicker 1.3s ease-in-out infinite; }
+  .r5-hand{ width:100%; height:100%; transform:rotate(180deg); filter:drop-shadow(0 0 7px rgba(200,30,70,.85)) drop-shadow(0 0 16px rgba(120,40,200,.55)); }
+  .r5-hand img, .r5-hand .r5-nem-standin{ width:100% !important; height:100% !important; object-fit:contain; display:block; }
+  .r5-miasma{ position:absolute; border-radius:50%; pointer-events:none; z-index:20; opacity:0;
+    background:radial-gradient(circle, rgba(0,0,0,.92) 0%, rgba(22,0,22,.86) 30%, rgba(76,10,64,.5) 52%, rgba(20,0,30,0) 72%);
+    animation:r5Flicker 1.1s ease-in-out infinite; }
+  .scene-actor.r5-nem .sa-in{ filter:drop-shadow(0 0 8px rgba(220,30,60,.75)) drop-shadow(0 0 18px rgba(110,30,180,.55)); }
+  .r5-nem-standin{ position:relative; display:inline-flex; align-items:flex-end; justify-content:center; }
+  .r5-nem-standin > img, .r5-nem-standin > .crowned-wrap{ position:relative; z-index:1; }
+  .r5-nem-standin.horus > img, .r5-nem-standin.horus > .crowned-wrap{ filter:brightness(.3) contrast(1.6) saturate(.4) drop-shadow(0 0 5px rgba(255,40,60,.95)); }
+  .r5-nem-standin.anubis > img, .r5-nem-standin.anubis > .crowned-wrap{ filter:sepia(1) hue-rotate(-12deg) saturate(2.2) brightness(.42) contrast(1.4) drop-shadow(0 0 5px rgba(255,190,60,.8)); }
+  .r5-nem-standin.wadjet > img, .r5-nem-standin.wadjet > .crowned-wrap{ filter:sepia(1) hue-rotate(65deg) saturate(2.6) brightness(.42) contrast(1.4) drop-shadow(0 0 5px rgba(90,230,120,.8)); }
+  .r5-nem-standin .r5-wings{ position:absolute; left:-30%; top:-12%; width:160%; height:96%; z-index:0; }
+  .r5-nem-face{ display:inline-block; line-height:0; filter:drop-shadow(0 0 5px rgba(220,30,60,.7)); }
+  .r5-timesphere{ position:absolute; border-radius:50%; pointer-events:none; z-index:64;
+    background:radial-gradient(circle, rgba(130,70,220,.16) 0%, rgba(120,60,210,.22) 64%, rgba(215,170,255,.75) 69.6%, rgba(130,70,220,.35) 70.4%, rgba(130,70,220,0) 71%);
+    -webkit-backdrop-filter:grayscale(1) brightness(.8); backdrop-filter:grayscale(1) brightness(.8); }
+  #walkWorld.r5-frozen *{ animation-play-state:paused !important; }
+  #walkWorld.r5-frozen #sa-nemesis, #walkWorld.r5-frozen #sa-nemesis *, #walkWorld.r5-frozen #sa-tear, #walkWorld.r5-frozen #sa-tear *,
+  #walkWorld.r5-frozen #sa-gguard, #walkWorld.r5-frozen #sa-gguard *{ animation-play-state:running !important; }
+  #sa-nemesis{ z-index:70 !important; }
+  .scene-actor.r5-guard.blaze .sa-in{ filter:drop-shadow(0 0 8px rgba(255,40,80,.95)) drop-shadow(0 0 18px rgba(150,40,230,.85)) brightness(1.12); transition:filter .6s ease; }
+  .scene-actor.r5-bright .sa-in{ filter:drop-shadow(0 0 10px rgba(205,235,255,1)) drop-shadow(0 0 22px rgba(160,210,255,.85)) brightness(1.15); }
+  .scene-actor.r5-alive .sa-in{ filter:drop-shadow(0 0 6px rgba(255,236,170,.9)); }
+  .r5-beam.gift{ background:linear-gradient(90deg, rgba(120,220,120,0), rgba(150,235,140,.95) 30%, #fff 70%, rgba(200,255,190,.95)); box-shadow:0 0 16px 5px rgba(110,220,110,.75); }
+  .r5-leaf{ position:absolute; pointer-events:none; z-index:62; border-radius:50%; background:#6ab35e; box-shadow:inset 0 0 0 1px rgba(30,80,30,.5); opacity:0; }
+  .r5-card-scrim{ z-index:86; }
+  .r5-card{ max-width:380px; max-height:86vh; overflow-y:auto; }
+  .r5-card-emblem{ display:flex; justify-content:center; margin-bottom:2px; }
+  .r5-card-body{ text-align:left; font-size:13px; line-height:1.55; margin:10px 0 14px; }
+  .r5-card-body p{ margin:0 0 9px; }
+  .r5-pick-list{ display:flex; flex-direction:column; gap:8px; }
+  .r5-pick-opt{ display:flex; align-items:center; gap:10px; justify-content:flex-start; text-align:left; }
+  .evo-learn.evo-note{ font-family:inherit; font-size:13px; font-weight:700; color:var(--ink-soft); max-width:360px; margin:8px auto 0; line-height:1.45; }
+  `;
+  document.head.appendChild(st);
+}
+
+/* ---------- looks ---------- */
+let _r5VaultCssDone = false;
+function r5VaultCss(){
+  if(_r5VaultCssDone || typeof document === 'undefined') return;
+  _r5VaultCssDone = true;
+  const st = document.createElement('style');
+  st.id = 'r5VaultCss';
+  st.textContent = `
+  .scene-actor.r5-asleep .sa-in{ filter:brightness(.42) saturate(.45); transition:filter .9s ease; }
+  .scene-actor.r5-waking .sa-in{ filter:brightness(1.35) drop-shadow(0 0 14px rgba(180,120,255,.95)); transition:filter .9s ease; }
+  .scene-actor.r5-awake .sa-in{ filter:drop-shadow(0 0 7px rgba(170,120,255,.8)); }
+  .scene-actor.r5-broken .sa-in{ rotate:-9deg; translate:0 6%; filter:brightness(.78) saturate(.6); }
+  .scene-actor.r5-golden .sa-in{ filter:drop-shadow(0 0 6px rgba(255,214,90,.95)) drop-shadow(0 0 14px rgba(255,190,40,.6)); }
+  .scene-actor.r5-down .sa-in{ rotate:90deg; translate:0 24%; opacity:.6; transition:rotate .18s ease, translate .18s ease, opacity .18s ease; }
+  .scene-actor .sa-in{ transition:rotate .25s ease, translate .25s ease, opacity .25s ease; }
+  .scene-actor.r5-pop .sa-in{ animation:r5Pop .35s ease-out; }
+  @keyframes r5Pop{ 0%{ scale:.2; opacity:0; } 70%{ scale:1.12; opacity:1; } 100%{ scale:1; } }
+  .scene-actor.r5-kneel .sa-in{ translate:0 16%; scale:1 .84; }
+  .scene-actor.r5-back .sa-in{ filter:brightness(.82); }
+  .scene-actor.r5-body .sa-in{ filter:saturate(.8); }
+  .scene-actor.r5-cage{ pointer-events:none; }
+  .r5-held-cores{ position:absolute; inset:0; pointer-events:none; }
+  .r5-held-cores i{ position:absolute; width:16%; height:16%; margin:-8% 0 0 -8%; border-radius:50%;
+    background:radial-gradient(circle, #fff 0%, #ffeaa8 42%, rgba(255,190,60,0) 72%); box-shadow:0 0 8px 2px rgba(255,210,110,.7);
+    animation:r5CoreGlow 1.8s ease-in-out infinite; }
+  @keyframes r5CoreGlow{ 0%,100%{ scale:.85; opacity:.85; } 50%{ scale:1.15; opacity:1; } }
+  .r5-beam{ position:absolute; height:12px; margin-top:-6px; transform-origin:0 50%; border-radius:6px; pointer-events:none; z-index:55; opacity:0;
+    background:linear-gradient(90deg, rgba(190,140,255,0), rgba(200,150,255,.95) 30%, #fff 70%, rgba(230,210,255,.95));
+    box-shadow:0 0 16px 5px rgba(160,100,255,.75); transition:opacity .35s ease; }
+  .r5-beam.on{ opacity:1; animation:r5BeamHum .18s linear infinite; }
+  .r5-beam.strike{ height:8px; margin-top:-4px; }
+  @keyframes r5BeamHum{ 0%,100%{ filter:brightness(1); } 50%{ filter:brightness(1.35); } }
+  .r5-stone-fly{ position:absolute; z-index:72; pointer-events:none; filter:drop-shadow(0 0 7px rgba(255,240,180,.95)); }
+  .r5-stone-fly img, .r5-stone-fly span{ width:100% !important; height:100% !important; }
+  /* in the fight */
+  .r5-cyb-form{ position:absolute; pointer-events:none; z-index:6; opacity:0; translate:0 0;
+    transition:translate .7s cubic-bezier(.2,.8,.3,1), opacity .6s ease; }
+  .r5-cyb-form.past{ filter:sepia(.9) hue-rotate(-15deg) brightness(.82) contrast(1.1); }
+  .r5-cyb-form.future{ filter:hue-rotate(150deg) saturate(1.8) brightness(1.25) drop-shadow(0 0 10px rgba(120,230,255,.9)); }
+  .r5-cyb-form.out{ opacity:.88; }
+  .r5-cyb-form.out.past{ translate:-104% 0; }
+  .r5-cyb-form.out.future{ translate:104% 0; }
+  .r5-cyb-form.tremble{ animation:r5Tremble .09s linear infinite; }
+  @keyframes r5Tremble{ 0%,100%{ transform:translate(0,0); } 25%{ transform:translate(-3px,1px); } 50%{ transform:translate(2px,-2px); } 75%{ transform:translate(3px,2px); } }
+  .enemy-card.shattered .avatar-layer{ rotate:-9deg; translate:0 4px; filter:saturate(.7) brightness(.85); }
+  .enemy-card.r5-tremble .avatar-layer{ animation:r5Tremble .08s linear infinite; }
+  .avatar-layer.r5-twitch, .scene-actor.r5-twitch .sa-in{ margin-left:2px; margin-top:2px; }
+  .r5-spark{ position:absolute; inset:0; pointer-events:none; z-index:9; opacity:1; transition:opacity .25s ease; }
+  .r5-spark.gone{ opacity:0; }
+  .r5-spark path{ stroke-dasharray:1; stroke-dashoffset:1; animation:r5Draw .06s linear forwards; }
+  @keyframes r5Draw{ to{ stroke-dashoffset:0; } }
+  .r5-spark .sp{ animation:r5SparkFly .32s ease-out forwards; }
+  @keyframes r5SparkFly{ to{ transform:translate(var(--dx), var(--dy)); opacity:0; } }
+  .scene-actor .r5-spark{ z-index:60; }
+  .r5-bbeam{ position:fixed; height:14px; margin-top:-7px; transform-origin:0 50%; border-radius:7px; pointer-events:none; z-index:83; opacity:0;
+    background:repeating-linear-gradient(90deg, rgba(150,80,255,.95) 0 14px, rgba(240,220,255,.95) 14px 22px);
+    box-shadow:0 0 18px 6px rgba(150,80,255,.7); transition:opacity .3s ease; }
+  .r5-bbeam.on{ opacity:1; animation:r5BeamRun .25s linear infinite; }
+  @keyframes r5BeamRun{ to{ background-position:22px 0; } }
+  .player-card .ally-avatar.r5-leap{ transition:translate .45s cubic-bezier(.3,.8,.4,1); translate:28% -70%; z-index:12; }
+  .r5-crack{ position:absolute; transform:translate(-50%,-50%) rotate(-8deg); z-index:12; pointer-events:none;
+    font:900 34px/1 'Baloo 2',cursive; color:#fff; text-shadow:0 0 10px #ffd84a, 0 3px 0 #6a3a00; animation:r5CrackIn .5s ease-out; }
+  @keyframes r5CrackIn{ 0%{ scale:2.2; opacity:0; } 60%{ scale:.95; opacity:1; } 100%{ scale:1; } }
+  .r5-core-orb{ position:fixed; width:16px; height:16px; margin:-8px 0 0 -8px; border-radius:50%; pointer-events:none; z-index:84;
+    background:radial-gradient(circle, #fff 0%, #ffe9a8 40%, rgba(255,190,60,0) 72%); box-shadow:0 0 12px 4px rgba(255,210,110,.75); }
+  .battle-stage.r5-quake{ animation:r5Tremble .07s linear 9; }
+  .r5-whiteout{ position:fixed; inset:0; background:#fff; opacity:0; z-index:96; pointer-events:none; transition:opacity 1.6s ease; }
+  .r5-whiteout.on{ opacity:1; }
+  `;
+  document.head.appendChild(st);
+}
 
 /* ============================================================
    THE TOWER (2.92) — the exorcists' tower, inside the estate walls
@@ -5104,7 +8438,9 @@ const R5_GHOST_VILLA = [
    level the floor's for two waves, then one higher every two, never past
    100 (ENEMY_LEVEL_CAP, 2.99 — it was the region's cap, 110): 98 to 100 on
    floor 1, 99 to 100 on floor 2, and 100 all the way from floor 3, the
-   masters' included; AI Power2 for two waves, then Best. A master brings
+   masters' included; AI Power2 for two waves, then Best — (3.16) the
+   psychic floors and the Psychic Master think about every move instead
+   (ai 'smart', smartMove: "give them good AI"). A master brings
    18, always in threes:
    in the middle of each wave a crowned starter, elite or legendary (10
    supplements), flanked by two monsters with strong passives; AI Best. The
@@ -5112,7 +8448,12 @@ const R5_GHOST_VILLA = [
    Ghost Master's a crowned Ghost Guardian carrying Curse ✦ (cast on their
    first action, as yours are; 2.97 — they were a crowned Fox and Shadow).
    (2.97) The psychic disciples and the Psychic Master field Tapirs and
-   Tailed Cats as well — and her two of them crowned, three tails each.
+   Tailed Cats as well. (3.15) And the fifteen psychics of the floors under
+   the villa: the disciples bring the wild ones (and, higher up, an elite or
+   two); the Psychic Master's six waves of three are the new elites — the
+   designer: "please give psychic master a bunch of these elites in triple
+   waves" — crowned Hydra, Steelcrab, Firefox, Mime and Tailed Cat in the
+   middle, and the crowned Mindcat last.
    First wins: +1 protein a disciple; the Psychic Master +3 protein (3.01;
    she gave +2 and the Psychic Stone until 3.00, +2 alone in 3.00); the
    Ghost Master +3 protein — and (3.00) in
@@ -5135,7 +8476,7 @@ const R5_TOWER = [
     talk:`<b>"The stairs are yours. We do not go back on a fight."</b>` },
   /* 2 — a teenage boy */
   { sprite:'psychic_disciple1', lv:99,
-    waves:[['tapir','squid'], ['psychic_starter','tapir'], ['moon_swan','squid'], ['tapir','psychic_starter'], ['tailed_cat','squid'], ['squid','tapir','tailed_cat']],
+    waves:[['tapir','leopard'], ['puffball','squid'], ['moon_swan','quetzal'], ['tapir','psychic_starter'], ['tailed_cat','hermit_sloth'], ['squid','tapir','unicorn']],
     sees:[`A boy not much older than you looks up from his book.<br><br><b>"I heard you coming before you reached the door. Your thoughts are very loud."</b><br><br>` +
           `<b>"'Walk as if you belong here.' That is what you keep telling yourself. A cap hides a face. It does not hide a mind."</b>`],
     beaten:`<b>"Your mind is louder than mine. Go on."</b>`,
@@ -5149,7 +8490,7 @@ const R5_TOWER = [
     talk:`<b>"The spirits still whisper about you. Nicer things, now. Mind the stairs, dearie."</b>` },
   /* 4 — a teenage girl */
   { sprite:'psychic_disciple2', lv:100,
-    waves:[['psychic_starter','tapir'], ['moon_swan','squid'], ['tailed_cat','psychic_starter'], ['moon_swan','tapir'], ['squid','tailed_cat'], ['psychic_starter','tapir','moon_swan']],
+    waves:[['psychic_starter','polygon'], ['moon_swan','nurse'], ['tailed_cat','leopard'], ['quetzal','tapir'], ['squid','unicorn'], ['psychic_starter','tapir','hermit_sloth']],
     sees:[`A girl in a grey coat far too big for her rolls her eyes at you.<br><br><b>"Do not bother pulling the cap down. In here, we read what you are thinking."</b><br><br>` +
           `<b>"You are thinking about the stairs behind me."</b>`],
     beaten:`<b>"I did not see that coming. I always see things coming."</b>`,
@@ -5164,7 +8505,7 @@ const R5_TOWER = [
     talk:`<b>"Your whale keeps looking at me. Tell it to stop."</b>` },
   /* 6 — a young man */
   { sprite:'psychic_disciple3', lv:100,
-    waves:[['moon_swan','tapir'], ['psychic_starter','squid','tapir'], ['tailed_cat','psychic_starter'], ['squid','moon_swan'], ['tailed_cat','tapir'], ['moon_swan','psychic_starter','tailed_cat']],
+    waves:[['moon_swan','tapir'], ['psychic_starter','squid','nurse'], ['tailed_cat','polygon'], ['unicorn','moon_swan'], ['ram','tapir'], ['seadragon','psychic_starter','leopard']],
     sees:[`A young man in a grey coat smiles without looking up.<br><br><b>"You are thinking that the cap was a good idea. It was not — not in here."</b><br><br>` +
           `<b>"Halfway up already. Most of the Padrino's men never get past the first floor — and they work here."</b>`],
     beaten:`<b>"Halfway. Hm. Perhaps you will get further than halfway."</b>`,
@@ -5178,7 +8519,7 @@ const R5_TOWER = [
     talk:`<b>"I have stopped holding them down. I can hear them singing."</b>` },
   /* 8 — a young man */
   { sprite:'psychic_disciple4', lv:100,
-    waves:[['tapir','moon_swan'], ['psychic_starter','tailed_cat','moon_swan'], ['squid','tapir'], ['tailed_cat','squid'], ['psychic_starter','tapir'], ['tailed_cat','psychic_starter','moon_swan']],
+    waves:[['tapir','puffball'], ['psychic_starter','tailed_cat','quetzal'], ['squid','hermit_sloth'], ['sylph','tapir'], ['plasma_manta','unicorn'], ['tailed_cat','psychic_starter','moon_swan']],
     sees:[`A tall young man taps his temple.<br><br><b>"Your thoughts are racing. Fear?"</b> A frown. <b>"No... you are enjoying this. How strange."</b>`],
     beaten:`<b>"Strange child. Go on up."</b>`,
     talk:`<b>"Strange child. You think about a whale a great deal, you know."</b>` },
@@ -5194,7 +8535,7 @@ const R5_TOWER = [
     talk:`<b>"Mind the stairs. They are older than the town. Older than me, even. Just."</b>` },
   /* 10 — a short young woman */
   { sprite:'psychic_disciple5', lv:100,
-    waves:[['tailed_cat','tapir'], ['moon_swan','squid','psychic_starter'], ['tailed_cat','moon_swan'], ['tapir','squid','tailed_cat'], ['moon_swan','psychic_starter'], ['tailed_cat','tapir','psychic_starter']],
+    waves:[['tailed_cat','tapir'], ['mime','squid','polygon'], ['firefox','nurse'], ['tapir','steelcrab','leopard'], ['moon_swan','psychic_starter'], ['hydra','tapir','unicorn']],
     sees:[`A young woman, a head shorter than you would expect, folds her arms.<br><br>` +
           `<b>"You are counting the floors in your head — three more — and wondering what is at the top. Your thoughts are very easy to read."</b>`,
           `<b>"And now you are thinking I am short. I am not short. I am concentrated."</b><br><br>` +
@@ -5212,12 +8553,22 @@ const R5_TOWER = [
     talk:`<b>"One candle is easily blown out. Many candles together make a fire. Your whale knows this."</b>` },
   /* 12 — the Psychic Master: the leader of the exorcists' order */
   { sprite:'psychic_master', lv:100, master:true,
-    waves:[['moon_swan', R5_CROWNED('squid'), 'thunderhound'],
-           ['tapir', R5_CROWNED('tailed_cat'), 'moon_swan'],
-           ['thunderhound', R5_CROWNED('squid'), 'tapir'],
-           ['moon_swan', R5_CROWNED('moon_swan'), 'mantaray'],
-           ['tapir', R5_CROWNED('tailed_cat'), 'mantaray'],
-           ['tailed_cat', R5_CROWNED('mindcat', { veryHigh:{ type:'Psychic', plus:1, cast:true } }), 'thunderhound']],
+    /* (3.15) "please give psychic master a bunch of these elites in triple
+       waves": her Seadragons and Sylphs put the marks on you that her Hydras
+       feed on; the Plasma Mantas hurry her side; the Steelcrabs will not
+       break; and in the middle of one wave, the Mime copies you. As every
+       master's, each flank has a strong passive. (3.24) Her Ladybirds stand
+       where her Rams stood — the Ram is a wild one now. (3.25) "Crown it for
+       psychic master when in the centre, but otherwise leave it uncrowned":
+       the second wave's Ladybird steps into its middle, crowned, and the
+       Steelcrab out to its flank; the fourth wave's stays a flank,
+       uncrowned. Both beam you every turn — blinded, then Exploited. */
+    waves:[['seadragon', R5_CROWNED('hydra'), 'sylph'],
+           ['steelcrab', R5_CROWNED('ladybird'), 'firefox'],
+           ['plasma_manta', R5_CROWNED('firefox'), 'seadragon'],
+           ['sylph', R5_CROWNED('mime'), 'ladybird'],
+           ['steelcrab', R5_CROWNED('tailed_cat'), 'plasma_manta'],
+           ['hydra', R5_CROWNED('mindcat', { veryHigh:{ type:'Psychic', plus:1, cast:true } }), 'firefox']],
     sees:[`The master is a tall woman in a long grey coat — one of Ugo's — and she does not blink.<br><br>` +
           `<b>"A junior soldato who is not a junior soldato, thinking very hard about a villa, a stolen core and a whale. So you are the child the dead keep whispering about."</b>`,
           `<b>"My order came over the sea twenty years ago, to find one ghost for the Padrino. Just one. We never found it. ` +
@@ -5250,7 +8601,12 @@ R5_TOWER.forEach((f, i)=>{
   f.kind = /^ghost/.test(f.sprite) ? 'ghost' : 'psychic';
   f.icon = f.kind === 'ghost' ? '👻' : '🔮';
   f.name = n === 12 ? 'Psychic Master' : n === 13 ? 'Ghost Master' : (f.kind === 'ghost' ? 'Ghost Disciple' : 'Psychic Disciple');
-  f.ai = f.ai || (f.master ? ['best', 'best', 'best', 'best', 'best', 'best'] : ['power2', 'power2', 'best', 'best', 'best', 'best']);
+  /* (3.16) "please finish the psychic disciples and master. Give them good
+     AI": every wave of a psychic floor, the Psychic Master's too, thinks
+     about each turn (ai 'smart' — smartMove, 05-battle-flow.js). The ghost
+     floors keep Power2 for two waves, then Best (a master's, Best). */
+  f.ai = f.ai || (f.kind === 'psychic' ? ['smart', 'smart', 'smart', 'smart', 'smart', 'smart']
+                : f.master ? ['best', 'best', 'best', 'best', 'best', 'best'] : ['power2', 'power2', 'best', 'best', 'best', 'best']);
   f.dare = n === 12 ? `<b>"My mind against yours, then."</b>`
          : n === 13 ? `<b>"Come and see what the Padrino's grandniece can do."</b>`
          : f.kind === 'ghost' ? `<b>"Come, then. Let the dead see what you are made of."</b>`
@@ -5323,16 +8679,20 @@ function r5TowerNote(n){
   const f = R5_TOWER[n - 1], ws = r5TowerWaves(n), all = ws.flat(), lv = all.map(s=> s.level);
   const lo = Math.min(...lv), hi = Math.max(...lv), lvl = lo === hi ? `${lo}` : `${lo}–${hi}`;
   const what = f.kind === 'ghost' ? 'Ghosts' : 'Psychic monsters', beat = f.kind === 'ghost' ? 'Psychic' : 'Physical';
+  /* (3.16) the psychics think about every move (ai 'smart') */
+  const wits = f.kind === 'psychic' ? ' Every one of them thinks about each move: a shield or a heal where one is needed, a sleep or a weaken where it will stick, its hardest blow where it hurts most.' : '';
   if(!f.master)
-    return `<i>${ws.length} waves, ${all.length} ${what}, level ${lvl}: a <b>${beat}</b> monster of yours beats them. No running.</i>`;
+    return `<i>${ws.length} waves, ${all.length} ${what}, level ${lvl}: a <b>${beat}</b> monster of yours beats them.${wits} No running.</i>`;
   const centre = f.kind === 'ghost' ? 'Ghost' : 'Psychic';
   const warn = n === 12
-    ? ` The last, a crowned <b>Mindcat</b>, opens with <b>Discombobulate +</b>: for 5 turns your monsters are muddled — a muddled one swings at its own side for <b>90%</b> of its damage, certain at first and then a <b>20%</b> chance each turn, and may nap instead (<b>5%</b>). ` +
-      `The first attack to reach it each round does <b>half</b>, and every blow it lands makes your monster <b>forget its best move</b> for a turn.`
+    ? ` The last, a crowned <b>Mindcat</b>, opens with <b>Discombobulate +</b>: your monsters are confused at once — a damaging move of yours turns on your own side for <b>0.8–1.1× its ATK</b> — and for 5 turns, at the end of every turn, each has a <b>20%</b> chance to be confused again (or, <b>5%</b>, to fall asleep instead). ` +
+      `The first attack to reach it each round does <b>half</b>, and every blow it lands makes your monster <b>forget its best move</b> for a turn. ` +
+      `Her Mime walls up and copies you, turn about. Her Ladybirds beam you every turn: what a beam hits is <b>blinded</b> — ` +
+      `a quarter of its attacks miss — and the next beam hits it <b>1.4×</b> as hard.`
     : ` The last, a crowned <b>Ghost Guardian</b>, opens with <b>Curse ✦</b>: for 5 turns your side takes <b>30% more</b> damage, theirs <b>15% less</b>, and your passives are muted. ` +
       `He takes every single blow meant for his friends, takes <b>30% less</b> from each, and his flaming sword burns whoever strikes him.`;
   return `<i>${ws.length} waves of 3 — ${all.length} monsters, level ${lvl}. In the middle of each, a <b>crowned</b> ${centre} monster; ` +
-         `either side of it, one with a strong passive. A <b>${beat}</b> monster of yours beats her ${f.kind === 'ghost' ? 'ghosts' : 'psychics'}.${warn} No running.</i>`;
+         `either side of it, one with a strong passive. A <b>${beat}</b> monster of yours beats her ${f.kind === 'ghost' ? 'ghosts' : 'psychics'}.${wits}${warn} No running.</i>`;
 }
 async function r5TowerChallenge(n){
   const f = R5_TOWER[n - 1];
@@ -5340,8 +8700,11 @@ async function r5TowerChallenge(n){
   const yes = await r5Ask([r5TowerFace(n)], f.name, f.dare + '<br><br>' + r5TowerNote(n), '⚔️ Fight', 'Not yet');
   if(!yes || !ensurePool()) return;
   walkTeardown();
-  beginBattle({ isNpc:true, name:f.name, npcId:f.sprite, noFlee:true, bgKey:'battle_tower',
-    waves:r5TowerWaves(n), onWin: ()=> r5TowerWon(n) });
+  beginBattle(Object.assign(r5TowerBattle(n), { onWin: ()=> r5TowerWon(n) }));
+}
+function r5TowerBattle(n){
+  const f = R5_TOWER[n - 1];
+  return { isNpc:true, name:f.name, npcId:f.sprite, noFlee:true, bgKey:'battle_tower', waves:r5TowerWaves(n) };
 }
 async function r5TowerWon(n){
   const r = r5(), t = r.tower, f = R5_TOWER[n - 1];
@@ -5379,16 +8742,52 @@ function r5TowerWindow(){
     (r5().holdBroken ? `<br><br>Pale lights drift up all over the hill, like snow falling the wrong way: the dead, free at last.` : ''));
 }
 /* The Ghost Master beaten: the hold on the dead breaks. (3.00) The Fairy
-   Stone: in the middle of the Ghost Master's ring sits the
-   conduit every mind in the tower has held the dead down through. The
-   Whalelord names it; you take it — and the hold on the dead breaks. It is the
-   stone the Monkey King's Diamond Dust ✦ will come from (part 6 §12).
-   (3.02) Nino (part 6 §12b, scene 5): the little light floats into her ring
-   and she sees him — the Padrino's little brother, the one ghost her mediums
-   were brought over the sea to find. She hears him: "Let them go." He will
-   keep the dead off his brother himself. She lets you take the stone because
-   he asked; and when the hold breaks he is a boy, who smiles at you and runs
-   to the villa. */
+   Stone: in the middle of the Ghost Master's ring sits the conduit every mind
+   in the tower has held the dead down through. You take it — and the hold on
+   the dead breaks. It is the stone the Monkey King's Diamond Dust ✦ will come
+   from (part 6 §12) — and (3.17) the very stone the Forest Guardian gave the
+   young Padrino for Nino (the Madrina tells it, at the villa).
+   (3.17, part 6 §12c, the designer's decision: "She cannot see him") She
+   tells you who the mediums came for — Nino, the Padrino's little brother,
+   ill from birth, dead at six; twenty years they searched for his ghost. The
+   little light floats into her ring and she does not see it. It pushes the
+   stone off its silk to your feet; she sees it move by itself and goes
+   white. Her Ghost Guardian, risen at her shoulder, turns its head toward the
+   light — the first hint of Nemesis — and the light shrinks from it. The
+   Whalelord: take it. The hold breaks; the light grows into a boy she cannot
+   see; he nods to his name, looks at the Guardian, shows the Whalelord the
+   Bone Demon (r5BoneVision), and runs to the villa.
+   Where things stand: she at (3,2), as beaten; you at (5,3); the stone in
+   the middle of the rune ring (5.5,5.5); the Guardian at her left shoulder. */
+const R5_STONE13 = { x:5.19, y:5.12 };            // the stone's top-left: centred in the ring
+const R5_GUARD13 = { x:1.8, y:1.7, size:1.3 };     // her Guardian, at her shoulder
+function r5GuardianActor(fadeMs){
+  const G = R5_GUARD13, px = Math.round(WALK_T * G.size);
+  const el = r5MonActor('gguard', 'ghost_guardian', G.x, G.y, G.size,
+    { html:monPortrait('ghost_guardian', px, { view:'front', bare:true, stage:1, crowned:true }) });
+  if(!el) return null;
+  el.classList.add('r5-guard');
+  if(fadeMs){
+    el.style.transition = 'none'; el.style.opacity = '0'; el.style.top = ((G.y + 0.5) * WALK_T) + 'px';
+    void el.offsetWidth;
+    el.style.transition = `opacity ${fadeMs * SCENE_SPEED}ms ease, top ${fadeMs * SCENE_SPEED}ms ease-out`;
+    el.style.opacity = '1'; el.style.top = (G.y * WALK_T) + 'px';
+  }
+  return el;
+}
+function r5StoneActor(x, y){
+  const world = $('#walkWorld');
+  if(world && !document.getElementById('r5Silk')){         // the fold of black silk it sits on
+    const k = document.createElement('div');
+    k.id = 'r5Silk'; k.className = 'r5-silk scene-glow';
+    k.style.cssText += `left:${(R5_STONE13.x - 0.2) * WALK_T}px;top:${(R5_STONE13.y + 0.25) * WALK_T}px;` +
+      `width:${1.02 * WALK_T}px;height:${0.5 * WALK_T}px;z-index:20;`;
+    world.appendChild(k);
+  }
+  const el = sceneActor('fstone', { x, y, w:0.62, h:0.62, src:'assets/ui/fairy_stone.png', icon:'✨', z:59 });
+  if(el) el.classList.add('r5-fstone');
+  return el;
+}
 async function r5HoldBreaks(){
   const r = r5();
   go('tower_13');
@@ -5399,35 +8798,60 @@ async function r5HoldBreaks(){
   const gm = ()=> r5TowerFace(13), G = 'Ghost Master';
   const wl = ()=> faceMon('whalelord'), W = whaleName();
   const p = (w.at && w.at.tower_13) || { x:5, y:3 };
+  const S = R5_STONE13;
+  r5StoneActor(S.x, S.y);
   await sceneSay([gm()], G, `She does not look at you. She is looking at the middle of her ring of candles, where a small pale stone sits on a fold of black silk, glittering like frost.<br><br>` +
     `<b>"Beat me all you like. They stay down."</b>`);
+  /* her Guardian rises at her shoulder */
+  r5GuardianActor(900);
+  await sceneWait(700);
+  await sceneSay([faceMon('ghost_guardian', { stage:1, crowned:true })], 'Ghost Guardian',
+    `Beside her, a knight in haunted armour rises up out of the floor — her Ghost Guardian, its sword burning with purple fire. It stands at her shoulder, as it always does.`);
+  /* who the mediums came for */
+  await sceneSay([gm()], G, `<b>"Do you know why my great-uncle brought the mediums over the sea? To find one ghost. Just one."</b>`);
+  await sceneSay([gm()], G, `<b>"His little brother, Nino. Nino was sick from the day he was born. When he was six, he died."</b>`);
+  await sceneSay([gm()], G, `<b>"My great-uncle has missed him every single day since. For twenty years we have searched this hill for Nino's ghost — and never found a thing."</b>`);
+  await sceneSay([gm()], G, `<b>"That is why he wants to turn back time. To have his brother back."</b>`);
   /* the little light, out from behind you, into her ring — beside the stone
      ("A little light", for a save that never saw it in the catacombs) */
   const seenLight = !!r.said.wispLanding;
   r.said.wispLanding = true;
   r5Wisp(p.x, p.y + 0.4, 700);
   await sceneWait(500);
-  await r5WispTo(5.5, 4.7, 1600);
+  await r5WispTo(5.6, 4.75, 1600);
   await sceneSay([], '', `${seenLight ? 'The' : 'A'} little light floats out from behind you, into her ring of candles, and stops beside the small pale stone.`);
-  await sceneSay([gm()], G, `She stands up, very slowly.<br><br><b>"…You. I can see you."</b>`);
-  await sceneSay([gm()], G, `<b>"Twenty years we searched this hill for you. And you were hiding from us all along."</b>`);
-  await sceneSay([gm()], G, `<b>"Do you know who this is? This is Nino. He is the Padrino's little brother."</b>`);
-  await sceneSay([gm()], G, `<b>"He got lost in these tunnels when he was a little boy. A long, long time ago. He never came home."</b>`);
-  await sceneSay([gm()], G, `<b>"My great-uncle — the Padrino — has missed him every single day. That is why he wants to turn back time. Back to the day Nino got lost."</b>`);
-  await sceneSay([gm()], G, `She tilts her head, as if she is listening to something only she can hear.<br><br><b>"He says… 'Let them go.'"</b>`);
-  await sceneSay([gm()], G, `<b>"But if I let the dead go, they will all go after the Padrino. They are so angry with him."</b>`);
-  await sceneSay([gm()], G, `She listens again.<br><br><b>"He says he will keep them away from his brother. He always has."</b>`);
-  await sceneSay([wl()], W, `<b>"That stone keeps every ghost in this hill pushed down. It is a Fairy Stone."</b>`);
-  await sceneSay([gm()], G, `<b>"…Take it. He asked."</b>`, '✋ Take the Fairy Stone');
+  await sceneSay([gm()], G, `She looks straight at it — and straight through it. She does not see it at all.`);
+  await sceneSay([wl()], W, `<b>"The little light — right in front of her. And she cannot see it."</b>`);
+  /* it pushes the stone off its silk, to your feet */
+  await r5WispTo(5.2, 4.95, 500);
+  r5MoveActor('fstone', p.x + 0.2, p.y + 0.7, 1200);
+  await r5WispTo(5.15, 3.95, 1200);
+  await sceneSay([], '', `The little light pushes against the stone. It slides off its silk — and rolls, all by itself, across the floor to your feet.`);
+  await sceneSay([gm()], G, `She goes white.<br><br><b>"The stone… It moved. By itself."</b>`);
+  await sceneSay([gm()], G, `<b>"Who's there? Show yourself!"</b><br><br>She looks all round the room — everywhere but at the little light.`);
+  /* the Guardian turns its head toward the light, and the light shrinks back */
+  actorFace('gguard', true);
+  await sceneWait(700);
+  const wisp = document.getElementById('sg-wisp');
+  if(wisp) wisp.classList.add('shy');
+  await r5WispTo(6.0, 4.3, 700);
+  await sceneSay([faceMon('ghost_guardian', { stage:1, crowned:true })], 'Ghost Guardian',
+    `Slowly, the Guardian turns its helmet toward the little light.<br><br>The little light shrinks back from it, trembling.`);
+  await sceneSay([gm()], G, `<b>"Guardian? What is it? What can you see?"</b><br><br>The Guardian says nothing.`);
+  await sceneSay([wl()], W, `<b>"Her knight can see it, though. And the little light is afraid of it."</b>`);
+  await sceneSay([wl()], W, `<b>"That stone keeps every ghost in this hill pushed down. It is a Fairy Stone."</b><br><br>` +
+    `<b>"The little light wants you to have it. Take it."</b>`, '✋ Take the Fairy Stone');
+  sceneActorGone('fstone');
   addStone('fairyStone', 1);
   await saveProfile();
   await sceneSay([uiIcon('fairy_stone', 64, '✨')], 'The Fairy Stone',
     `Your fingers close round it — cold, and humming, like a held note.`);
-  await sceneSay([gm()], G, `The candles gutter all at once. The ghost at her feet uncurls, looks at her — and drifts away through the wall.`);
+  await sceneSay([gm()], G, `She only stares at it, in your hand.<br><br>The candles gutter all at once. The ghost at her feet uncurls, looks at her — and drifts away through the wall.`);
   sceneShake(1600, t=> 0.14 * Math.max(0, 1 - t / 1600));
   await sceneWait(900);
   await sceneCurtain(true, 700);
   sceneClear();
+  const silk = document.getElementById('r5Silk'); if(silk) silk.remove();
   await sceneCurtainText('Far below, under the whole hill, something lets go.', 700);
   await sceneWait(1600);
   await sceneCurtainText('', 400);
@@ -5445,20 +8869,29 @@ async function r5HoldBreaks(){
   r.holdBroken = true;
   state.inventory.protein = (state.inventory.protein || 0) + 3;
   await saveProfile();
-  /* in the dark, the little light grows — into a boy */
-  r5Wisp(5, 4.4, 10);
+  /* in the dark, the little light grows — into a boy; her Guardian still at her shoulder */
+  r5GuardianActor(0);
+  actorFace('gguard', true);
+  r5Wisp(5.6, 4.35, 10);
   await sceneCurtain(false, 800);
   await sceneWait(500);
-  r5NinoActor(5, 4.1, 1400);
+  r5NinoActor(5.7, 4.05, 1400);
   await sceneGlowOut(['wisp'], 1400);
   await sceneSay([r5NinoFace()], '', `In the dark, the little light grows — and grows — into a boy. A small boy in short trousers and a cap, see-through like mist.`);
   await sceneSay([wl()], W, `<b>"Now I can see him properly. He is not a monster at all. He is a boy. A human boy."</b>`);
+  await sceneSay([gm()], G, `<b>"What are you staring at?"</b> She looks straight through him. <b>"There's nothing there."</b>`);
+  await sceneSay([wl()], W, `<b>"She still cannot see him."</b><br><br>Then, very softly: <b>"…But I think I know who you are. You are Nino. Aren't you?"</b>`);
+  await sceneSay([r5NinoFace()], '', `The boy nods.`);
   r.ninoMet = true;
   await saveProfile();
-  await sceneSay([r5NinoFace()], '', `He smiles at you. Then he runs — down the stairs, out of the tower, toward the villa.`);
+  /* he looks at the Guardian — and backs away; then at the Whalelord, hard */
+  actorFaceToward('nino', R5_GUARD13.x + R5_GUARD13.size / 2);
+  await sceneSay([r5NinoFace()], '', `He looks up at the Guardian at her shoulder — and takes a step back from it. Then he looks at the Whalelord, very hard.`);
+  await r5BoneVision();
+  await sceneSay([r5NinoFace()], '', `He looks at you one last time. Then he runs — down the stairs, out of the tower, toward the villa.`);
   await r5MoveActor('nino', 5, 9, 1400, true);
   sceneActorGone('nino');
-  await sceneSay([gm()], G, `<b>"He's going to his brother."</b>`);
+  await sceneSay([wl()], W, `<b>"He is going to his brother."</b>`);
   await sceneSay([wl()], W, `<b>"The dead are free now, and the Padrino is the one they are angriest with. That little boy is going to stand in their way."</b>`);
   ghostAlert();
   await sceneSay([wl()], W, `<b>"Can you hear them? All of them, free — and singing."</b>`);
@@ -5475,7 +8908,8 @@ async function r5HoldBreaks(){
   storyModal(uiIcon('fairy_stone', 130, '✨'), 'The hold is broken',
     `You have beaten all thirteen floors of the psychics' tower and taken the stone they held the dead down with. ` +
     `The dead of Cosa Nostia are free — and every soldato in the town is fighting them.<br><br>` +
-    `<b>Nino</b>, the Padrino's little brother, has gone to keep the dead away from his brother.<br><br>` +
+    `<b>Nino</b>, the Padrino's little brother — only you and the Whalelord can see him — has gone to keep the dead away from his brother. ` +
+    `He showed the Whalelord something he is afraid of: a monster of bones.<br><br>` +
     `<b>✨ Fairy Stone</b> — a Fairy monster carrying it learns half again as fast (<b>1.5× experience</b>), ` +
     `and at a level ceiling past 100 it is the stone it charges to break through.<br><br>` +
     `<b>+3 Protein Supplements</b><br><br><i>Next: the villa.</i>`,
@@ -6707,6 +10141,10 @@ const R5_GHOST_FLOOR = {
   cata_quarry:     `The ghosts below chased the strong ones up here, long ago. A Ghost of ours would frighten them still.`,
   cata_cellars:    `The Old Town is right above us. People are walking about up there, and they have no idea.`,
   cata_pit:        `Monsters made to fight for money. I do not like this place.`,
+  /* under the villa (3.18) */
+  cata_deep:       `The villa's own cellars — far older than the villa. Nothing down here is dead. Except the cold.`,
+  cata_watch:      `The Family's chiefs, all in one place. They have been waiting for us.`,
+  cata_crypt:      `So many of them, and all one family. And that knight, on every single tomb.`,
 };
 /* In the Old Town's church (2.90). */
 const R5_GHOST_CHURCH = [
@@ -6771,6 +10209,18 @@ function r5GhostChat(id){
     if(d.zone === 'hilltop') return r.holdBroken ? next('ghostHillFree', R5_GHOST_HILL_FREE) : next('ghostHill', R5_GHOST_HILL);
     return next('ghostTown', R5_GHOST_TOWN);
   }
+  /* (3.19) the vault */
+  if(id === 'cata_vault'){
+    const st = r5VaultState();
+    /* (3.20) after the fight, and after it all */
+    if(st === 'after') return say(r.mkJoined
+      ? `The cold has gone from the island. It went through that hole, with Nemesis — and one day, we will have to follow it.`
+      : `They have all gone down to the harbour — the Monkey King too. Let us go and say goodbye.`);
+    if(st === 'nemesis' || st === 'promised') return say(`Nemesis went through that hole. I can still feel it — cold, and very far away.`);
+    if(st === 'won' || st === 'crowned') return say(`Cyborg is broken, and the cores are free. And yet… the cold is still here. Stronger than ever.`);
+    if(st === 'ready') return say(`He is still there, beside his machine. Together, this time — all of us.`);
+    return say(`Stay close.`);
+  }
   if(id === 'church') return next('ghostChurch', R5_GHOST_CHURCH);
   if(id === 'old_town') return next('ghostOldTown', R5_GHOST_OLDTOWN);
   if(id === 'tailor') return next('ghostTailor', R5_GHOST_TAILOR);
@@ -6803,7 +10253,7 @@ function r5GhostChat(id){
    CHALLENGE — the Family is not a list; it is out there
    ============================================================ */
 function renderChallengeR5(){
-  const r = r5();
+  const r = r5(), watch = r.watch || {};
   setScreenBg('catacombs');
   $('#brandSub').textContent = 'Challenge';
   /* Tier 2 counts once its gate is open (2.88). */
@@ -6826,18 +10276,24 @@ function renderChallengeR5(){
     <div class="phase-flag">The Family is not on a list. They are in the harbour, and under it. Go and find them.</div>
     ${card('soldato1', '💂', 'The soldato at the sea cave', r.gateBeaten,
       r.gateBeaten ? 'Ran off along the beach.' : 'Guarding the sea cave on the beach — the way into the catacombs.')}
-    ${card('capo_black', '🕴️', 'Black Capo', r.capoBlack,
-      r.capoBlack ? 'The Padrino knows you are coming.' : (r.reached.includes('cata_cistern') ? 'Holding the bridge in the Cistern.' : 'Somewhere in the catacombs.'))}
-    ${card('capo_purple', '🕴️', 'Purple Capo', r.capoPurple,
-      r.capoPurple ? 'Beaten twice now.' : (r.reached.includes('cata_stair') ? 'Waiting at the top of the Long Stair.' : 'Somewhere further up.'))}
+    ${card('capo_black', '🕴️', 'Black Capo', watch.black || (!r.sottoBeaten && r.capoBlack),
+      watch.black ? 'Beaten on the Watch. He unlocked his lock on the gate and went down to his master.'
+      : r.sottoBeaten ? (r.reached.includes('cata_watch') ? 'On the Watch, under the villa, in the west wing — with a key to the gate down.' : 'Gone down under the villa, to keep watch.')
+      : r.capoBlack ? 'The Padrino knows you are coming.' : (r.reached.includes('cata_cistern') ? 'Holding the bridge in the Cistern.' : 'Somewhere in the catacombs.'))}
+    ${card('capo_purple', '🕴️', 'Purple Capo', watch.purple || (!r.sottoBeaten && r.capoPurple),
+      watch.purple ? 'Beaten three times now. He unlocked his lock on the gate and went down to his master.'
+      : r.sottoBeaten ? (r.reached.includes('cata_watch') ? 'On the Watch, under the villa, in the east wing — with a key to the gate down.' : 'Gone down under the villa, to keep watch.')
+      : r.capoPurple ? 'Beaten twice now.' : (r.reached.includes('cata_stair') ? 'Waiting at the top of the Long Stair.' : 'Somewhere further up.'))}
     ${r.tier1 ? card(r5GhostPhoenixHtml(54), '🔥', 'The ghost phoenix', r.phoenixMet,
       r.phoenixGone ? 'It gave your phoenix the last of its fire, and went to rest.'
       : r.phoenixMet && r.phoenixGift ? 'It gave your phoenix the last of its fire. It will rest once you are safe up in the Old Town.'
       : r.phoenixMet && !r.rush ? 'It opened the gate, and the dead of the hill rose with it. Now it waits in the Armoury, with the last of its fire, for a phoenix.'
       : r.phoenixMet ? 'It opened the gate, and the dead of the hill rose with it.'
                      : 'Something dead is waiting in the Armoury, the furthest room off the Long Stair.') : ''}
-    ${upper ? card('consigliere', '🕴️', 'Consigliere', r.capoGrey,
-      r.capoGrey ? 'Nobody saw a thing.' : (r.reached.includes('cata_pit') ? 'Waiting in the middle of his ring.' : 'Somewhere under the Old Town.')) : ''}
+    ${upper ? card('consigliere', '🕴️', 'Consigliere', watch.consigliere || (!r.sottoBeaten && r.capoGrey),
+      watch.consigliere ? 'Beaten on the Watch. He unlocked his lock on the gate and went down to his master.'
+      : r.sottoBeaten ? (r.reached.includes('cata_watch') ? 'On the Watch, under the villa, in his long hall — with a key to the gate down.' : 'Gone down under the villa, to keep watch.')
+      : r.capoGrey ? 'Nobody saw a thing.' : (r.reached.includes('cata_pit') ? 'Waiting in the middle of his ring.' : 'Somewhere under the Old Town.')) : ''}
     ${r.figlioMet ? card('figlio', '🎙️', 'Figlio', concertState().figlioDay === today(),
       (concertState().figlioDay === today() ? 'Beaten today. Back at the opera house tomorrow. ' : 'At the opera house in the Old Town. ') +
       `Once a day: his team is level <b>${r5FiglioSpan()}</b> · win for <b>+3 Silver Medals</b>.`) : ''}
@@ -6849,6 +10305,12 @@ function renderChallengeR5(){
       r.sottoBeaten ? 'He ran inside, down to his master, ahead of you.'
       : r.mkVilla ? 'At the villa\'s great door, and he will fight you for it: 4 waves — 10 monsters, level 100, the last a crowned Lizardape.'
       : 'The Padrino\'s right hand, filling the villa\'s great doorway.') : ''}
+    ${(r.reached.includes('cata_crypt') || r.jaxBeaten) ? card('rival_padrino', '🧑', 'Jax', !!r.jaxBeaten,
+      r.ending ? 'He runs the Family now, with the Ghost Master. Nino\'s rule: no more hurting monsters. (Mostly.)'
+      : r.jaxBeaten ? 'He went into the vault ahead of you.' : 'At the vault\'s great door, in the Family Crypt: 6 monsters, one at a time, level 100, the last a crowned Eagle. He always moves first.') : ''}
+    ${(r.vault && r.vault.won) ? card('padrino2', '🕴️', 'Don Padrino', true,
+      r.ending ? 'Beaten in the vault, with the Monkey King at your side. He kept his promise to Nino, and sailed away with him and the Madrina to see the world.'
+      : 'Beaten in the vault, with the Monkey King at your side.') : ''}
     ${(typeof tearOpen === 'function' && tearOpen()) ? tearChallengeCard() : ''}
     <div class="screen-sub" style="margin-top:12px;">Catacomb floors reached: <b>${floorsReached} of ${allFloors.length}</b> · side rooms found: <b>${roomsFound} of ${R5_ALL_ROOMS.length}</b></div>
     ${r.hill ? `<div class="screen-sub" style="margin-top:4px;">Tower floors won: <b>${r.tower.beaten.length} of 13</b> — the disciples and masters stay beaten.</div>` : ''}
@@ -6857,7 +10319,7 @@ function renderChallengeR5(){
   $('#backBtn').addEventListener('click', ()=> go('region'));
   $('#returnBtn').addEventListener('click', ()=> go('region'));
   const tc = $('#cTear');
-  if(tc) tc.addEventListener('click', ()=> go('tear'));          // straight there (2.94)
+  if(tc) tc.addEventListener('click', ()=>{ ui.tearBack = null; go('tear'); });          // straight there (2.94)
 }
 
 /* After a fight in the dark: back to the spot, not the region screen. */

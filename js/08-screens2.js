@@ -157,6 +157,10 @@ function ensurePool(){
 }
 function onChallengeWon(){
   const b = ui.battle;
+  /* (3.22) A trainer's fight counts toward the eye breaks and the day — it
+     never did. A break that falls due is shown at the next screen, once the
+     story after the fight has moved on (enforceEyeBreak). */
+  tallyBattleForEyeBreak();
   // NPC fights are worth 2 fights' XP per wave (e.g. the 5-wave Rival = 10)
   const waves = Array.isArray(b.waves) ? b.waves.length : 1;
   const levelUps = awardXpToParty(waves * 2);
@@ -218,11 +222,16 @@ const WATER_DOJO_STAGES = [
 function dojoCleared(id){ return (state.progress.region1.dojoCleared||[]).includes(id); }
 function nextDojoStage(){ return DOJO_STAGES.find(st=>!dojoCleared(st.id)); }
 
+/* (3.11) Each fight's setup — its waves and conditions, nothing that happens
+   after — is built in one place, so the Test Arena's Challengers fight exactly
+   what the story does (ARENA_CHALLENGERS, below). */
+function dojoStageBattle(stage){
+  return { isNpc:true, name:stage.label, npcId:stage.id,
+    waves: stage.waves.map(w=>w.map(e=>({...e, ai:stage.ai, nerfed:false}))) };
+}
 function startDojoStage(stage){
   if(!ensurePool()) return;
-  beginBattle({ isNpc:true, name:stage.label, npcId:stage.id,
-    waves: stage.waves.map(w=>w.map(e=>({...e, ai:stage.ai, nerfed:false}))),
-    onWin:()=>onDojoStageWin(stage) });
+  beginBattle(Object.assign(dojoStageBattle(stage), { onWin:()=>onDojoStageWin(stage) }));
 }
 async function onDojoStageWin(stage){
   const r1 = state.progress.region1;
@@ -257,18 +266,20 @@ async function onGuardianWin(){
 }
 
 /* Rival — one-time, rewards protein */
-function startRival(){
-  if(!ensurePool()) return;
+function rivalR1Battle(){
   const eff = effectiveStarter();
-  beginBattle({ isNpc:true, name:'Jax', npcId:'rival',
+  return { isNpc:true, name:'Jax', npcId:'rival',
     waves:[
       [{species:'rat',level:21,ai:'best',nerfed:false}],
       [{species:'bird',level:21,ai:'best',nerfed:false}],
       [{species:'moth',level:21,ai:'best',nerfed:false}],
       [{species:'electric_starter',level:21,ai:'best',nerfed:false}],
       [{species:eff,level:21,ai:'best',nerfed:false}],
-    ],
-    onWin:onRivalWin });
+    ] };
+}
+function startRival(){
+  if(!ensurePool()) return;
+  beginBattle(Object.assign(rivalR1Battle(), { onWin:onRivalWin }));
 }
 async function onRivalWin(){
   const first = !state.progress.region1.rivalCleared;
@@ -312,11 +323,13 @@ function doInvestigate(){
   if(nextThug) startThug(nextThug);
   else startThugBoss();
 }
-function startThug(id){
+function thugBattle(id){
   const d = THUG_DEF[id];
-  beginBattle({ isNpc:true, name:'Thug', noFlee:true, npcId:id,
-    waves: d.waves.map(w=>w.map(e=>({...e, ai:'power1', nerfed:false}))),
-    onWin:()=>onThugWin(id) });
+  return { isNpc:true, name:'Thug', noFlee:true, npcId:id,
+    waves: d.waves.map(w=>w.map(e=>({...e, ai:'power1', nerfed:false}))) };
+}
+function startThug(id){
+  beginBattle(Object.assign(thugBattle(id), { onWin:()=>onThugWin(id) }));
 }
 async function onThugWin(id){
   if(!state.progress.region1.thugsCleared.includes(id)) state.progress.region1.thugsCleared.push(id);
@@ -326,13 +339,15 @@ async function onThugWin(id){
     left>0 ? `You scattered the thug. ${left} more still lurk in the area…` : 'That was the last of the small fry — their boss must be near.',
     'challenge');
 }
-function startThugBoss(){
-  beginBattle({ isNpc:true, name:'Thug Boss', noFlee:true, npcId:'thug_boss',
+function thugBossBattle(){
+  return { isNpc:true, name:'Thug Boss', noFlee:true, npcId:'thug_boss',
     waves:[
       [{species:'rat',level:20,ai:'best',nerfed:false},{species:'bird',level:20,ai:'best',nerfed:false},{species:'moth',level:20,ai:'best',nerfed:false}],
       [{species:'ground_starter',level:35,ai:'best',nerfed:false}],
-    ],
-    onWin:onThugBossWin });
+    ] };
+}
+function startThugBoss(){
+  beginBattle(Object.assign(thugBossBattle(), { onWin:onThugBossWin }));
 }
 async function onThugBossWin(){
   const r1 = state.progress.region1;
@@ -468,8 +483,20 @@ function arenaCfg(){
     plus:0,                // its Very High / Ultra stone's refinement: 0, + (1), ✦ (2)
     buffs:{},              // elusive, first, …
     advanced:false,
+    mode:'challengers',    // (3.11) 'challengers' (the story's fights) or 'bench' (the dummies)
+    region:1,              // the Challengers tab's region
   };
   return ui.arena;
+}
+/* The two halves of the arena (3.11): the story's challengers, and the bench. */
+function arenaTabs(c){
+  return `<div class="ar-row" style="margin:0 0 12px;">
+      <button class="btn btn-ghost pill ar-mode ${c.mode === 'challengers' ? 'sel' : ''}" data-mode="challengers" style="flex:1;">🏆 Challengers</button>
+      <button class="btn btn-ghost pill ar-mode ${c.mode !== 'challengers' ? 'sel' : ''}" data-mode="bench" style="flex:1;">🧪 Test bench</button>
+    </div>`;
+}
+function wireArenaTabs(c){
+  screenEl.querySelectorAll('.ar-mode').forEach(b=> b.addEventListener('click', ()=>{ c.mode = b.dataset.mode; renderArena(); }));
 }
 function arenaSpeciesOfType(t){
   return Object.keys(SPECIES).filter(k=>(SPECIES[k].types||[]).includes(t));
@@ -483,6 +510,7 @@ function arenaDefaultLevel(){
 function renderArena(){
   $('#brandSub').textContent = 'Test Arena';
   const c = arenaCfg();
+  if(c.mode === 'challengers') return renderArenaChallengers();
   const list = arenaSpeciesOfType(c.type);
   if(!c.species || !list.includes(c.species)) c.species = list[0];
   if(c.level == null) c.level = arenaDefaultLevel();
@@ -492,6 +520,7 @@ function renderArena(){
   screenEl.innerHTML = `
     <button class="back-link" id="backBtn">← Back</button>
     <div class="screen-title">Test Arena</div>
+    ${arenaTabs(c)}
     <div class="screen-sub">No spelling. Every move unlocked. Your whole party comes in.</div>
 
     <div class="hp-card" style="margin-bottom:12px;">
@@ -566,6 +595,7 @@ function renderArena(){
     <div class="phase-flag">Your party enters as it stands. Statuses, stones and levels are real.</div>
   `;
   $('#backBtn').addEventListener('click', ()=>go(ui.prevScreen||'home'));
+  wireArenaTabs(c);
   $('#arType').addEventListener('change', e=>{ c.type = e.target.value; c.species = null; renderArena(); });
   $('#arSpecies').addEventListener('change', e=>{ c.species = e.target.value; renderArena(); });
   $('#arLevel').addEventListener('change', e=>{ c.level = Math.max(1, Math.min(100, +e.target.value||1)); });
@@ -720,6 +750,364 @@ function arenaFire(mv){
   }
   const target = needTarget ? livingEnemies()[0] : null;
   resolveBattleMove(mv, target, full);
+}
+
+/* ============================================================
+   THE CHALLENGERS (3.11)
+   The designer: "please adapt the test arena to feature all different
+   challengers across the regions with their level-specific monsters and
+   special conditions e.g. padrino and figlio go first, etc. this will let me
+   test the battles without completing the earlier parts. keep the incomplete
+   ones like psychic disciples and master out"
+   Every trainer and boss of the five regions, fought as the story fights
+   them: the same waves, levels, AI, stones, crowns and conditions, built by
+   the very functions the story calls (dojoStageBattle, figlioBattle,
+   rosterBattle, …), so the two cannot drift apart. Nothing that happens
+   AFTER a story fight comes with it — no XP, no tokens, no prizes, no
+   catching, no progress, nothing marked seen in the dex (b.arenaChallenge,
+   04-battle.js / 05-battle-flow.js). The party goes in at full health and
+   comes back exactly as it went in (state.arenaRestore — even if the app is
+   closed mid-fight: normalizeProfile puts it back). Spell as in the story,
+   or 🧪 Test move to skip the words; 🚪 Exit leaves at any time.
+   Left out: the Monkey King's one-turn scripted loss, and wild encounters.
+   (3.16) The Psychic Disciples and the Psychic Master are finished — "please
+   finish the psychic disciples and master. Give them good AI" — and in.
+   ============================================================ */
+const ARENA_REGIONS = ['Riverside Meadow', 'Emerald March', 'Port Akrotiri', 'The North Sea', 'Cosa Nostia'];
+/* The catacomb floors and rooms whose men fight you, in the order you come to them. */
+const ARENA_R5_DECKS = ['cata_landing', 'cata_cistern', 'cata_stair',
+  'cata_landing_r1', 'cata_landing_r2', 'cata_cistern_r1', 'cata_cistern_r2',
+  'cata_bones_r1', 'cata_bones_r2', 'cata_stair_r1', 'cata_stair_r2',
+  'cata_quarry', 'cata_cellars', 'cata_pit'];
+/* The tower's floors: the Ghost Disciples' and (3.16) the Psychic
+   Disciples' — the Psychic Master's (12) and the Ghost Master's (13) are
+   cards of their own. */
+const ARENA_GHOST_FLOORS = [1, 3, 5, 7, 9, 11];
+const ARENA_PSYCHIC_FLOORS = [2, 4, 6, 8, 10];
+
+/* Every challenger: { region, id, label, npc | mon, icon, note, variants:
+   [{ label, npc, build }] } — a card each, and a choice inside it where there
+   are several of a kind. `note` is a string, or a function of the variant. */
+function arenaChallengers(){
+  const L = [];
+  const V = (build, label, npc)=> ({ build, label:label || null, npc:npc || null });
+  const add = (region, id, label, pic, icon, variants, note)=> L.push(Object.assign({ region, id, label, icon, variants, note:note || '' }, pic));
+  const N = id=> ({ npc:id }), M = (sp, crowned)=> ({ mon:sp, crowned:!!crowned });
+
+  /* ---- 1. Riverside Meadow ---- */
+  add(1, 'r1_dojo', 'Rock Dojo', N('guardian'), '🏯', DOJO_STAGES.map(st=> V(()=> dojoStageBattle(st), st.label, st.id)),
+    'In the story the three are fought in this order.');
+  add(1, 'r1_jax', 'Jax', N('rival'), '🥊', [V(()=> rivalR1Battle())],
+    'His last monster is always the starter that beats yours.');
+  add(1, 'r1_thugs', 'Thugs', N('thug1'), '👊', THUG_ORDER.map((id, i)=> V(()=> thugBattle(id), `Thug ${i + 1}`, id)));
+  add(1, 'r1_boss', 'Thug Boss', N('thug_boss'), '🔑', [V(()=> thugBossBattle())]);
+
+  /* ---- 2. Emerald March ---- */
+  add(2, 'r2_guardian', 'The Forest Guardian', M('forest_fairy', true), '🌳', [V(()=> guardianTrialBattle())],
+    'The end of the Sacred Grove\'s trial of courage. She uses Giga Drain every turn, healing as she hits. In the story you may run from her, but she recovers fully.');
+  add(2, 'r2_water', 'Water Dojo', N('water_master'), '🌊', WATER_DOJO_STAGES.map(st=> V(()=> waterStageBattle(st), st.label, st.id)),
+    'In the story the four are fought in this order.');
+  add(2, 'r2_jax', 'Jax', N('rival'), '🥊', [V(()=> rivalR2Battle())],
+    'His Eagle climbs for Piercing Stoop — harder to hit each turn it climbs, up to 3 — and his last monster is the starter that beats yours.');
+  add(2, 'r2_soldatos', 'Soldatos', N('soldato1'), '🕴️', [V(()=> mafiaBattle(MAFIA.soldato1), 'Soldato (the first stretch)', 'soldato1'),
+    V(()=> mafiaBattle(MAFIA.soldato2), 'Soldato (further in)', 'soldato2')], 'The Rocky Caverns\' soldatos, as you meet them on the paths.');
+  add(2, 'r2_capo_black', 'Black Capo', N('capo_black'), '🕴️', [V(()=> mafiaBattle(MAFIA.capo_black))]);
+  add(2, 'r2_capo_purple', 'Purple Capo', N('capo_purple'), '🕴️', [V(()=> mafiaBattle(MAFIA.capo_purple))]);
+  add(2, 'r2_padrino', 'Don Padrino', N('padrino'), '🕴️', [V(()=> padrinoR2Battle())],
+    'The disused path. In the story you are meant to lose: your team falls and the Sacred Seed answers. Here it is an ordinary fight. His Water Dragon charges Cataclysm for three turns, then Hyperbeam.');
+  add(2, 'r2_ride', 'Sottocapo — the dragon ride', N('sottocapo'), '🐉', [V(()=> dragonRideBattle())],
+    'Straight after the Padrino in the story. You ride his Water Dragon (crowned, Lv 100): one button — Unleash Max, then Hyperbeam Max on the last wave — and no spelling.');
+  add(2, 'r2_stand', 'Don Padrino — the last stand', N('padrino'), '🐉', [V(()=> lastStandBattle())],
+    'Still on the dragon, which cannot fall here: one button, Dragon Legacy.');
+
+  /* ---- 3. Port Akrotiri ---- */
+  add(3, 'r3_sailors', 'Sailors (the concert)', N('sailor1'), '⚓', [1, 2, 3, 4, 5].map(n=> V(()=> sailorBattle(n), `Sailor ${n}`, 'sailor' + n)),
+    'The fans crowding the stage before the band competition. Sailor 5 waits for the other four.');
+  add(3, 'r3_band', 'The Electric Dojo band', N('electric_master'), '🎸', ELECTRIC_BAND.map((m, i)=> V(()=> bandBattle(i),
+    m.label === 'Electric Master' ? 'Djenta, the Electric Master' : `${m.label} ${i + 1}`, m.id)),
+    'In the story all five are fought back to back, with no healing between them.');
+  add(3, 'r3_performers', 'Performers (the losing acts)', N('failstar1'), '🎤', FAILSTARS.map((f, i)=> V(()=> failstarBattle(i), `Performer ${i + 1} · ${f.zone}`, f.id)),
+    `Each brings one monster at a time from a place you passed through, all Lv ${FAILSTAR_LV}.`);
+  add(3, 'r3_figlio', 'Figlio', N('figlio'), '🎙️', [V(()=> figlioBattle())],
+    ()=> `His team is a level higher for every time you have beaten him at the concert, up to +20 — <b>+${Math.min(figlioBonus(), 20)}</b> on this profile.`);
+  add(3, 'r3_siblings', 'Electric Siblings', N('electric_new_master1'), '⚡', teamRoster('electric').map((m, i)=> V(()=> teamMemberBattle('electric', i), `Electric Sibling ${i + 1}`, m.id)),
+    'The three who want to keep the Dojo electric. In the story, all three back to back with no healing.');
+  add(3, 'r3_sage', 'Sage Disciples', N('physical_disciple1'), '🥋', teamRoster('sage').map((m, i)=> V(()=> teamMemberBattle('sage', i), `Sage Disciple ${i + 1}`, m.id)),
+    'Sent by the Great Sage dojo for the empty hall. In the story, all three back to back with no healing.');
+  add(3, 'r3_ankylo', 'The Ankylosaurus', M('ankylosaurus'), '🦕', [V(()=> ankyloBattle())],
+    'At the geothermal plant: toads first, then the Ankylosaurus between two more. It opens with Steel Soul (a quick cast, once a fight), then swings its Max. In the story every refusal adds a wave of toads.');
+
+  /* ---- 4. The North Sea ---- */
+  add(4, 'r4_divers', 'Divers', N('diver1'), '🤿', DIVERS.map((d, i)=> V(()=> diverBattle(i), crewName(d.id), d.id)),
+    'Their first two waves are a random catch from the deep.');
+  add(4, 'r4_sailors', 'Sailors (the crew hunt)', N('sailor1'), '⚓', [1, 2, 3, 4, 5].map(n=> V(()=> crewBattle('sailor' + n), crewName('sailor' + n), 'sailor' + n)),
+    'Their concert teams again, with three of the rail\'s birds in front — Sailor 5 already fields six waves, so his comes as it was.');
+  add(4, 'r4_cook', crewName('cook'), N('cook'), '🍳', [V(()=> crewBattle('cook'))]);
+  add(4, 'r4_captain', crewName('ship_captain'), N('ship_captain'), '⚓', [V(()=> crewBattle('ship_captain'))],
+    'Full-grown crew monsters; only his last, an Otter, is crowned.');
+  add(4, 'r4_keeper', crewName('shipkeeper'), N('shipkeeper'), '🧰', [V(()=> crewBattle('shipkeeper'))],
+    'Full-grown crew monsters; only his last, a Loong, is crowned.');
+  add(4, 'r4_jax', 'Jax', N('rival'), '🥊', [V(()=> rivalR4Battle())],
+    'Five borrowed monsters; four of them carry a Very High stone. In the story it is a wager: stones on the table.');
+  add(4, 'r4_scientists', 'Scientists', N('scientist1'), '🧑‍🔬', SCI.map(d=> V(()=> scientistBattle(d.n), crewName('scientist' + d.n), 'scientist' + d.n)),
+    'Tested one by one in the investigation.');
+  add(4, 'r4_mireille', crewName('scientist6'), N('scientist6'), '🧑‍🔬', [V(()=> culpritBattle(0))],
+    'Named as the culprit. In the story the supervisor steps up straight after her, with no healing.');
+  add(4, 'r4_barnaby', crewName('scientist_supervisor'), N('scientist_supervisor'), '🧑‍🔬', [V(()=> culpritBattle(1))],
+    'Straight after Mireille in the story; his last, a Ninja, is crowned.');
+  add(4, 'r4_nine', crewName('scientist9') + ' (daily)', N('scientist9'), '🧑‍🔬', [V(()=> nineDailyBattle())],
+    'Her standing invitation, once a day, after the case is closed.');
+  add(4, 'r4_wall', 'The whale wall', M('whale'), '🐋', [V(()=> whaleWallBattle(true))],
+    ()=> `Six waves of three enraged whales. Their level follows your best monster, 66 to 80 — <b>Lv ${r4Level()}</b> on this profile.`);
+
+  /* ---- 5. Cosa Nostia ---- */
+  add(5, 'r5_gate', 'Soldato at the sea cave', N('soldato1'), '💂', [V(()=> r5GateBattle())],
+    'The only way into the catacombs is past him.');
+  ARENA_R5_DECKS.forEach(id=>{
+    const d = R5_DECKS[id];
+    const gs = ((d && d.stealth && d.stealth.guards) || []).filter(g=> g.roster && R5_ROSTERS[g.roster] && g.kind !== 'capo');
+    if(!gs.length) return;
+    const lookouts = gs.filter(g=> g.kind === 'lookout').length;
+    add(5, 'r5_' + id, d.title, N('soldato1'), '💂', gs.map(g=> V(()=> rosterBattle(R5_ROSTERS[g.roster], guardSprite(g)),
+      g.kind === 'lookout' ? 'Lookout' + (lookouts > 1 ? ' ' + g.id.toUpperCase() : '') : 'Soldato ' + g.id.toUpperCase(), guardSprite(g))),
+      d.tier === 2 ? 'Under the Old Town: the Family\'s pit-fighters.' : (d.room ? 'A side room.' : ''));
+  });
+  add(5, 'r5_capo_black', 'Black Capo', N('capo_black'), '🕴️', [V(()=> rosterBattle(R5_ROSTERS.capo_black, 'capo_black'))],
+    'On the Cistern\'s bridge.');
+  add(5, 'r5_capo_purple', 'Purple Capo', N('capo_purple'), '🕴️', [V(()=> rosterBattle(R5_ROSTERS.capo_purple, 'capo_purple'))],
+    'At the top of the Long Stair.');
+  add(5, 'r5_consigliere', 'The Consigliere', N('consigliere'), '🕴️', [V(()=> rosterBattle(R5_ROSTERS.consigliere, 'consigliere'))],
+    'The master of the Fight Pit.');
+  add(5, 'r5_figlio', 'Figlio (the opera)', N('figlio'), '🎙️', [V(()=> r5FiglioBattle())],
+    ()=> `His team starts at Lv 94 and is a level higher for every win at the opera, up to 100 — <b>Lv ${r5FiglioLv(0)}–${r5FiglioLv(5)}</b> on this profile.`);
+  add(5, 'r5_sotto', 'Sottocapo (the villa door)', N('sottocapo'), '🕴️', [V(()=> r5SottoBattle())],
+    `His caverns team grown up, then his best, all Lv ${R5_SOTTO_LV}; the last a crowned Lizardape.`);
+  add(5, 'r5_disciples', 'Ghost Disciples (the tower)', N('ghost_disciple1'), '👻', ARENA_GHOST_FLOORS.map(n=> V(()=> r5TowerBattle(n), `Floor ${n}`, R5_TOWER[n - 1].sprite)),
+    v=> r5TowerNote(+v.label.replace(/\D/g, '')));
+  add(5, 'r5_psy_disciples', 'Psychic Disciples (the tower)', N('psychic_disciple1'), '🔮', ARENA_PSYCHIC_FLOORS.map(n=> V(()=> r5TowerBattle(n), `Floor ${n}`, R5_TOWER[n - 1].sprite)),
+    v=> r5TowerNote(+v.label.replace(/\D/g, '')));
+  add(5, 'r5_psychic_master', 'The Psychic Master', N('psychic_master'), '🔮', [V(()=> r5TowerBattle(12))],
+    ()=> r5TowerNote(12));
+  add(5, 'r5_ghost_master', 'The Ghost Master', N('ghost_master'), '👻', [V(()=> r5TowerBattle(13))],
+    ()=> r5TowerNote(13));
+  /* (3.18, 3.19) under the villa: Jax at the vault's door, and the vault itself */
+  add(5, 'r5_jax', 'Jax (the vault door)', N('rival_padrino'), '🧑', [V(()=> r5JaxBattle())], ()=> r5JaxNote());
+  add(5, 'r5_vault', 'Don Padrino — the vault', N('padrino2'), '⏳', [V(()=> r5ClimaxBattle({ arena:true }))],
+    ()=> `The climax: his Rhino, Fox, Shadow, Jackal and Raven, crowned at ${R5_VAULT_LV} with 10 protein, then Cyborg at ${R5_VAULT_CYBORG} — three times, ` +
+         `Cyborg turning back time between. The <b>Monkey King</b> fights at your side with every stone you hold (and his own Physical Stone), ` +
+         `casting before you move; after the third round, Heavensplitter Max breaks Cyborg, and you clear its bar to 1 HP. ` +
+         `Here he says each stone's line every time.`);
+  add(5, 'r5_past', 'Don Padrino — the past', N('padrino2'), '🌀', [V(()=> tearRoundBattle())],
+    ()=> `One round of the space-time tear's seven: his five, crowned, at your best monster's level or ${TEAR.floor} — <b>Lv ${tearFoeLevel()}</b> on this profile — then Cyborg at ${TEAR.cyborgLevel}. ` +
+         `Cyborg's Futuresight dodges half of every attack, and each dodge is a Spacetime Fracture: its Spacetime Rift Max hits 1.1× harder for every one. ` +
+         `Its Organosteel Body arrives behind 3 shields and raises 1 more every turn, each soaking up to <b>${tearCyborgShield()}</b> of a strike: no Diamond Dust touches them; a Dragon Dance breaks 1 / 2 / 3 with each attack. ` +
+         `In the tear it rewinds them and the round begins again, and every quiz asks for silver and gold words; here the one round is the fight, with your usual words.`);
+  return L;
+}
+
+/* A wave spec's level as the fight will have it: none of theirs past 100,
+   but Cyborg and anything told otherwise (makeEnemy). */
+function arenaSpecLevel(s){
+  return (s.anyLevel || (SPECIES[s.species] || {}).noLevelCap) ? s.level : Math.min(s.level, ENEMY_LEVEL_CAP);
+}
+function arenaSummary(cfg){
+  const all = cfg.waves.flat(), lv = all.map(arenaSpecLevel);
+  const lo = Math.min(...lv), hi = Math.max(...lv);
+  const n = (k, w)=> `${k} ${w}${k === 1 ? '' : 's'}`;
+  return `${n(cfg.waves.length, 'wave')} · ${n(all.length, 'monster')} · Lv ${lo === hi ? lo : lo + '–' + hi}`;
+}
+/* The short marks on a card. */
+function arenaTags(cfg){
+  const all = cfg.waves.flat(), t = [];
+  if(cfg.figlio || cfg.alwaysFirst || cfg.enemiesFirst) t.push('⚡ moves first');
+  if(cfg.catacomb) t.push('👻 lurking ghosts');
+  if(cfg.scriptedAlly) t.push('🐉 you ride the dragon');
+  if(cfg.ally) t.push('🐒 an ally fights with you');
+  if(all.some(s=> s.veryHigh)) t.push('💎 stones');
+  if(all.some(s=> s.enraged)) t.push('🐋 enraged');
+  if(all.some(s=> s.crowned)) t.push('✦ crowned');
+  return t;
+}
+/* A carried or cast Very High stone of theirs, in plain words. */
+function arenaStoneLine(s){
+  const vh = s.veryHigh, plus = vh.plus || 0, d = veryHighDef(vh.type, plus);
+  if(!d) return '';
+  const who = escapeHtml(SPECIES[s.species].name), name = d.name + UPGRADE_MARKS[plus];
+  if(vh.cast) return `💎 <b>${who}: ${name}</b>, cast on its first action — the mirror of yours.`;
+  const what = {
+    Fire:   ()=> `it deals <b>${d.deal}×</b> and takes <b>${d.take}×</b>`,
+    /* Laid as a wave arrives, before its first round, it runs that round and
+       five more — as yours does when your carrier starts the fight. */
+    Dragon: ()=> `it deals <b>${d.deal}×</b>` + (d.strip ? ` and breaks <b>${d.strip}</b> of your shields before each of its attacks hits` : '') + (d.mach
+      ? `, and from the moment it arrives their side has <b>Mach Dragon${d.mach > 1 ? ' ✦' : ''}</b> for <b>${(d.turns || 5) + 1} rounds</b>: they move before you ` +
+        `unless a monster of yours on the field carries Dragon Dance ${d.mach > 1 ? '✦' : '+ or ✦'} — or a Diamond Dust of yours sweeps it away`
+      : ''),
+    Steel:  ()=> `it takes <b>${Math.round(d.reduce * 100)}% less</b>` + (((d.block || 0) + (d.passiveBlock || 0)) ? ` and starts with <b>${(d.block || 0) + (d.passiveBlock || 0)} block</b>` : ''),
+    Flying: ()=> `nothing touches it on its first turn, and it dodges <b>${Math.round((d.after || 0.15) * 100)}%</b> after`,
+    Fairy:  ()=> `Diamond Dust: your effects are swept away, and nothing of yours takes hold for ${d.turns || 5} turns — but your shields stand, and still form`,
+  }[vh.type];
+  return `💎 <b>${who}: ${name}</b>, carried — ${what ? what() : 'in effect from the moment it arrives'}.`;
+}
+/* The conditions a fight is fought under, in full. */
+function arenaConditions(cfg){
+  const all = cfg.waves.flat(), out = [];
+  const head = `unless a monster of yours has a Mach Dragon, or a first-strike passive such as Lightning Cat (a tie goes to you)`;
+  if(cfg.figlio) out.push(`⚡ <b>He leads every round</b>: his monster moves before yours — ${head}.`);
+  else if(cfg.alwaysFirst || cfg.enemiesFirst) out.push(`⚡ <b>They move first every round</b> — ${head}.`);
+  if(cfg.catacomb) out.push(`👻 <b>Every Ghost of theirs arrives Lurking</b>: every attack misses it until it tries to deal damage (a mind-read or a Grudge still lands).`);
+  if(cfg.scriptedAlly) out.push(`🐉 <b>You ride a crowned Lv ${cfg.allyLevel || 100} Water Dragon</b>: your team steps aside, one button, no spelling` +
+    (cfg.allyUnkillable ? ` — and it cannot fall.` : `.`));
+  if(cfg.ally) out.push(`🐒 <b>${escapeHtml(cfg.ally.name || 'An ally')} (Lv ${cfg.ally.level || 100}) fights at your side</b>: he casts his stones before your turn, ` +
+    `then strikes right after you — no spelling for him, and their blows never reach him.`);
+  all.filter(s=> s.veryHigh).forEach(s=> out.push(arenaStoneLine(s)));
+  if(all.some(s=> s.enraged)) out.push(`🐋 <b>Enraged</b>: they deal <b>25% more</b>, take <b>25% less</b>, and use Depth Charge every turn.`);
+  if(cfg.noFlee) out.push(`🚫 <b>No running</b> in the story. Here 🚪 Exit always takes you out.`);
+  return out;
+}
+/* One of theirs, as the wave list shows it. */
+function arenaSpecChip(s){
+  const e = makeEnemy(s.species, s.level, { nerfed:s.nerfed, crowned:s.crowned, forceStage:s.forceStage, anyLevel:s.anyLevel, supplements:s.supplements });
+  return `<span class="arc-mon">${monPortrait(s.species, 26, { stage:e.stage, crowned:!!s.crowned })}<span>${escapeHtml(SPECIES[s.species].name)} ` +
+    `<small>Lv ${e.level}</small>${s.crowned ? ' ✦' : ''}${s.veryHigh ? ' 💎' : ''}${s.enraged ? ' 🐋' : ''}</span></span>`;
+}
+function arenaPicture(x, v, px){
+  if(x.mon) return monPortrait(x.mon, px, { view:'front', bare:true, crowned:!!x.crowned });
+  return npcPortrait((v && v.npc) || x.npc, x.icon, px, 'transparent');
+}
+function arenaNote(x, v){ return typeof x.note === 'function' ? x.note(v) : x.note; }
+
+function arenaChallengeCss(){
+  if(document.getElementById('arenaChallengeCss')) return;
+  const st = document.createElement('style');
+  st.id = 'arenaChallengeCss';
+  st.textContent = `
+    .arc-regions{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 14px;}
+    .arc-regions .pill{margin:0;font-size:12px;padding:8px 11px;}
+    .arc-card .cc-title{font-size:16px;}
+    .arc-n{font-size:12px;color:var(--ink-soft);font-weight:800;}
+    .arc-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;}
+    .arc-tag{font-size:10.5px;font-weight:800;background:var(--paper-3);border-radius:20px;padding:2px 8px;}
+    .arc-sheet{max-height:88vh;overflow-y:auto;max-width:420px;}
+    .arc-sheet .ar-select{margin-top:8px;}
+    .arc-waves{text-align:left;margin:10px 0 14px;}
+    .arc-wave{font-size:12px;padding:7px 0;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:5px 12px;align-items:center;}
+    .arc-wave > b{width:100%;font-size:10.5px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.05em;}
+    .arc-mon{display:inline-flex;align-items:center;gap:5px;font-weight:700;}
+    .arc-mon small{color:var(--ink-soft);font-weight:800;}
+  `;
+  document.head.appendChild(st);
+}
+
+function renderArenaChallengers(){
+  arenaChallengeCss();
+  const c = arenaCfg();
+  if(!(c.region >= 1 && c.region <= ARENA_REGIONS.length)) c.region = 1;
+  const list = arenaChallengers().filter(x=> x.region === c.region);
+  screenEl.innerHTML = `
+    <button class="back-link" id="backBtn">← Back</button>
+    <div class="screen-title">Test Arena</div>
+    ${arenaTabs(c)}
+    <div class="screen-sub">Every trainer and boss, fought as the story fights them. Your party goes in at full health and comes out
+      exactly as it went in — no XP, no prizes, and nothing in the story changes.</div>
+    <div class="arc-regions">${ARENA_REGIONS.map((n, i)=>
+      `<button class="btn btn-ghost pill arc-reg ${c.region === i + 1 ? 'sel' : ''}" data-reg="${i + 1}">${i + 1} · ${escapeHtml(n)}</button>`).join('')}</div>
+    ${list.map(x=>{
+      const cfg = x.variants[0].build();
+      const tags = arenaTags(cfg);
+      return `<div class="challenge-card arc-card" data-arc="${x.id}">
+        ${arenaPicture(x, x.variants.length > 1 ? null : x.variants[0], 50)}
+        <div style="flex:1;min-width:0;">
+          <div class="cc-title">${escapeHtml(x.label)}${x.variants.length > 1 ? ` <span class="arc-n">· ${x.variants.length}</span>` : ''}</div>
+          <div class="cc-desc">${x.variants.length > 1 ? 'From ' : ''}${arenaSummary(cfg)}</div>
+          ${tags.length ? `<div class="arc-tags">${tags.map(t=> `<span class="arc-tag">${t}</span>`).join('')}</div>` : ''}
+        </div>
+      </div>`;
+    }).join('')}`;
+  $('#backBtn').addEventListener('click', ()=> go(ui.prevScreen || 'home'));
+  wireArenaTabs(c);
+  screenEl.querySelectorAll('.arc-reg').forEach(b=> b.addEventListener('click', ()=>{ c.region = +b.dataset.reg; renderArena(); window.scrollTo(0, 0); }));
+  screenEl.querySelectorAll('[data-arc]').forEach(el=> el.addEventListener('click', ()=>{
+    const x = list.find(y=> y.id === el.dataset.arc);
+    if(x) openArenaChallenger(x, 0);
+  }));
+}
+
+/* What you are about to face: every wave, every level, and the conditions. */
+function openArenaChallenger(x, vi){
+  const v = x.variants[vi] || x.variants[0];
+  const cfg = v.build();                       // built once: what you see is what you fight
+  const note = arenaNote(x, v);
+  const conds = arenaConditions(cfg);
+  const ov = document.createElement('div');
+  ov.className = 'refine-scrim arc-scrim';
+  ov.innerHTML = `
+    <div class="refine-card arc-sheet">
+      ${arenaPicture(x, v, 84)}
+      <div class="refine-name">${escapeHtml(v.label || x.label)}</div>
+      <div class="refine-sub">${escapeHtml(ARENA_REGIONS[x.region - 1])} · ${arenaSummary(cfg)}</div>
+      ${x.variants.length > 1 ? `<select class="ar-select" id="arcVar">${x.variants.map((w, i)=>
+        `<option value="${i}" ${i === vi ? 'selected' : ''}>${escapeHtml(w.label)}</option>`).join('')}</select>` : ''}
+      ${(conds.length || note) ? `<div class="move-info-body">${conds.map(t=> `<p>${t}</p>`).join('')}${note ? `<p><i>${note}</i></p>` : ''}</div>` : ''}
+      <div class="arc-waves">${cfg.waves.map((w, i)=> `<div class="arc-wave"><b>Wave ${i + 1}</b>${w.map(arenaSpecChip).join('')}</div>`).join('')}</div>
+      <button class="btn btn-primary" id="arcGo">⚔️ Fight</button>
+      <button class="btn btn-ghost" id="arcNo" style="margin-top:8px;">Back</button>
+    </div>`;
+  document.body.appendChild(ov);
+  const close = ()=>{ if(ov.parentNode) ov.parentNode.removeChild(ov); };
+  ov.addEventListener('click', e=>{ if(e.target === ov) close(); });
+  ov.querySelector('#arcNo').addEventListener('click', close);
+  const sel = ov.querySelector('#arcVar');
+  if(sel) sel.addEventListener('change', ()=>{ close(); openArenaChallenger(x, +sel.value); });
+  ov.querySelector('#arcGo').addEventListener('click', ()=>{ close(); startArenaChallenge(x, v, cfg); });
+}
+
+/* In: the party healed for the fight, and written down as it was. */
+function startArenaChallenge(x, v, cfg){
+  if(activePool().length === 0){ ui.prevScreen = 'arena'; toast('No words selected, please select to proceed.'); return go('spelling'); }
+  cfg = Object.assign({}, cfg || v.build());
+  /* Nothing that hands the fight back to the story: what happens after it, a
+     loss the story needs (the Padrino), the Grove's trial, the tear's rounds,
+     the catching. */
+  ['onWin', 'onLose', 'scriptedLoss', 'guardianTrial', 'tear', 'coreSpar', 'challenge', 'allowCatch'].forEach(k=> delete cfg[k]);
+  arenaSnapshotParty();
+  state.party.forEach(m=>{ m.currentHp = monMaxHp(m); });
+  ui.arenaRun = { id:x.id, label:v.label || x.label, zone:ui.currentZone || null };
+  ui.currentZone = null;                       // its own backdrop, or the plain one
+  beginBattle(Object.assign(cfg, { arenaChallenge:x.id, onWin: ()=> arenaChallengeOver('won') }));
+}
+function arenaSnapshotParty(){
+  const hp = {};
+  state.party.concat(state.storage || []).forEach(m=>{ if(m && m.uid) hp[m.uid] = m.currentHp; });
+  state.arenaRestore = { hp };
+  saveProfile();
+}
+function arenaRestoreParty(){
+  const r = state.arenaRestore;
+  if(!r) return;
+  const hp = r.hp || {};
+  state.party.concat(state.storage || []).forEach(m=>{
+    if(m && m.uid && Object.prototype.hasOwnProperty.call(hp, m.uid)) m.currentHp = hp[m.uid];
+  });
+  delete state.arenaRestore;
+  saveProfile();
+}
+/* Out: won, lost or left — the borrowed dragon handed back, the party as it
+   went in, and back to the arena. Once only: the fight keeps its mark, so a
+   late call (a defeat noticed twice) comes here again and does nothing, and
+   never reaches the story's own ending. */
+function arenaChallengeOver(result){
+  const run = ui.arenaRun;
+  if(!run) return;
+  ui.arenaRun = null;
+  restoreRealParty();
+  arenaRestoreParty();
+  if(run.zone) ui.currentZone = run.zone;
+  ui.arenaUnlocked = true;
+  stopMusic();
+  if(result === 'left'){ toast('Left the fight — your party is back as it went in.'); return go('arena'); }
+  go('arena');                                 // off the battle screen for good, then the result over it
+  challengeResult(result === 'won' ? '🏆' : '💀', result === 'won' ? `${run.label} beaten` : `Lost to ${run.label}`,
+    `A test fight: no XP, no prizes, and nothing in the story has changed.<br><br>Your party is back exactly as it went in.`, 'arena');
 }
 
 

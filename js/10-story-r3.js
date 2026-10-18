@@ -24,8 +24,8 @@ function ankyloAvailable(){
 /* Once Ankylosaurus has agreed to help, the plant is genuinely at peace. */
 function plantAtPeace(){ return !!ankyloState().agreed; }
 function ankyloWaves(){
-  const a = ankyloState();
-  const extra = Math.min(20, Math.max(0, a.refusals - 1));
+  const a = (state.progress.region3 || {}).ankylo || {};   // (3.11) read, never written: the Test Arena builds this too
+  const extra = Math.min(20, Math.max(0, (a.refusals || 0) - 1));
   const toadWave = ()=>[
     {species:'toad',level:65,ai:'power1',nerfed:false},
     {species:'toad',level:65,ai:'best',nerfed:false},
@@ -40,10 +40,13 @@ function ankyloWaves(){
   ]);
   return waves;
 }
+function ankyloBattle(){
+  return { isNpc:false, allowCatch:true, name:'Something far worse',
+    waves: ankyloWaves(), bgKey:'battle_geothermal_plant' };
+}
 function startAnkyloEncounter(){
   ankyloState().seen = true;
-  beginBattle({ isNpc:false, allowCatch:true, name:'Something far worse',
-    waves: ankyloWaves(), bgKey:'battle_geothermal_plant' });
+  beginBattle(ankyloBattle());
 }
 
 /* The conversation after it is caught. Refusing releases it. */
@@ -707,12 +710,15 @@ function onSailorTap(n){
       `He doesn't even lower his camera.<br><br>"Leave me alone, I need to take pictures!"`,
       ()=>go('concert'), { bg:'band_concert', subtitle:'Band Competition' });
   }
-  const def = SAILORS[n];
   if(!ensurePool()) return;
-  beginBattle({ isNpc:true, name:def.label, npcId:'sailor'+n, concertFight:true,
+  beginBattle(Object.assign(sailorBattle(n), { onWin: ()=> onSailorWin(n) }));
+}
+/* (3.11) The setups, shared with the Test Arena's Challengers. */
+function sailorBattle(n){
+  const def = SAILORS[n];
+  return { isNpc:true, name:def.label, npcId:'sailor'+n, concertFight:true,
     waves: def.waves.map(w=>w.map(e=>({...e, nerfed:false}))),
-    bgKey:'battle_band_concert',
-    onWin: ()=> onSailorWin(n) });
+    bgKey:'battle_band_concert' };
 }
 
 async function onSailorWin(n){
@@ -759,15 +765,17 @@ function onBandTap(){
 }
 
 /* Five trainers, one continuous run. */
-function startBandGauntlet(i){
+function bandBattle(i){
   const m = ELECTRIC_BAND[i];
-  ui.bandIndex = i;
-  if(!ensurePool()) return;
-  beginBattle({ isNpc:true, name:m.label, npcId:m.id,
+  return { isNpc:true, name:m.label, npcId:m.id,
     waves: m.waves.map(w=>w.map(e=>({...e, nerfed:false}))),
     bgKey:'battle_band_concert',
-    bandRun:true, concertFight:true,
-    onWin: ()=> onBandStageWin(i) });
+    bandRun:true, concertFight:true };
+}
+function startBandGauntlet(i){
+  ui.bandIndex = i;
+  if(!ensurePool()) return;
+  beginBattle(Object.assign(bandBattle(i), { onWin: ()=> onBandStageWin(i) }));
 }
 async function onBandStageWin(i){
   if(i < ELECTRIC_BAND.length-1){
@@ -864,13 +872,15 @@ function openFailstar(i){
   });
 }
 
-function startFailstarFight(i){
+function failstarBattle(i){
   const f = FAILSTARS[i];
-  if(!ensurePool()) return;
-  beginBattle({ isNpc:true, name:'Performer', npcId:f.id, concertFight:true,
+  return { isNpc:true, name:'Performer', npcId:f.id, concertFight:true,
     bgKey:'battle_band_concert',
-    waves: f.mons.map(sp=>[{ species:sp, level:FAILSTAR_LV, ai:'best', nerfed:false }]),
-    onWin: ()=> onFailstarWin(i) });
+    waves: f.mons.map(sp=>[{ species:sp, level:FAILSTAR_LV, ai:'best', nerfed:false }]) };
+}
+function startFailstarFight(i){
+  if(!ensurePool()) return;
+  beginBattle(Object.assign(failstarBattle(i), { onWin: ()=> onFailstarWin(i) }));
 }
 async function onFailstarWin(i){
   const f = FAILSTARS[i];
@@ -1044,15 +1054,16 @@ function rematchTeam(which){
 
 /* Each team is a continuous run, like the band gauntlet. */
 function teamRoster(which){ return which==='electric' ? ELECTRIC_SIBLINGS : GREAT_SAGE_TEAM; }
+function teamMemberBattle(which, i){
+  const m = teamRoster(which)[i];
+  return { isNpc:true, name:m.label, npcId:m.id, concertFight:true,
+    bgKey:'battle_electric_dojo',
+    waves: m.waves.map(w=>w.map(e=>({...e, nerfed:false}))) };
+}
 function startTeamRun(which, i, rematch){
-  const roster = teamRoster(which);
-  const m = roster[i];
   if(!ensurePool()) return;
   ui.dojoRun = { which, i, rematch:!!rematch };
-  beginBattle({ isNpc:true, name:m.label, npcId:m.id, concertFight:true,
-    bgKey:'battle_electric_dojo',
-    waves: m.waves.map(w=>w.map(e=>({...e, nerfed:false}))),
-    onWin: ()=> onTeamStageWin(which, i, !!rematch) });
+  beginBattle(Object.assign(teamMemberBattle(which, i), { onWin: ()=> onTeamStageWin(which, i, !!rematch) }));
 }
 async function onTeamStageWin(which, i, rematch){
   const roster = teamRoster(which);
@@ -1222,14 +1233,13 @@ function figlioChallenge(){
 /* He can be met once a day, and he is a level stronger each time. */
 function today(){ const d=new Date(); return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate(); }
 function figlioBeatenToday(){ return concertState().figlioDay === today(); }
-function figlioBonus(){ return concertState().figlioWins || 0; }
+function figlioBonus(){ return ((state.progress.region3 || {}).concert || {}).figlioWins || 0; }   // (3.11) read, never written
 
-function startFiglioFight(){
-  if(!ensurePool()) return;
+function figlioBattle(){
   /* +1 level per victory, but the staircase flattens at 91 so it stays a
      hard fight rather than an impossible one. */
   const up = Math.min(figlioBonus(), 20);
-  beginBattle({ isNpc:true, name:'Figlio', npcId:'figlio', concertFight:true,
+  return { isNpc:true, name:'Figlio', npcId:'figlio', concertFight:true,
     bgKey:'battle_band_concert', figlio:true,
     waves:[
       [{species:'ground_starter',  level:66+up, ai:'best'}],
@@ -1238,8 +1248,11 @@ function startFiglioFight(){
       [{species:'physical_starter',level:69+up, ai:'best'}],
       [{species:'flying_starter',  level:70+up, ai:'best'}],
       [{species:'howler',level:71+up, ai:'best', crowned:true, supplements:10}],
-    ],
-    onWin: onFiglioWin });
+    ] };
+}
+function startFiglioFight(){
+  if(!ensurePool()) return;
+  beginBattle(Object.assign(figlioBattle(), { onWin: onFiglioWin }));
 }
 async function onFiglioWin(){
   const c = concertState();

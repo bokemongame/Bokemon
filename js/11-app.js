@@ -598,7 +598,7 @@ function renderSound(){
     <div class="hp-card">
       <div style="font-family:'Baloo 2',cursive;font-weight:700;font-size:17px;">🔒 Parent controls</div>
       <div style="font-size:12px;color:var(--ink-soft);font-weight:600;margin-bottom:12px;">
-        Difficulty, writing leniency and eye breaks. Password protected so they can't be changed mid-game.
+        Difficulty, writing leniency, eye breaks and waves per day. Password protected so they can't be changed mid-game.
       </div>
       <div id="parentArea"></div>
     </div>
@@ -672,13 +672,13 @@ function renderParentArea(){
   if(!el) return;
 
   if(!ui.xpUnlocked){
-    const every = state.settings.eyeBreakEvery||0, mins = state.settings.eyeBreakMins||5;
+    const every = eyeBreakWaves(), mins = state.settings.eyeBreakMins||5;
     el.innerHTML = `
       <div class="pc-summary">
         <div>⚡ Levelling: <b>${XP_MODES[xpMode()].label}</b></div>
         <div>✍️ Leniency: <b>${lenLabel(state.settings.leniency||1)}</b></div>
-        <div>👀 Eye breaks: <b>${every>0?`${mins} min every ${every} battles`:'off'}</b></div>
-        <div>📅 Battles a day: <b>${dailyUnlimited()?'unlimited':(dailyLimit()===0?'switched off':dailyLimit())}</b> · ${battlesToday()} so far today</div>
+        <div>👀 Eye breaks: <b>${every>0?`${mins} min every ${every} waves`:'off'}</b></div>
+        <div>📅 Waves a day: <b>${dailyUnlimited()?'unlimited':(dailyLimit()===0?'switched off':dailyLimit())}</b> · ${wavesToday()} so far today (${battlesToday()} ${battlesToday() === 1 ? 'battle' : 'battles'})</div>
         ${dailyOverrideActive() ? `<div>🔓 Opened by a grown-up: <b>${state.dailyOverrideOpen ? 'no time limit'
           : 'until ' + new Date(state.dailyOverrideUntil).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})}</b></div>` : ''}
       </div>
@@ -695,7 +695,7 @@ function renderParentArea(){
     return;
   }
 
-  const every = state.settings.eyeBreakEvery||0, mins = state.settings.eyeBreakMins||5;
+  const every = eyeBreakWaves(), mins = state.settings.eyeBreakMins||5;
   el.innerHTML = `
     <div class="pc-block">
       <div class="pc-head">⚡ Levelling speed</div>
@@ -762,26 +762,33 @@ function renderParentArea(){
 
     <div class="pc-block">
       <div class="pc-head">👀 Eye breaks</div>
-      <div class="pc-sub">Counts battles only — Recovery and practice don't add up.</div>
-      <label style="font-size:12px;font-weight:800;">Battles before a break: <span id="ebeLabel">${every||'off'}</span></label>
-      <input type="range" id="ebeSlider" min="0" max="30" step="1" value="${every}" style="width:100%;accent-color:var(--cinnabar);">
+      <div class="pc-sub">Counts waves of monsters, not battles — the same waves as the day's limit below: every wave that
+        comes onto the field, beaten or not. A break that falls due in the middle of a battle waits for its end. Twenty minutes
+        without a wave counts as a rest: the count starts again. Recovery and practice don't add up.</div>
+      <label style="font-size:12px;font-weight:800;">Waves before a break: <span id="ebeLabel">${every||'off'}</span></label>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input type="range" id="ebeSlider" min="0" max="${EYE_WAVES_MAX}" step="1" value="${every}" style="flex:1;accent-color:var(--cinnabar);">
+        <input type="number" id="ebeNum" min="0" max="${EYE_WAVES_MAX}" value="${every}" style="width:64px;" aria-label="Waves before a break">
+      </div>
       <label style="font-size:12px;font-weight:800;display:block;margin-top:8px;">Break length: <span id="ebmLabel">${mins} min</span></label>
       <div style="display:flex;gap:8px;align-items:center;">
         <input type="range" id="ebmSlider" min="1" max="120" step="1" value="${mins}" style="flex:1;accent-color:var(--cinnabar);">
         <input type="number" id="ebmNum" min="1" max="120" value="${mins}" style="width:64px;" aria-label="Break length in minutes">
       </div>
-      <div class="pc-sub" style="margin-top:6px;">Set battles to 0 to switch eye breaks off. Breaks can last up to 2 hours.</div>
+      <div class="pc-sub" style="margin-top:6px;">Set waves to 0 to switch eye breaks off. Breaks can last up to 2 hours.</div>
     </div>
 
     <div class="pc-block" style="border-bottom:none;padding-bottom:0;">
-      <div class="pc-head">📅 Battles per day</div>
-      <div class="pc-sub">Counts battles the same way. Reaching the number closes the game until tomorrow;
-        a grown-up can open it again with the password for 1–60 minutes. At 0 it stays closed until a grown-up opens it.</div>
-      <label style="font-size:12px;font-weight:800;">Battles a day: <span id="dbLabel">${dailyUnlimited()?'unlimited':(dailyLimit()===0?'off':dailyLimit())}</span>
-        · ${battlesToday()} so far today</label>
+      <div class="pc-head">📅 Waves per day</div>
+      <div class="pc-sub">Counts waves of monsters, not battles — a battle can be 1 wave or 42: a wild fight is 1,
+        a soldato 2, a capo 3, a tower floor 6, the vault 19, the tear's seven rounds 42. A wave counts as it arrives,
+        beaten or not. A battle is always finished: the one that reaches the number is played to its end, then the game
+        closes until tomorrow. A grown-up can open it again with the password for 1–60 minutes. At 0 it stays closed until a grown-up opens it.</div>
+      <label style="font-size:12px;font-weight:800;">Waves a day: <span id="dbLabel">${dailyUnlimited()?'unlimited':(dailyLimit()===0?'off':dailyLimit())}</span>
+        · ${wavesToday()} so far today (${battlesToday()} ${battlesToday() === 1 ? 'battle' : 'battles'})</label>
       <div style="display:flex;gap:8px;align-items:center;">
-        <input type="range" id="dbSlider" min="0" max="100" step="1" value="${dailyLimit()}" ${dailyUnlimited()?'disabled':''} style="flex:1;accent-color:var(--cinnabar);">
-        <input type="number" id="dbNum" min="0" max="100" value="${dailyLimit()}" ${dailyUnlimited()?'disabled':''} style="width:64px;" aria-label="Battles per day">
+        <input type="range" id="dbSlider" min="0" max="${DAILY_MAX}" step="1" value="${dailyLimit()}" ${dailyUnlimited()?'disabled':''} style="flex:1;accent-color:var(--cinnabar);">
+        <input type="number" id="dbNum" min="0" max="${DAILY_MAX}" value="${dailyLimit()}" ${dailyUnlimited()?'disabled':''} style="width:64px;" aria-label="Waves per day">
       </div>
       <label style="display:flex;gap:8px;align-items:center;margin-top:8px;font-size:13px;font-weight:700;">
         <input type="checkbox" id="dbUnlimited" ${dailyUnlimited()?'checked':''}> Unlimited — no daily limit
@@ -839,16 +846,18 @@ function renderParentArea(){
     await saveProfile();
     toast(`${def.icon} ${n} ${def.label}${n>1?'s':''} awarded!`);
   }));
-  const a=$('#ebeSlider'), b=$('#ebmSlider');
-  a.addEventListener('input', ()=>{ $('#ebeLabel').textContent = a.value>0?a.value:'off'; });
-  a.addEventListener('change', async ()=>{ state.settings.eyeBreakEvery = +a.value; await saveProfile(); });
+  const b=$('#ebmSlider');
+  pairInputs($('#ebeSlider'), $('#ebeNum'), 0, EYE_WAVES_MAX, async (v, commit)=>{
+    $('#ebeLabel').textContent = v > 0 ? v : 'off';
+    if(commit){ state.settings.eyeBreakWaves = v; await saveProfile(); }
+  });
   pairInputs(b, $('#ebmNum'), 1, 120, async (v, commit)=>{
     $('#ebmLabel').textContent = v + ' min';
     if(commit){ state.settings.eyeBreakMins = v; await saveProfile(); }
   });
-  pairInputs($('#dbSlider'), $('#dbNum'), 0, 100, async (v, commit)=>{
+  pairInputs($('#dbSlider'), $('#dbNum'), 0, DAILY_MAX, async (v, commit)=>{
     $('#dbLabel').textContent = v === 0 ? 'off' : v;
-    if(commit){ state.settings.dailyBattles = v; await saveProfile(); }
+    if(commit){ state.settings.dailyWaves = v; await saveProfile(); }
   });
   $('#dbUnlimited').addEventListener('change', async e=>{
     state.settings.dailyUnlimited = e.target.checked;

@@ -4,10 +4,12 @@
    shares one global scope.
 
    Where Cyborg — the Padrino's artificial monster, the time monster itself —
-   escapes at the end of Region 5's climax, a tear in space and time stays
-   open. The story will open it (r5().tearOpen); until the climax is built,
-   the developer profile can go there. From the Challenge page it is one step
-   away (the story's ending will also leave it on the map), with two ways in:
+   goes at the end of Region 5's climax, taken by Nemesis, a tear in space
+   and time stays open. (3.20) The story opens it (r5().tearOpen, in the
+   vault — 15-region5.js, "AFTER THE FIGHT"); the developer profile can
+   always go there. From the Challenge page it is one step away, and it
+   hangs over Cyborg's empty cradle in the vault (its Back returns there:
+   ui.tearBack), with two ways in:
      · Enter the space-time tear — the way into Region 6 (not built yet);
      · Challenge the past — the Padrino's battle again, as a WEEKLY challenge.
 
@@ -22,7 +24,10 @@
      aside, never acting, never below 1 HP): Spacetime Rift Max, 1.5× its
      attack, 1.1× more for every Spacetime Fracture, multiplying; Futuresight
      dodges half of every attack and each dodge is a fracture. A ✦ Curse
-     quiets Futuresight; a Diamond Dust sweeps the fractures away.
+     quiets Futuresight; a Diamond Dust sweeps the fractures away. (3.13)
+     Organosteel Body: 3 shields as it arrives and 1 more every turn, each
+     worth its ATK (tearCyborgShield) — no dust touches them; a Dragon Dance
+     breaks 1 / 2 / 3 with each attack, and a ✦ Curse stops new ones.
    - Each round won pays its medals ONCE A WEEK (TEAR.pay; the week starts on
      Monday, the player's own time). Lose or leave, and what was earned stays
      earned; a new run starts again at round 1 and pays only the rounds not
@@ -108,7 +113,7 @@ function tearChallengeCard(){
       <span class="tear-mini" aria-hidden="true">${tearGalaxy()}</span>
       <div style="flex:1;">
         <div class="cc-title">The space-time tear</div>
-        <div class="cc-desc">Where Cyborg fled. <b>Challenge the past</b> once a week — ${n} of ${TEAR.rounds} rounds won this week.</div>
+        <div class="cc-desc">Where Nemesis went, in Cyborg's body. <b>Challenge the past</b> once a week — ${n} of ${TEAR.rounds} rounds won this week.</div>
       </div>
     </div>`;
 }
@@ -121,11 +126,11 @@ function renderTear(){
   const all = tearAllPaid();
   const day = tearDayName(tearNextWeek());
   screenEl.innerHTML = `
-    <button class="back-link" id="backBtn">← Challenge</button>
+    <button class="back-link" id="backBtn">← ${ui.tearBack === 'cata_vault' ? 'The vault' : 'Challenge'}</button>
     <div class="tear-screen">
       <div class="screen-title">The space-time tear</div>
       <div class="tear-wrap" aria-hidden="true">${tearGalaxy()}</div>
-      <div class="tear-say">Cyborg fled through here. It hums like a held breath.</div>
+      <div class="tear-say">Nemesis went through here, in Cyborg's body. It hums like a held breath.</div>
       <button class="btn btn-primary tear-btn" id="tearEnter">Enter the space-time tear</button>
       <button class="btn btn-primary tear-btn" id="tearPast" ${all ? 'disabled' : ''}>Challenge the past</button>
       <div class="tear-week">
@@ -143,7 +148,10 @@ function renderTear(){
         <div class="tw-note">Every move here asks for your <b>silver and gold words</b>.</div>
       </div>
     </div>`;
-  $('#backBtn').addEventListener('click', ()=> go('challenge'));
+  $('#backBtn').addEventListener('click', ()=>{
+    if(ui.tearBack === 'cata_vault' && typeof r5Zone === 'function'){ ui.currentZone = r5Zone('catacombs') || ui.currentZone; return go('cata_vault'); }
+    go('challenge');
+  });
   $('#tearEnter').addEventListener('click', ()=> toast('Beyond the tear: coming soon.'));
   $('#tearPast').addEventListener('click', ()=> tearChallenge());
 }
@@ -169,6 +177,12 @@ function tearWaves(){
   }
   return waves;
 }
+/* (3.11) One round of the past, for the Test Arena's Challengers: his five,
+   crowned, one at a time, then Cyborg — what each of the seven rounds is. */
+function tearRoundBattle(){
+  return { waves:tearWaves().slice(0, TEAR.wavesPerRound), isNpc:true, npcId:'padrino2', bgKey:'battle_tear',
+           name:'Don Padrino · the past' };
+}
 function tearChallenge(){
   if(!ensurePool()) return;
   if(tearAllPaid()) return toast(`All ${tearWord(TEAR.rounds)} rounds are won this week. The past waits for Monday.`);
@@ -178,9 +192,16 @@ function tearChallenge(){
     `<b>Beat Cyborg</b> and it rewinds them all, itself too, and he starts again from the Rhino — <b>${tearWord(TEAR.rounds)} rounds</b>.<br><br>` +
     `Cyborg's <b>Futuresight</b> dodges half of your blows, and every dodge is a <b>Spacetime Fracture</b>: its Spacetime Rift Max ` +
     `(<b>1.5×</b> its attack) hits <b>1.1×</b> harder for each one, multiplying. A <b>Curse ✦</b> quiets Futuresight; a <b>Diamond Dust</b> ` +
-    `sweeps the fractures away — bring your own <b>Very High stones</b>.<br><br>` +
+    `sweeps the fractures away.<br><br>` +
+    `Its <b>Organosteel Body</b> arrives behind <b>3 shields</b> and raises <b>1 more every turn</b>, each soaking up to <b>${tearCyborgShield()}</b> ` +
+    `of a strike. No Diamond Dust touches them — a <b>Dragon Dance</b> breaks <b>1 / 2 / 3</b> of them with every attack, and a ` +
+    `<b>Curse ✦</b> stops new ones: bring your own <b>Very High stones</b>.<br><br>` +
     `Lose, and nothing is taken — <b>not even XP</b>. Every move asks for your <b>silver and gold words</b>.`,
     ()=> tearBegin(), { subtitle:'The space-time tear', bg:'tear' });
+}
+/* What one of Cyborg's shields soaks from a strike here: its ATK (3.13). */
+function tearCyborgShield(){
+  return makeEnemy('cyborg', TEAR.cyborgLevel, { crowned:true, nerfed:false, anyLevel:true }).atk;
 }
 function tearBegin(){
   const t = tearState();
@@ -254,7 +275,7 @@ function tearRoundWon(round){
   const fights = TEAR.wavesPerRound * 2;
   run.xp += fights;
   run.events.push(...tearXp(fights));
-  if(tallyBattleForEyeBreak()) b.tearBreak = true;     // a round is a battle, for the eye break and the day
+  if(tallyBattleForEyeBreak({ round:true })) b.tearBreak = true;     // a round is a battle for the day's count; a break fallen due in its waves is taken before the next (3.23)
   saveProfile();
   if(round < TEAR.rounds)
     line += ` ⏳ Cyborg rewinds time — the Padrino's team stands again. Round ${round + 1} of ${TEAR.rounds}!`;

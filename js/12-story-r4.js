@@ -329,14 +329,18 @@ const DIVERS = [
   { id:'diver1', label:'Diver', closer:'loong' },
   { id:'diver2', label:'Diver', closer:'ninja' },
 ];
-function startDiverTrial(i){
-  if(!ensurePool()) return;
+/* (3.11) Each fight's setup is built in one place, shared with the Test
+   Arena's Challengers (08-screens2.js). */
+function diverBattle(i){
   const d = DIVERS[i];
-  beginBattle({ isNpc:true, name:crewName(d.id), npcId:d.id, bgKey:'battle_diving',
+  return { isNpc:true, name:crewName(d.id), npcId:d.id, bgKey:'battle_diving',
     waves:[ DIVER_GENERIC(), DIVER_WAVE2(),
             [{species:'plesiosaur',level:65,ai:'best'},{species:'otter',level:65,ai:'best'}],
-            [{species:d.closer,level:65,ai:'best'}] ],
-    onWin: ()=> onDiverWin(i) });
+            [{species:d.closer,level:65,ai:'best'}] ] };
+}
+function startDiverTrial(i){
+  if(!ensurePool()) return;
+  beginBattle(Object.assign(diverBattle(i), { onWin: ()=> onDiverWin(i) }));
 }
 async function onDiverWin(i){
   if(i < DIVERS.length-1){
@@ -527,24 +531,29 @@ function confirmWhaleDive(){
 }
 /* Enraged whales are the grown ones — the pod's fighters. Once the Whalelord is
    avenged the sea goes back to holding both young and old. */
-function whaleWave(n){
-  const solved = r4().solved;
+function whaleWave(n, solved){
+  /* (3.11) read, never written — the Test Arena builds this too, and asks for
+     the wall as it stands (solved false) */
+  if(solved === undefined) solved = !!(state.progress.region4 || {}).solved;
   return Array.from({length:3},()=>({
     species:'whale', level:r4Level(), enraged:!solved, ai:'best',
     forceStage: solved ? undefined : R4_MAXSTAGE,
   }));
 }
+function whaleWallBattle(asWall){
+  const solved = asWall ? false : undefined;
+  return { waves: Array.from({length:6}, (_,i)=>whaleWave(i, solved)),
+    isNpc:false, allowCatch:true, name:'The wall', bgKey:'battle_whales' };
+}
 function startWhaleFight(){
   const g = r4();
   saveProfile();
   ui.currentZone = { id:'diving', name:'The wall' };
-  beginBattle({
-    waves: Array.from({length:6}, (_,i)=>whaleWave(i)),
-    isNpc:false, allowCatch:true, name:'The wall', bgKey:'battle_whales',
+  beginBattle(Object.assign(whaleWallBattle(), {
     /* A trip through the wall is a day at sea like any other, so it feeds the
        meter too — otherwise the bar froze at the halfway mark and nothing the
        player did between the block and the truth appeared to matter. */
-    onWin: ()=> onWhaleWin() });
+    onWin: ()=> onWhaleWin() }));
 }
 /* Clearing all six waves is what earns the meeting. Fleeing or fainting does
    not — you have to actually get through them once. */
@@ -1112,11 +1121,13 @@ function crewTeam(id){
   if(id === 'shipkeeper')   return SHIPKEEPER_TEAM.waves;
   return [[{species:'duck', level:lv, ai:'best'}]];
 }
+function crewBattle(id){
+  return { isNpc:true, name:crewName(id), npcId:id, bgKey:'battle_cabin_deck',
+    waves: crewTeam(id).map(w=>w.map(e=>({...e}))) };
+}
 function fightCrew(id){
   if(!ensurePool()) return;
-  beginBattle({ isNpc:true, name:crewName(id), npcId:id, bgKey:'battle_cabin_deck',
-    waves: crewTeam(id).map(w=>w.map(e=>({...e}))),
-    onWin: ()=> onCrewWin(id) });
+  beginBattle(Object.assign(crewBattle(id), { onWin: ()=> onCrewWin(id) }));
 }
 async function onCrewWin(id){
   const h = hunt();
@@ -1262,32 +1273,37 @@ function rivalCabin(){
     ()=>go('cabin_deck'), { bg:'cabin_deck', subtitle:'Cabin Deck' });
 
   const mine = playerStake(), his = rivalStake();
-  const stakeLine = mine.kind === 'stone' ? `your <b>${r4StoneName(mine.id)}</b>`
-                  : mine.kind === 'tokens' ? `<b>${WAGER_TOKENS} Skill Tokens</b>`
-                  : null;
+  /* (3.14) Nothing to put up — no stone of the four, under 50 tokens: he will
+     not fight for free any more. The designer: "if the player has no more
+     stones and insufficient tickets for the wager, Jax refuses the fight". */
+  if(mine.kind === 'none') return storyModal(npcPortrait('rival','🧑',140,'transparent'), 'You\'re broke',
+    `<b>"You're broke."</b> He smirks.<br><br>` +
+    `<b>"Go find another elemental stone or more tokens. Don't waste my time."</b><br><br>` +
+    `<i>He bets only against a <b>Dragon, Electric, Water or Ghost Stone</b>, or <b>${WAGER_TOKENS} Skill Tokens</b> — ` +
+    `you have ${state.inventory.tokens || 0} token${(state.inventory.tokens || 0) === 1 ? '' : 's'}.</i>`,
+    ()=>go('cabin_deck'), { bg:'cabin_deck', subtitle:'Cabin Deck' });
+  const stakeLine = mine.kind === 'stone' ? `your <b>${r4StoneName(mine.id)}</b>` : `<b>${WAGER_TOKENS} Skill Tokens</b>`;
   storyModal(npcPortrait('rival','🧑',140,'transparent'), 'He was waiting',
     `He is leaning on the rail outside his cabin like he has been there for hours, and ` +
     `probably has.<br><br>` +
     `<b>"Took you long enough."</b><br><br>` +
     `He doesn't look surprised to see you. That is the first thing that feels wrong.<br><br>` +
-    (stakeLine
-      ? `<b>"Don't. I know what you're about to ask."</b> A shrug. <b>"Fine — I'll make it worth ` +
-        `something. Stones on the table."</b><br><br>` +
-        `<i>His <b>${r4StoneName(his)}</b> against ${stakeLine}.</i>`
-      : `<b>"You've got nothing."</b> He looks you over and laughs, not unkindly.<br><br>` +
-        `<b>"Keep your pocket money. I'll beat you for free."</b><br><br>` +
-        `<i>His <b>${r4StoneName(his)}</b> against nothing at all.</i>`),
-    ()=>startRivalWager(), { bg:'cabin_deck', subtitle:'Cabin Deck' });
+    `<b>"Don't. I know what you're about to ask."</b> A shrug. <b>"Fine — I'll make it worth ` +
+    `something. Stones on the table."</b><br><br>` +
+    `<i>His <b>${r4StoneName(his)}</b> against ${stakeLine}.</i>`,
+    /* (3.12) A bet with real stakes is yours to take: Leave it walks away. */
+    ()=>go('cabin_deck'), { bg:'cabin_deck', subtitle:'Cabin Deck',
+      action:{ label:'⚔️ Take the bet', fn: ()=> startRivalWager() } });
 }
 
-function startRivalWager(){
-  if(!ensurePool()) return;
-  ui.r4Wager = { mine: playerStake(), his: rivalStake() };
-  beginBattle({ isNpc:true, name:'Jax', npcId:'rival', bgKey:'battle_quarters',
-    /* Six borrowed things, each carrying a skill that is not its own. */
+function rivalR4Battle(){
+  return { isNpc:true, name:'Jax', npcId:'rival', bgKey:'battle_quarters',
     /* Six borrowed things, each carrying a skill that is not its own — and
        deliberately out of step with one another. Overheat sharpens Firehound
-       and does nothing at all for the Eagle behind it. */
+       and does nothing at all for the Eagle behind it. His Dragon opens with
+       Dragon Dance + carried: Mach Dragon for his side from its first turn —
+       they move first unless yours has a Mach Dragon too (+ or ✦), or a
+       Diamond Dust of yours sweeps it (3.11, checked: tools/v311-test.js). */
     waves:[
       [{species:'dragon',     level:70, ai:'dragon',    veryHigh:{type:'Dragon', plus:1}}],
       [{species:'tricerarmor',level:70, ai:'tricer',    veryHigh:{type:'Steel',  plus:1}}],
@@ -1295,8 +1311,12 @@ function startRivalWager(){
       [{species:'firehound',  level:70, ai:'firehound', veryHigh:{type:'Fire',   plus:1}}],
       [{species:'eagle',      level:75, ai:'stoop', crowned:true, supplements:10,
         veryHigh:{type:'Flying', plus:0}}],
-    ],
-    onWin: ()=> onR4RivalWin(), onLose: ()=> onR4RivalLose() });
+    ] };
+}
+function startRivalWager(){
+  if(!ensurePool()) return;
+  ui.r4Wager = { mine: playerStake(), his: rivalStake() };
+  beginBattle(Object.assign(rivalR4Battle(), { onWin: ()=> onR4RivalWin(), onLose: ()=> onR4RivalLose() }));
 }
 
 async function onR4RivalWin(){
@@ -1317,22 +1337,34 @@ async function onR4RivalWin(){
     (g.stoneWon ? `<br><br><i>The Whalelord has moved to the Research Deck.</i>` : ''),
     ()=>go('cabin_deck'), { bg:'cabin_deck', subtitle:'Cabin Deck' });
 }
+/* Lost: he takes what you put up (3.12 — until then nothing ever called
+   this: beginBattle kept no onLose, and a loss to him was an ordinary one).
+   A stone comes off whoever carried it and keeps its charge, should it come
+   back; it is the first thing he puts up next time (rivalStake), and he puts
+   his Ghost Stone up only once he has nothing of yours — so whatever he took
+   is won back before the story goes on. Tokens are simply gone. */
 async function onR4RivalLose(){
   const w = ui.r4Wager || {}; ui.r4Wager = null;
-  const mine = w.mine || { kind:'none' };
-  if(mine.kind === 'stone'){
-    addStone(mine.id, -1);      // the last one of a kind takes its carrier's with it
-    rivalStones().push(mine.id);
+  let mine = w.mine || { kind:'none' };
+  let carrier = null;
+  if(mine.kind === 'stone' && ownsStone(mine.id)){
+    const uid = stoneHolder(mine.id);
+    carrier = uid ? (state.party.concat(state.storage || []).find(m=> m.uid === uid) || null) : null;
+    addStone(mine.id, -1);
+    if(!rivalStones().includes(mine.id)) rivalStones().push(mine.id);
   } else if(mine.kind === 'tokens'){
     state.inventory.tokens = Math.max(0, (state.inventory.tokens||0) - mine.n);
-  }
+  } else mine = { kind:'none' };
   await saveProfile();
   storyModal(npcPortrait('rival','🧑',140,'transparent'), 'He pockets it',
     mine.kind === 'none'
       ? `<b>"Told you."</b> He is already walking away.<br><br><i>You lost nothing. Come back stronger.</i>`
       : `<b>"Keep practising."</b> He pockets it without looking at it.<br><br>` +
         `<b>"You'll want it back. Come find me when you think you can take it."</b><br><br>` +
-        `<i>Lost: ${mine.kind==='stone' ? r4StoneName(mine.id) : WAGER_TOKENS + ' Skill Tokens'}.</i>`,
+        (mine.kind === 'stone'
+          ? `<i>Lost: your ${r4StoneName(mine.id)}${carrier ? ` — it comes off ${escapeHtml(displayName(carrier))}` : ''}. ` +
+            `Beat him to win it back: what he took from you goes on the table before his own Ghost Stone.</i>`
+          : `<i>Lost: ${WAGER_TOKENS} Skill Tokens.</i>`),
     ()=>go('cabin_deck'), { bg:'cabin_deck', subtitle:'Cabin Deck' });
 }
 
@@ -1607,17 +1639,19 @@ function wireHuntRows(){
 
 /* Scientist 9's standing daily invitation, reachable from the lab deck or the
    Challenge page. */
+function nineDailyBattle(){
+  return { isNpc:true, name:crewName('scientist9'), npcId:'scientist9', bgKey:'battle_laboratory_deck',
+    waves:[ [{species:'lanternfish',level:82,ai:'best'},{species:'lanternfish',level:82,ai:'best'}],
+            [{species:'otter',level:83,ai:'best'},{species:'plesiosaur',level:83,ai:'best'}],
+            [{species:'ninja',level:85,ai:'best'}] ] };
+}
 function startSupervisorDaily(){
   const g = r4();
   g.after = g.after || { day:null, beaten:false };
   if(g.after.day !== today()){ g.after.day = today(); g.after.beaten = false; }
   if(g.after.beaten) return toast('Tomorrow.');
   if(!ensurePool()) return;
-  beginBattle({ isNpc:true, name:crewName('scientist9'), npcId:'scientist9', bgKey:'battle_laboratory_deck',
-    waves:[ [{species:'lanternfish',level:82,ai:'best'},{species:'lanternfish',level:82,ai:'best'}],
-            [{species:'otter',level:83,ai:'best'},{species:'plesiosaur',level:83,ai:'best'}],
-            [{species:'ninja',level:85,ai:'best'}] ],
-    onWin: ()=> onNineWin() });
+  beginBattle(Object.assign(nineDailyBattle(), { onWin: ()=> onNineWin() }));
 }
 async function onNineWin(){
   const g = r4();
@@ -1685,12 +1719,14 @@ function renderChallengeR4(){
   wireHuntRows();
 }
 
+function officerBattle(which){
+  const t = which === 'captain' ? CAPTAIN_TEAM : SHIPKEEPER_TEAM;
+  return { isNpc:true, name:crewName(t.npcId), npcId:t.npcId, bgKey:'battle_cabin_deck',
+    waves: t.waves.map(w=>w.map(e=>({...e}))) };
+}
 function startOfficer(which, rematch){
   if(!ensurePool()) return;
-  const t = which === 'captain' ? CAPTAIN_TEAM : SHIPKEEPER_TEAM;
-  beginBattle({ isNpc:true, name:crewName(t.npcId), npcId:t.npcId, bgKey:'battle_cabin_deck',
-    waves: t.waves.map(w=>w.map(e=>({...e}))),
-    onWin: ()=> onOfficerWin(which, !!rematch) });
+  beginBattle(Object.assign(officerBattle(which), { onWin: ()=> onOfficerWin(which, !!rematch) }));
 }
 async function onOfficerWin(which, rematch){
   const g = r4();
@@ -1909,15 +1945,19 @@ const SCI_LV = 68;
 
 function sciDef(n){ return SCI.find(x=>x.n === n); }
 
-function fightScientist(n){
-  if(!ensurePool()) return;
+function scientistBattle(n){
   const d = sciDef(n);
-  if(!d) return;
-  beginBattle({ isNpc:true, name:crewName('scientist'+n), npcId:'scientist'+n,
+  if(!d) return null;
+  return { isNpc:true, name:crewName('scientist'+n), npcId:'scientist'+n,
     bgKey:'battle_laboratory_deck',
     waves:[ d.wild.map(sp=>({species:sp, level:SCI_LV, ai:'best'})),
-            [{species:d.elite, level:SCI_LV+1, ai:'best'}] ],
-    onWin: ()=> onScientistWin(n) });
+            [{species:d.elite, level:SCI_LV+1, ai:'best'}] ] };
+}
+function fightScientist(n){
+  if(!ensurePool()) return;
+  const cfg = scientistBattle(n);
+  if(!cfg) return;
+  beginBattle(Object.assign(cfg, { onWin: ()=> onScientistWin(n) }));
 }
 async function onScientistWin(n){
   const v = inv();
@@ -2121,30 +2161,31 @@ function culprit5(){
     ()=>startCulpritFight(0), { bg:'battle_laboratory_deck', subtitle:'Laboratory' });
 }
 
-function startCulpritFight(i){
-  if(!ensurePool()) return;
-  if(i === 0){
-    return beginBattle({ isNpc:true, name:crewName('scientist6'), npcId:'scientist6',
+/* The two of them, back to back: Mireille (0), then the supervisor (1). */
+function culpritBattle(i){
+  if(i === 0) return { isNpc:true, name:crewName('scientist6'), npcId:'scientist6',
       bgKey:'battle_laboratory_deck',
       waves:[ [{species:'lanternfish',level:78,ai:'best'},{species:'lanternfish',level:78,ai:'best'}],
               [{species:'moon_swan',level:79,ai:'best'},{species:'cormorant',level:79,ai:'best'}],
               [{species:'plesiosaur',level:80,ai:'best'},{species:'otter',level:80,ai:'best'}],
-              [{species:'loong',level:82,ai:'best',forceStage:R4_MAXSTAGE}] ],
-      onWin: ()=> startCulpritFight(1) });
-  }
-  storyModal(npcPortrait('scientist_supervisor','🧑‍🔬',130,'transparent'),
-    crewName('scientist_supervisor'),
-    `<b>"She was the hands."</b> He steps over her fallen monsters without looking down.<br><br>` +
-    `<b>"I was the reason."</b>`,
-    ()=> beginBattle({ isNpc:true, name:crewName('scientist_supervisor'),
+              [{species:'loong',level:82,ai:'best',forceStage:R4_MAXSTAGE}] ] };
+  return { isNpc:true, name:crewName('scientist_supervisor'),
       npcId:'scientist_supervisor', bgKey:'battle_laboratory_deck',
       waves:[ [{species:'sea_turtle',level:80,ai:'best'},{species:'duck',level:80,ai:'best'},{species:'seahorse',level:80,ai:'best'}],
               [{species:'pelican',level:81,ai:'best'},{species:'swan',level:81,ai:'best'}],
               [{species:'mantaray',level:82,ai:'best'},{species:'cormorant',level:82,ai:'best'}],
               [{species:'whale',level:83,ai:'best',forceStage:R4_MAXSTAGE}],
               [{species:'moon_swan',level:84,ai:'best'},{species:'plesiosaur',level:84,ai:'best'}],
-              [{species:'ninja',level:85,ai:'best',forceStage:R4_MAXSTAGE,crowned:true,supplements:10}] ],
-      onWin: ()=> startEpilogue() }),
+              [{species:'ninja',level:85,ai:'best',forceStage:R4_MAXSTAGE,crowned:true,supplements:10}] ] };
+}
+function startCulpritFight(i){
+  if(!ensurePool()) return;
+  if(i === 0) return beginBattle(Object.assign(culpritBattle(0), { onWin: ()=> startCulpritFight(1) }));
+  storyModal(npcPortrait('scientist_supervisor','🧑‍🔬',130,'transparent'),
+    crewName('scientist_supervisor'),
+    `<b>"She was the hands."</b> He steps over her fallen monsters without looking down.<br><br>` +
+    `<b>"I was the reason."</b>`,
+    ()=> beginBattle(Object.assign(culpritBattle(1), { onWin: ()=> startEpilogue() })),
     { bg:'battle_laboratory_deck', subtitle:'Laboratory' });
 }
 

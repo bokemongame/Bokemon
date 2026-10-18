@@ -32,6 +32,11 @@ const SFX_MAP = {
   hit_dealt:        'hit_dealt.mp3',      // a move connects with an enemy
   move_miss:        'move_miss.mp3',
   alert:            'alert.mp3',          // a catacomb guard is sure he has seen you (!)
+  malice:           'malice.mp3',         // (3.17) the cold under Cosa Nostia passing through (Nemesis)
+  spark:            'spark.mp3',          // (3.19) a crackle: Cyborg short-circuiting, its cores torn out
+  rewind:           'rewind.mp3',         // (3.19) time turned back — Cyborg's rewind, in the vault
+  rip:              'rip.mp3',            // (3.20) the Guardian's sword tearing the air open
+  timestop:         'timestop.mp3',       // (3.20) Nemesis stops time
   // quiz feedback
   answer_correct:   'answer_correct.mp3',
   answer_wrong:     'answer_wrong.mp3',
@@ -62,7 +67,7 @@ const SFX_MAP = {
    bespoke track for one zone without supplying the rest. */
 /* Bump by 0.01 with every published change, so a glance at the home screen
    confirms which build is actually loaded. */
-const GAME_VERSION = '3.10';
+const GAME_VERSION = '3.28';
 
 const BGM_MAP = {
   main_menu:      'main_menu.mp3',
@@ -107,7 +112,9 @@ function playMusicChain(names, opts){
 
 const audio = {
   unlocked: false,
-  sfxCache: {},          // event file -> {el, src, gain}
+  sfxCache: {},          // event file -> {el, src, gain} — the <audio> fallback
+  sfxBuf: {},            // (3.28) file -> its decoded AudioBuffer, or 'loading' / 'failed'
+  sfxNow: {},            // (3.28) file -> the voice playing it from memory { src, gain }
   musicEl: null,
   musicName: null,
   pendingChain: null,
@@ -172,6 +179,7 @@ function unlockAudio(){
   if(audio.unlocked) return;
   audio.unlocked = true;
   applyVolumes();
+  preloadSfx(Object.keys(SFX_MAP));                // (3.28) every effect fetched and decoded once, now
   if(audio.musicName && !audio.musicEl) playMusic(audio.musicName);
 }
 try{
@@ -185,10 +193,67 @@ try{
   }, true);
 }catch(e){}
 
+/* (3.28) SOUND EFFECTS FROM MEMORY. On an iPad an <audio> element may only
+   start when a tap has started it, and it fetches its file only when first
+   asked to play — so a cue due long after the last tap (the fanfare at the
+   end of an evolution, fourteen seconds in) came late or not at all. Each
+   effect is fetched and decoded once, at the first tap (unlockAudio), and
+   then plays from memory through the unlocked AudioContext the moment it is
+   asked for, whenever that is. The <audio> element below stays as the
+   fallback: no Web Audio, a file still on its way, a decode that failed. */
+function loadSfxBuffer(file){
+  const ctx = ensureAudioCtx();
+  if(!ctx || typeof fetch !== 'function' || audio.sfxBuf[file] || audio.missing[file]) return;
+  audio.sfxBuf[file] = 'loading';
+  fetch(SFX_DIR + file)
+    .then(r=>{ if(!r.ok){ if(r.status === 404) audio.missing[file] = true; throw new Error('sfx ' + r.status); } return r.arrayBuffer(); })
+    .then(data=> new Promise((ok, no)=>{                // Safari's older decodeAudioData only calls back
+      const p = ctx.decodeAudioData(data, ok, no);
+      if(p && p.then) p.then(ok, no);
+    }))
+    .then(buf=>{ audio.sfxBuf[file] = buf; })
+    .catch(()=>{ audio.sfxBuf[file] = 'failed'; });
+}
+function preloadSfx(events){
+  (events || []).forEach(ev=>{ const f = SFX_MAP[ev]; if(f) loadSfxBuffer(f); });
+}
+function sfxBufferOf(file){ const b = audio.sfxBuf[file]; return (b && typeof b === 'object') ? b : null; }
+/* A cue that must not be missed: at once if it is in memory; if it is still
+   on its way, the moment it lands (up to `waitMs`), then the fallback. */
+function playSfxSoon(event, waitMs){
+  const file = SFX_MAP[event];
+  if(!file) return null;
+  if(audio.sfxBuf[file] !== 'loading') return playSfx(event);
+  const t0 = Date.now();
+  const iv = setInterval(()=>{
+    if(audio.sfxBuf[file] !== 'loading' || Date.now() - t0 > (waitMs || 1500)){ clearInterval(iv); playSfx(event); }
+  }, 50);
+  return null;
+}
+
 function playSfx(event){
   try{
     const file = SFX_MAP[event];
     if(!file || !audio.unlocked || audio.missing[file]) return null;
+    /* (3.28) from memory, when it is there: one voice a sound, as the element
+       was — asked again, it starts again */
+    const buf = sfxBufferOf(file);
+    if(buf && actx && sfxGain){
+      const prev = audio.sfxNow[file];
+      if(prev){ try{ prev.src.stop(); }catch(e){} }
+      const g = actx.createGain();
+      g.gain.value = 1;
+      g.connect(sfxGain);
+      const node = actx.createBufferSource();
+      node.buffer = buf;
+      node.connect(g);
+      const voice = { src:node, gain:g, fromMemory:true };
+      node.onended = ()=>{ if(audio.sfxNow[file] === voice) delete audio.sfxNow[file]; try{ g.disconnect(); }catch(e){} };
+      audio.sfxNow[file] = voice;
+      node.start(0);
+      return voice;
+    }
+    loadSfxBuffer(file);                               // in memory for next time
     const src = SFX_DIR + file;
     let entry = audio.sfxCache[file];
     if(!entry){
@@ -234,9 +299,12 @@ function playStoneSfx(tierId){ return playSfx('stone_'+tierId); }
 function fadeOutSfx(event, ms){
   try{
     const file = SFX_MAP[event];
+    const dur = ms || 500;
+    /* (3.28) a voice from memory: ramp it down, then stop it */
+    const voice = file && audio.sfxNow[file];
+    if(voice && actx) rampGain(voice.gain, 0.0001, dur, ()=>{ try{ voice.src.stop(); }catch(e){} });
     const entry = file && audio.sfxCache[file];
     if(!entry) return;
-    const dur = ms || 500;
     if(entry.gain && actx){
       rampGain(entry.gain, 0.0001, dur, ()=>{
         try{
@@ -501,6 +569,12 @@ const CROWN_LEGENDARY_STAGES = 3;
    spars are built at any level on purpose (makeEnemy's opts.anyLevel): he
    fights five above the monster he is training, and is not the Family. */
 const ENEMY_LEVEL_CAP = 100;
+/* (3.14) Anything you can catch is met at 98 at most — "to enable the
+   evolution sequence from base to evolution 2". A wild monster's road ends
+   at 100, and one caught in its first form climbs one stage a level gained
+   (monStageOf): caught at 98 it can still reach its last form at 100. Caught
+   at 100 it never would. makeEnemy, for a fight that allows catching. */
+const CATCH_LEVEL_CAP = 98;
 
 function isCrowned(m){ return !!(m && m.crowned); }
 function baseTier(species){ return (SPECIES[species]||{}).tier; }
@@ -618,16 +692,24 @@ function computeMaxHp(species, level, supplements, mon){
 }
 
 /* `forHp` asks for the health figure rather than the attack one. They are the
-   same number for almost everything — PACIFICUS is the exception, trading half
-   of Caladrius's attack away to make it enormously hard to kill. */
+   same number for almost everything — PACIFICUS is the exception, trading part
+   of a monster's attack away to make it enormously hard to kill: `pacificus`
+   is the share — 0.75 for Caladrius (3.14: "convert 75% of atk to HP base stat
+   instead of 50%"), so its attack grows at a quarter of its rate and its
+   health at 1.75×. */
+function pacificusOf(species){
+  const p = (SPECIES[species] || {}).pacificus;
+  return p === true ? 0.75 : (Number(p) || 0);
+}
 function computeMaxStat(species, level, supplements, mon, forHp){
   const s = SPECIES[species];
   const crowned = mon && mon.crowned;
   let rate = (crowned && s.tier!=='legendary') ? 13 : s.rate;
   if(s.nerfedUntilCrowned && !crowned) rate = 11;   // Monkey King without his crown
-  if(s.pacificus){
-    // half the attack away, and the same amount again on top of the health
-    rate = forHp ? rate * 1.5 : rate * 0.5;
+  const pc = pacificusOf(species);
+  if(pc){
+    // that share of the attack away, and the same amount again on top of the health
+    rate = forHp ? rate * (1 + pc) : rate * (1 - pc);
   }
   let stat = Math.ceil((rate/5) * level);
   const stages = evolutionStage(species, level) + (s.bonusStages||0);
@@ -1104,6 +1186,8 @@ function normalizeProfile(p){
   /* the ghost phoenix's gift (Region 5, to come) — called the Dark Flame in 2.78 */
   if(p.sacredFlameGranted===undefined) p.sacredFlameGranted = !!p.darkFlameGranted;
   delete p.darkFlameGranted;
+  /* (3.19) the Forest Guardian's gift to your Forest Fairy, at the end of Region 5 */
+  if(p.forestBlessingGranted===undefined) p.forestBlessingGranted = false;
   p._needsLanternCheck = true;
   /* One-time repair. Earlier builds grew current HP by the unscaled stat delta,
      so monsters sat permanently below their real maximum — it looked like
@@ -1220,6 +1304,16 @@ function normalizeProfile(p){
   if(p.settings.eyeBreakMins===undefined) p.settings.eyeBreakMins = 5;
   if(p.settings.dailyBattles===undefined) p.settings.dailyBattles = 100;
   if(p.settings.dailyUnlimited===undefined) p.settings.dailyUnlimited = (p.settings.dailyBattles === 100);
+  /* (3.22) The day is counted in waves now (09-story-r2.js, WAVES PER DAY): a
+     limit set in battles becomes three waves a battle (a soldato brings two, a
+     capo three, a tower floor six), up to the most there is, 200. */
+  if(p.settings.dailyWaves===undefined) p.settings.dailyWaves = Math.min(200, Math.max(0, Math.round((+p.settings.dailyBattles || 0) * 3)));
+  if(p.eyeBreakDue===undefined) p.eyeBreakDue = 0;
+  /* (3.23) …and so are the eye breaks: a break every N battles becomes every
+     3N waves (10 → 30, the default), at most 100; 0 stays off. */
+  if(p.settings.eyeBreakWaves===undefined) p.settings.eyeBreakWaves = Math.min(100, Math.max(0, Math.round((+p.settings.eyeBreakEvery || 0) * 3)));
+  if(p.wavesSinceBreak===undefined) p.wavesSinceBreak = 0;
+  if(p.lastWaveAt===undefined) p.lastWaveAt = 0;
   if(p.dailyOverrideUntil===undefined) p.dailyOverrideUntil = 0;
   if(p.dailyOverrideOpen===undefined) p.dailyOverrideOpen = false;
   if(p.battlesSinceBreak===undefined) p.battlesSinceBreak = 0;
@@ -1238,6 +1332,15 @@ function normalizeProfile(p){
     /* He joins when Jax has gone, not before. A save that says otherwise was
        touched by an older build. */
     p.party = p.party.filter(m=> !isCuain(m));
+  }
+  /* (3.11) A Test Arena challenge left mid-fight — the app closed: the arena
+     heals your party for the fight, so it goes back as it went in. */
+  if(p.arenaRestore){
+    const hp = p.arenaRestore.hp || {};
+    (p.party || []).concat(p.storage || []).forEach(m=>{
+      if(m && m.uid && Object.prototype.hasOwnProperty.call(hp, m.uid)) m.currentHp = hp[m.uid];
+    });
+    delete p.arenaRestore;
   }
   return p;
 }

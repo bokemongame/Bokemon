@@ -1092,17 +1092,17 @@ const SPAR_POOLS = {
     ['crow',       'Dodges 20%. Ill Omen: a turn of 66% dodges, then its next blow +66%. Murder of Crows: 5 strikes, 10 on a foe under 30%.'],
     ['mantaray',   'Shadowed Wings: dodges 35% of attacks, and no Diamond Dust can sweep that away.'],
     ['ghost',      'Peekaboo: 50% chance to vanish after each attack. Wail: 0.9× on both, and weakens.'],
-    ['strongman',  'Braced Stance: starts with 2 block. Bearhug: 1× with a 50% stun.'],
+    ['strongman',  'Unshakeable: starts with 2 block, and it cannot be put to sleep, stunned or muddled. Bearhug: 1× with a 50% stun.'],
     ['boxer',      'Quick Hands: a free 0.25× jab at the start of every round. Knockout Flurry: 1× on both.'],
     ['weasel',     'Silk Reeling: a Counter stack — takes one whole attack at 80% less. Four Ounces: throws the last blow back.'],
     ['yoga',       'Stillness: dodges the first attack. Asana Flow: 6 strikes, doubled while at full health.'],
     ['whale',      'Bulk: starts with 2 block. Depth Charge: 1.5×.'],
-    ['sea_turtle', 'Iron Shell: starts with 3 block. Whirlpool: 0.8× on both.'],
+    ['sea_turtle', 'Iron Shell: starts with 3 block. Maelstrom: 0.8× on both.'],
   ],
   starter: [
     ['ghost_starter',    'Shadow Sneak: starts unseen, and its first blow from hiding hits 1.5×. Umbral Rend Max: 1.5×.'],
     ['physical_starter', 'Savage Strike Max: 1.5×. Rend: 0.6× on both.'],
-    ['psychic_starter',  'Mind Shatter Max: 1.5×. Psywave: 0.6× on both.'],
+    ['psychic_starter',  'Mind Shatter Max: 1.5×. Psywave: 0.5× on both. Focus: 1.2× when nothing has hit it this round.'],
     ['flying_starter',   'Storm Dive Max: 1.5×. Gale Force: 0.6× on both.'],
     ['ground_starter',   'Horn Drill Max: 1.5×. Earthquake: 0.6× on both.'],
     ['fire_starter',     'Fire Blast Max: 1.5×. Flamethrower: 0.6× on both.'],
@@ -1119,18 +1119,18 @@ const SPAR_POOLS = {
     ['puppet',        'Marionette: vanishes after its first blow (33% after that), and heals a third of what it deals.'],
     ['ninja',         'Onkei-jutsu: starts unseen (80% dodge). Ansatsu Max spends it: 1.7×, +0.4× per Prep.'],
     ['loong',         'Soar: starts airborne (70% dodge). Dragon Dive Max spends it: 2× on both of theirs.'],
-    ['moon_swan',     'Nocturne: each time it is driven below 75%, 50% and 25% health, it sings its attacker to sleep. Lunacy: 1.5×, and 25% of the time the other side is muddled for a swing.'],
+    ['moon_swan',     'Nocturne: each time it is driven below 75%, 50% and 25% health, it sings its attacker to sleep — and each turn nothing touches it, it hits 15% harder (up to 60%). Lunacy Max: 1.5×, and 25% of the time the other side is muddled for a swing.'],
     ['thunderhound',  "Hunter's Instinct: each time it is driven below 75%, 50% and 25% health, it stuns its attacker. Throat Take Max: 1.5×, doubled on a stunned foe."],
     ['otter',         'Guard: on guard, +1 block every round. Iaijutsu Max spends it: 1.8×, +0.25× per block.'],
     ['eagle',         'Keen Eye: acts first. Piercing Stoop: climbs up to 3 turns (dodging up to 75%), then drops straight through block.'],
     ['lizardape',     'Scaled Stance: starts with 1 block and a Counter stack. Primal Rend Max: 4 strikes, doubled at full health.'],
   ],
   legendary: [
-    ['newt',          'Tachypsychia: for 3 turns it dodges 80% at first (30% after) and may act again (30%). Volt Concussion: 3 strikes, 20% paralysis each.'],
+    ['newt',          'Tachypsychia: for 3 turns it dodges 80% at first (30% after) and may act again (30%) — and all the while, cast or not, each turn nothing touches it, it hits 15% harder (up to 60%). Volt Concussion: 3 strikes of 0.5, 20% paralysis each. Volt Wave: 0.6× on both.'],
     ['water_dragon',  'Cataclysm: gathers charges, then spends them all in one huge blow. Tsunami: 0.8× on both.'],
     ['ankylosaurus',  'Steel Soul: it always takes 20% less. Once a fight, a quick cast before it swings: that turn it hits 1.2× — more for every other shield its side has up — and +0.1× a blow. Rampage Max: 5 strikes on both, then an Aftershock.'],
     ['phoenix',       'Incinerate Max: 1.5×, growing to 2.75× with up to 7 more words (15 in all). Nova: 1× on both — and it sweeps away one of your buffs and burns one of your marks off its side.'],
-    ['caladrius',     'Pacificus: half the attack, one and a half times the health. Vita: a healing light for your side. Conversio: brings the fallen back.'],
+    ['caladrius',     'Pacificus: a quarter of the attack, 1.75 times the health. Ice Barrier (quick): their attacks 30% weaker for 5 turns, and one of their marks off your side every turn. Vita: a healing light for your side. Conversio: brings the fallen back.'],
     ['forest_fairy',  'Verdant Wrath Max: 1.8× over 3 strikes. Giga Drain: 0.8×, and it heals. Overgrowth: 0.7× on both.'],
   ],
 };
@@ -1163,8 +1163,8 @@ const MK_STONE_NAME = { starter:'Counter +', elite:'Diamond Dust +', legendary:'
 const MK_STONE_LESSON = {
   wild:      `<b>No stone yet</b> — but he fights 5 levels up. Types matter: a Ghost takes only ⅔ of his blows, and Steel hits his Fairy side 1.5×.`,
   starter:   `<b>Counter +</b>, raised on his first move, with a 15% chance each round of another. A stack takes one whole attack on him or his companion — every strike of it — at 80% less; then their next blow lands 25% harder, and the one that took it hits 20% harder for good. Feed it a cheap blow before a big one.`,
-  elite:     `<b>Diamond Dust +</b>: up as he arrives, and cast again on his first move (5 rounds from then) with one random Very High at + strength. While it is up nothing of yours takes hold — no hiding, flying, guard or block, no stone, no stun or sleep on him. Terrorize still works, and so does moving first. A Goblin's Greed can steal the dust — and keep it.`,
-  legendary: `<b>Diamond Dust ✦</b>: up as he arrives, and cast again on his first move (5 rounds from then) with two Very Highs at ✦ strength. While it is up nothing of yours takes hold — no Tachypsychia, no Steel Soul, no stone, no stun on him — but heals and Conversio still work, and Steel still hits him 1.5×.`,
+  elite:     `<b>Diamond Dust +</b>: up as he arrives, and cast again on his first move (5 rounds from then) with one random Very High at + strength. While it is up nothing of yours takes hold — no hiding, flying or guard, no stone, no stun or sleep on him — but shields still stand and still form (block stacks are beyond the dust). Terrorize still works, and so does moving first. A Goblin's Greed can steal the dust — and keep it.`,
+  legendary: `<b>Diamond Dust ✦</b>: up as he arrives, and cast again on his first move (5 rounds from then) with two Very Highs at ✦ strength. While it is up nothing of yours takes hold — no Tachypsychia, no Steel Soul, no stone, no stun on him — but heals and Conversio still work, shields still stand and form, and Steel still hits him 1.5×.`,
 };
 
 function openCoreTraining(L){
@@ -1478,11 +1478,11 @@ function renderStats(){
        rest live in mv[6], and discarding them left every effect move with
        nothing to describe but "a support move". Same trap as the old
        allow-list in unlockedMoves(). */
-    const out = { slot,name,mult,target,words,unlock,unlocked, ...(extras||{}) };
-    if(extras && extras.tails) out.hits = moveHitsFor(m, extras);   // a Tailed Cat: one strike per tail, three crowned (2.97)
+    const out = { slot,name,mult,target,words,unlock,unlocked, ...(extras||{}) };   // (3.26: no tail counts — a move's hits are its own)
     return out;
   });
   moves.forEach(mv=>{ const sf = sacredFlameBonus(m, mv); if(sf) mv.bonus = sf; });   // the ghost phoenix's gift
+  moves.forEach((mv, i)=>{ moves[i] = forestGiftMove(m, mv); });                      // (3.19) the Forest Guardian's
   [[m.equippedStone,'Basic'], [m.power1Stone,'Power1']].forEach(([st, slot])=>{
     if(!st) return;
     const t = stoneTierDef(st.tier);
@@ -1547,6 +1547,9 @@ function renderStats(){
         </div>
         ${m.species === 'phoenix' ? `<div class="dev-btns" style="margin-top:6px;">
           <button class="btn btn-ghost sm-give" id="sfToggle">🔥 Sacred Flame: ${state.sacredFlameGranted ? 'on' : 'off'}</button>
+        </div>` : ''}
+        ${m.species === 'forest_fairy' ? `<div class="dev-btns" style="margin-top:6px;">
+          <button class="btn btn-ghost sm-give" id="fgToggle">🌿 The Guardian's gift: ${state.forestBlessingGranted ? 'on' : 'off'}</button>
         </div>` : ''}
         ${state.party.includes(m) ? devCompanionRow(m) : ''}
       </div>` : ''}
@@ -1638,6 +1641,13 @@ function renderStats(){
     state.sacredFlameGranted = !state.sacredFlameGranted;
     await saveProfile();
     toast(`Sacred Flame ${state.sacredFlameGranted ? 'granted' : 'taken away'} (dev).`);
+    renderStats();
+  });
+  const fgt = $('#fgToggle');                     // (3.19) the Forest Guardian's gift (dev)
+  if(fgt) fgt.addEventListener('click', async ()=>{
+    state.forestBlessingGranted = !state.forestBlessingGranted;
+    await saveProfile();
+    toast(`The Forest Guardian's gift ${state.forestBlessingGranted ? 'granted' : 'taken away'} (dev).`);
     renderStats();
   });
   const dcs = $('#devComp');                      // companion pairs, phase 2 (dev only)

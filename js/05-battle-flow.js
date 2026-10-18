@@ -55,6 +55,9 @@ const BG_MAP = {
   sacred_grove:    'zone/sacred_grove.png',
   rocky_caverns:   'zone/rocky_caverns.png',
 };
+/* (3.19) A battle backdrop with no picture of its own tries its nearest kin
+   before the generic battle.png: the vault, the catacombs'. */
+const BG_FALLBACK = { battle_vault:'battle_catacombs' };
 /* A zone key with no bg file of its own falls back to its button art. */
 /* Same idea for artwork: `<key>.png` unless the map overrides it. */
 function bgCandidates(key){
@@ -75,6 +78,7 @@ function bgCandidates(key){
   const rid = (state && state.progress && state.progress.currentRegion) || 1;
   const regionFallback = [BG_DIR + 'region'+rid+'.png', BG_DIR + 'region.png'];
   if(/^battle_/.test(key)){
+    if(BG_FALLBACK[key]) out.push(BG_DIR + BG_FALLBACK[key] + '.png');   // (3.19) a place's nearest kin first
     out.push(BG_DIR + 'battle.png');                       // generic battlefield
     out.push('assets/zones/'+key.replace('battle_','')+'.png');
   }
@@ -256,7 +260,7 @@ function reportHits(hits){
   (hits||[]).forEach(h=>{
     if(!h) return;
     const id = (h.idx!=null && h.idx>=0) ? 'enemy-'+h.idx : pid('playerBob');
-    byAnchor[id] = (byAnchor[id]||0) + (h.dmg||0);
+    byAnchor[id] = (byAnchor[id]||0) + (h.dmg||0) + (h.rider||0);      // (3.16) a ✦ Spike Armour strike riding on it
     if(h.blocked > 0) soaked[id] = (soaked[id]||0) + h.blocked;
   });
   Object.entries(byAnchor).forEach(([id,total])=> showDamageNumber(id, total));
@@ -336,6 +340,69 @@ function onSwitchPressed(){
    Nobody down: a toast, no words spent, and it is still your turn. One down:
    straight on to the words. Several: the same chooser as Switch, and Cancel
    hands the turn back. */
+/* (3.15) Transfusion: is there a partner beside it missing health, and has
+   it any of its own to give? If not, nothing is written and the turn kept. */
+function transfuseNeeded(mon){
+  const t = partnerOf('player', mon);
+  return !!(t && t !== mon && t.currentHp > 0 && t.currentHp < monMaxHp(t) && mon.currentHp > 1);
+}
+function transfuseRefused(mv, mon){
+  ui.battle.phase = 'player';
+  const t = partnerOf('player', mon);
+  toast(t && t !== mon ? `${displayName(t)} needs nothing — ${mv.name} gives its own health to the one beside it.`
+                       : `Nobody stands beside ${displayName(mon)} — ${mv.name} gives its health to its partner.`);
+}
+/* (3.15) What a psychic's blow said about itself (Pent-up Fury, Random
+   Access, a broken Arcane Meteor), said once with the blow. */
+function takePsyNote(){
+  const b = ui.battle;
+  if(!b) return '';
+  let n = b._psyNote || ''; b._psyNote = '';
+  /* (3.26) your Hydra's criticals in this action (critStrike) */
+  if(b._crits && b._critAt === b.actionSeq){ n += ` 💥 ${b._crits === 1 ? 'A critical strike' : b._crits + ' critical strikes'}!`; b._crits = 0; }
+  return n;
+}
+/* (3.15) Glitch (the Polygon): one of six, at random — a blow, a heal, a
+   shield, a weaken, a sleep or an Overclock. */
+function runGlitch(mon, mv, target){
+  const t = (target && target.hp > 0) ? target : livingEnemies()[0];
+  const kind = glitchPick(false);
+  if(kind === 'spike' && t){
+    const syn = { slot:'Power1', name:`${mv.name}: Data Spike`, mult:GLITCH_SPIKE, target:'Single', words:mv.words, unlock:0, available:true, hits:0 };
+    battleMsg(`🔷 ${escapeHtml(mv.name)} — <b>Data Spike</b>!`);
+    return setTimeout(()=> resolveBattleMove(syn, t, [], { pre:{ correct:mv.words } }), 600);
+  }
+  const said = t ? applyGlitch('player', mon, t, kind === 'spike' ? 'patch' : kind) : '';
+  battleMsg(said || `🔷 ${escapeHtml(mv.name)} — nothing happens.`);
+  renderStatusBadges();
+  playEffect(mv.name, { type:'Psychic' });
+  return setTimeout(()=> afterPlayerAttack(mon, []), 900);
+}
+/* (3.15) Copycat (the Mime): the chosen enemy's last turn of attacks, one
+   after another — each at the Copycat's `copy`× with the Mime's ATK — or,
+   with nothing to copy, its Basic. The rest wait in `copyQueue`, played as
+   each one ends (afterPlayerAttackBody). */
+function copyTargetFor(mv, t){
+  if(mv.target === 'AOE') return null;
+  return (t && t.hp > 0 && ui.battle.enemies.includes(t)) ? t : (livingEnemies()[0] || null);
+}
+function runCopycat(mon, mv, target){
+  const b = ui.battle;
+  const t = (target && target.hp > 0 && b.enemies.includes(target)) ? target : livingEnemies()[0];
+  if(!t) return setTimeout(()=> afterPlayerAttack(mon, []), 600);
+  const plan = copyPlan(t);
+  if(!plan.moves.length){ battleMsg(`🎭 ${escapeHtml(mv.name)} — there is nothing to copy.`); return setTimeout(()=> afterPlayerAttack(mon, []), 900); }
+  const k = mv.copy || 1.1;
+  const syns = plan.moves.map(r=> Object.assign({}, r.ex || {}, {
+    slot:'Ultimate', name:`${mv.name}: ${r.name}`, copiedName:r.name, mult:+(r.mult * k).toFixed(4), target:r.target || 'Single',
+    words:mv.words, unlock:0, available:true, hits:(r.ex && r.ex.hits) || 0, copied:true }));
+  battleMsg(`🎭 <b>${escapeHtml(mv.name)}</b> — ${escapeHtml(displayName(mon))} copies ${SPECIES[t.species].name}'s ` +
+    `${plan.basic ? 'Basic move' : 'last turn'}: <b>${plan.moves.map(r=> escapeHtml(r.name)).join('</b>, then <b>')}</b>, at ${k}×!`);
+  logBattle(`🎭 ${displayName(mon)} copies ${SPECIES[t.species].name}: ${plan.moves.map(r=> r.name + ' ' + r.mult + '×').join(', ')} at ${k}×`);
+  b.copyQueue = syns.slice(1).map(x=> ({ mv:x, t }));
+  playEffect(mv.name, { type:'Psychic' });
+  return setTimeout(()=> resolveBattleMove(syns[0], copyTargetFor(syns[0], t), [], { pre:{ correct:mv.words } }), 900);
+}
 function chooseRevival(mv, mon, onPick){
   const pool = revivableFallen(mon);
   if(!pool.length){
@@ -366,6 +433,7 @@ function monsterChooser(title, options, onPick, dismissable=true, onCancel=null)
 
 function onFlee(){
   if(ui.battle.arena){ ui.arenaUnlocked=true; go('arena'); return; }
+  if(ui.battle.arenaChallenge) return arenaChallengeOver('left');   // (3.11) a Test Arena challenge: out, as it was
   if(ui.battle.coreSpar) return coreSparEnded('left');        // giving up a spar (2.86)
   if(ui.battle.tear) return tearEnded('left');                // stepping out of the past (2.94)
   if(ui.battle.noFlee) return;
@@ -431,7 +499,7 @@ function livingEnemies(){
 }
 /* Stands on their side and never takes a turn: an arena dummy told to skip,
    or Cyborg in the tear (2.94). */
-function standsAside(e){ return !!e && ((e.isDummy && !e.arenaActs) || !!e.rewinder); }
+function standsAside(e){ return !!e && ((e.isDummy && !e.arenaActs) || !!e.rewinder || !!e.broken); }   // (3.19) broken: Cyborg in the vault's last phase
 
 /* Every Very High status now covers the whole field or the whole enemy wave,
    so none of them ask the player to pick a target. Kept as a list because a
@@ -469,10 +537,13 @@ function onMoveChosen(moveIdx){
   if(mv && mv.locked){ ui.battle.phase='player'; toast('Not while the Cataclysm is building.'); return; }
   /* A second Aria over the first would be words spent on nothing. */
   if(mv && mv.aria && ariaActive()){ ui.battle.phase='player'; toast('Haunting Aria is still active.'); return; }
+  /* (3.16) …and so would a second Ice Barrier. */
+  if(mv && mv.iceBarrier && getPStatus(0,'iceBarrier')){ ui.battle.phase='player'; toast('Ice Barrier is still up.'); return; }
   if(mv && mv.chargeSpend) return resolveChargeSpend(mv, mon);
   if(mv && (mv.charge || mv.chargeMore)) return runChargeQuiz(mv, mon);
   /* Revitalise: who comes back is chosen before the writing, not after. */
   if(mv && mv.revitalise) return chooseRevival(mv, mon, m=>{ mv.reviveUid = m.uid; runMoveQuiz(mv, null); });
+  if(mv && mv.transfuse && !transfuseNeeded(mon)) return transfuseRefused(mv, mon);   // (3.15) nobody to give to: the turn is kept
   if(mv.target==='Single' && livingEnemies().length>1){ promptTarget(mv); return; }
   if(mv.target==='Single'){ runMoveQuiz(mv, livingEnemies()[0]); return; }
   if(mv.target==='Status'){
@@ -540,6 +611,7 @@ function promptTarget(mv, onPick){
    ============================================================ */
 function companionChoose(mon, mv){
   if(mv.revitalise) return chooseRevival(mv, mon, m=>{ mv.reviveUid = m.uid; companionAct(mon, mv, null); });
+  if(mv.transfuse && !transfuseNeeded(mon)) return transfuseRefused(mv, mon);   // (3.15)
   const many = livingEnemies().length;
   /* aimed as the leader's are: a single target (or a status that needs one)
      is chosen with 2+ enemies, a twin blow's first with 3+ */
@@ -698,7 +770,22 @@ function drainRecipient(caster){
   return hurt.sort((a,b)=>
     (a.currentHp/Math.max(1,monMaxHp(a))) - (b.currentHp/Math.max(1,monMaxHp(b))))[0];
 }
-function applyPartyDrain(mv, mon){
+function applyPartyDrain(mv, mon, hits){
+  /* (3.19) The Forest Guardian's gift: a drink for every one it reached —
+     each to whoever needs it then (her first), so three can fill her and
+     then go on to the others. Returns a list. */
+  if(mv.drainEach){
+    const n = (hits || []).filter(h=> h && h.t && !h.dodged).length;
+    const out = [];
+    for(let k = 0; k < n; k++){
+      const t = drainRecipient(mon);
+      if(!t) break;
+      const before = t.currentHp;
+      t.currentHp = Math.min(monMaxHp(t), before + Math.ceil(mv.drainEach * monAtk(mon)));
+      out.push({ target:t, healed:t.currentHp - before, from:before });
+    }
+    return out;
+  }
   const pct = PARTY_DRAIN[mv.name];
   if(!pct) return null;
   const t = drainRecipient(mon);
@@ -791,6 +878,7 @@ function feedRecharge(words){
   /* A refined stone's free passive re-arms with the same bar that restores a
      cast — so it fires again the next time its carrier takes the field. */
   b.passiveFired = {};
+  allyRecharge();                      // (3.19) the Monkey King's stones, every one again
   return true;
 }
 
@@ -888,7 +976,7 @@ function resolveChargeSpend(mv, mon, target){
     reportHits(hits);
     checkThresholdStuns();
     checkThresholdSleeps();
-    if(getPStatus(0,'softened')) removePStatus(0,'softened');   // it blunts one blow only          // Unleash / Hyperbeam were landing silently
+    spendYourWeaken();   // it blunts one blow only — Unleash / Hyperbeam were landing silently
     c.turnsLeft--;
     if(c.turnsLeft <= 0){
       clearCharge();
@@ -1123,6 +1211,156 @@ function offerRebirth(rise, fall, who){
   });
 }
 
+/* ---------- THE FOREST GUARDIAN'S GIFT (3.19) ----------
+   At the end of Region 5 the Forest Guardian, freed, gives the rest of her
+   power to your Forest Fairy — the one that grew from her seed — as the ghost
+   phoenix gave yours its Sacred Flame (state.forestBlessingGranted; the dev
+   toggle on her Stats page too). The designer (2026-10-14):
+   - GIGA DRAIN hits every one of them (AOE) at 1.0× ATK — it was one of them,
+     at 0.8× — and drinks 0.5× her ATK of health for EACH one it reaches (a
+     dodge gives nothing): three of them, three drinks. Each goes to her first
+     and, once she is full, to whoever of yours is worst off (drainRecipient),
+     as Giga Drain's always has.
+   - OVERGROWTH is no longer a move but a PASSIVE. Once a turn while she is on
+     the field — in the start phase, or in the end phase if she came out after
+     it — 2 words learned to silver or gold, which may be skipped: every one
+     right, and your WHOLE team's ATK rises 7% of its own for the rest of the
+     battle (overgrowthBonus, in monAtk), 5 stacks at most (35%). It is not a
+     status: no Diamond Dust of theirs sweeps it, no Greed steals it. And every
+     time it comes round — written, missed or skipped, and at 5 stacks too,
+     when there is nothing left to write for — she heals 5% of her health.
+   Only your own Forest Fairy has it (party or storage): never a borrowed one
+   in a spar, never one of theirs. */
+const FOREST_GIFT = { drain:1.0, drainEach:0.5, words:2, step:0.07, maxStacks:5, regen:0.05 };
+function hasForestGift(m){
+  if(!(state && state.forestBlessingGranted && m && m.species === 'forest_fairy' && m.uid)) return false;
+  return (state.party || []).includes(m) || (state.storage || []).includes(m);
+}
+/* Her moves as the gift has them: Giga Drain on all of them, Overgrowth a
+   passive (no button in battle; on her Stats page, a passive). */
+function forestGiftMove(m, mv){
+  if(!mv || !hasForestGift(m)) return mv;
+  if(mv.name === 'Giga Drain') return Object.assign({}, mv, { mult:FOREST_GIFT.drain, target:'AOE', drainEach:FOREST_GIFT.drainEach, forestGift:true });
+  if(mv.name === 'Overgrowth') return Object.assign({}, mv, { mult:null, target:'Passive', words:0, overgrowth:true, forestGift:true });
+  return mv;
+}
+/* Her Overgrowth works once she has reached its level (35). */
+function overgrowthLearned(m){
+  const row = (MOVES.forest_fairy || []).find(r=> r[1] === 'Overgrowth');
+  return !!(row && hasForestGift(m) && (m.level || 1) >= row[5]);
+}
+/* (ui.battle outlives its fight, so only while one is being fought — on the
+   battle screen, or in one of its quizzes — never on the Stats page after.) */
+function overgrowthStacks(){
+  const b = ui.battle;
+  if(!b || !b.overgrowth || !(ui.screen === 'battle' || ui.screen === 'quiz')) return 0;
+  return b.overgrowth.stacks || 0;
+}
+/* The team's ATK from it: 7% of the monster's own a stack — added to the
+   figure as Enrage is, from the undressed base, so stacks never compound.
+   Any monster of yours in this battle, and an ally fighting beside you. */
+function overgrowthBonus(m, base){
+  const n = overgrowthStacks();
+  if(!n || !m || !m.uid) return 0;
+  return Math.round(n * FOREST_GIFT.step * base);
+}
+/* The fairy out on the field whose Overgrowth can come round, if any. A
+   passive like any other: their ✦ Curse quiets it while it lasts (the stacks
+   already grown stay — they are not a buff to sweep). */
+function overgrowthFairy(){
+  const b = ui.battle;
+  if(!b || b.scriptedAlly || b.scriptedOneTurn || b.scriptedLoss || b.arena) return null;
+  return livingField().find(m=> overgrowthLearned(m) && !passivesMuted(m)) || null;
+}
+/* The start phase (beginRound) or the end phase (endRound): once a turn. */
+function overgrowthPhase(phase, done){
+  const b = ui.battle;
+  const fairy = overgrowthFairy();
+  if(!b || !fairy || livingEnemies().length === 0) return done();
+  b.overgrowth = b.overgrowth || { stacks:0, round:0 };
+  const og = b.overgrowth;
+  if(og.round === (b.roundNo || 0)) return done();
+  og.round = b.roundNo || 0;
+  /* the regen comes first, whatever she then writes */
+  const max = monMaxHp(fairy), before = fairy.currentHp;
+  fairy.currentHp = Math.min(max, before + Math.ceil(max * FOREST_GIFT.regen));
+  const healed = fairy.currentHp - before;
+  renderBattle();
+  if(healed > 0){
+    drainHp(pid('playerHp', fairy), before, fairy.currentHp, max);
+    showDamageNumber(pid('playerBob', fairy), healed, { heal:true });
+  }
+  const regenSay = `🌿 Overgrowth — ${escapeHtml(displayName(fairy))} ${healed > 0 ? `heals <b>${healed} HP</b>` : 'is already whole'}.`;
+  if(og.stacks >= FOREST_GIFT.maxStacks){
+    battleMsg(regenSay + ` Your team's ATK is at its full <b>+${Math.round(og.stacks * FOREST_GIFT.step * 100)}%</b>.`);
+    return setTimeout(done, 900);
+  }
+  battleMsg(regenSay);
+  setTimeout(()=>{
+    if(ui.battle !== b) return;
+    askOvergrowth(fairy, won=>{
+      if(ui.battle !== b) return;
+      if(won){
+        og.stacks = Math.min(FOREST_GIFT.maxStacks, og.stacks + 1);
+        playSfx('stone_veryhigh');
+        renderBattle();
+        battleMsg(`🌿 Overgrowth! Vines and blossom wind round your whole team — ATK <b>+${Math.round(og.stacks * FOREST_GIFT.step * 100)}%</b> ` +
+          `for the rest of the battle (${og.stacks} of ${FOREST_GIFT.maxStacks}).`);
+      } else {
+        renderBattle();
+        battleMsg(`🌿 The vines settle. (Overgrowth: ${og.stacks} of ${FOREST_GIFT.maxStacks}.)`);
+      }
+      setTimeout(done, 1100);
+    });
+  }, 700);
+}
+/* The offer, and the 2 words: calls back with whether they were all written.
+   The battle is held while it waits, so the watchdog leaves it alone. */
+function askOvergrowth(fairy, cb){
+  const b = ui.battle;
+  b.hold = (b.hold || 0) + 1;
+  const done = won=>{ if(ui.battle === b) b.hold = Math.max(0, (b.hold || 1) - 1); cb(won); };
+  const n = overgrowthStacks(), step = Math.round(FOREST_GIFT.step * 100);
+  const ov = document.createElement('div');
+  ov.className = 'overgrowth-ask';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(35,32,25,0.55);z-index:80;display:flex;align-items:center;justify-content:center;padding:24px;';
+  ov.innerHTML = `<div style="background:var(--paper);border-radius:18px;padding:20px;max-width:340px;width:100%;text-align:center;">
+    <div>${monPortrait('forest_fairy', 72, { view:'front', bare:true, stage:monStage(fairy), crowned:isCrowned(fairy) })}</div>
+    <div style="font-family:'Baloo 2',cursive;font-weight:800;font-size:19px;margin:4px 0;">🌿 Overgrowth</div>
+    <div style="font-size:13px;font-weight:600;line-height:1.55;color:var(--ink-soft);margin-bottom:14px;">
+      Write <b>${FOREST_GIFT.words} words</b> ${revisionWords().length ? 'you have learned to 🥈 silver or 🥇 gold' : 'from your list'} —
+      every one right, and your <b>whole team</b> hits <b>${step}% harder</b> for the rest of the battle
+      (now <b>+${n * step}%</b>, ${n} of ${FOREST_GIFT.maxStacks}). Nothing of theirs can sweep it away.
+    </div>
+    <button class="btn btn-primary" id="ogGo">🌿 Write ${FOREST_GIFT.words} words</button>
+    <button class="btn btn-ghost" id="ogSkip" style="margin-top:8px;">Not now</button>
+  </div>`;
+  document.body.appendChild(ov);
+  const close = ()=>{ if(ov.parentNode) ov.parentNode.removeChild(ov); };
+  ov.querySelector('#ogSkip').addEventListener('click', ()=>{ close(); done(false); });
+  ov.querySelector('#ogGo').addEventListener('click', ()=>{
+    close();
+    const target = FOREST_GIFT.words;
+    startQuiz({
+      title: '🌿 Overgrowth',
+      subtitle: `${target} words${revisionWords().length ? ' you have learned to silver or gold' : ''} — every one right for +${step}% ATK, your whole team.`,
+      words: pickWords(target, true), stopAtFirstMiss:true, lockExit:true,
+      wordTarget: target,
+      onComplete:(res)=>{
+        const got = res.filter(r=> r.passed).reduce((k, r)=> k + (r.words || countWords(r.text)), 0);
+        if(ui.battle === b){
+          res.filter(r=> !r.passed).forEach(r=>{ if(!b.fightMistakes.includes(r.text)) b.fightMistakes.push(r.text); });
+          if(feedRecharge(res.reduce((k, r)=> k + (r.words || countWords(r.text)), 0)))
+            setTimeout(()=>{ battleMsg(secondWindMsg()); renderBattle(); }, 1500);
+        }
+        go('battle');
+        done(got >= target);
+      },
+      onExit:()=>{ go('battle'); done(false); },
+    });
+  });
+}
+
 /* Aftershocks are ordinary pre-hits now; these remain so older call sites and
    the move-button text keep working. */
 function aftershockBonusHits(){
@@ -1250,6 +1488,53 @@ function resolveBattleMove(mv, target, results, opts){
     if(correct < mv.words){ playSfx('move_miss'); battleMsg(`${mv.name} failed! (${wordsTag(correct, mv)} words)`); return setTimeout(advanceTurn,900); }
     castVita(mon, mv.vita);
     playEffect(mv.name, { type:'Water' });
+    return setTimeout(()=> afterPlayerAttack(mon, []), 900);
+  }
+  /* Ice Barrier (3.16) — a quick move: for 5 turns their attacks deal 30%
+     less, and one of their marks melts off your side now and at the start of
+     every turn (castIceBarrier). Written right, it costs no turn: choose
+     your move. (Its button rests while it stands.) */
+  if(mv.iceBarrier){
+    if(correct < mv.words){ playSfx('move_miss'); battleMsg(`${mv.name} failed! (${wordsTag(correct, mv)} words)`); return setTimeout(advanceTurn,900); }
+    const line = castIceBarrier('player', mon, mv.iceBarrier, mv.name);
+    renderStatusBadges();
+    playEffect(mv.name, { type:'Water' });
+    logBattle(`${displayName(mon)} used ${mv.name} (quick)`);
+    ui.battle.phase = 'player';
+    renderBattle();
+    battleMsg(line + ' It cost no turn — choose your move.');
+    return;
+  }
+  /* A shield on itself or its partner — and the Mime's Invisible Wall, a
+     barrier until its next turn (castBarrier; 3.14, 3.15). */
+  if(mv.barrier){
+    if(correct < mv.words){ playSfx('move_miss'); battleMsg(`${mv.name} failed! (${wordsTag(correct, mv)} words)`); return setTimeout(advanceTurn,900); }
+    battleMsg(castBarrier('player', mon, mv.barrier, mv.name));
+    renderStatusBadges();
+    playEffect(mv.name, { type:'Water' });
+    return setTimeout(()=> afterPlayerAttack(mon, []), 900);
+  }
+  /* (3.15) the psychics' support moves: Woolly Warmth, Transfusion, Kindle,
+     Gallop, Glitch, and the Mime's Copycat. */
+  if(mv.mend || mv.transfuse || mv.kindle || mv.gallop || (mv.glitch && mv.mult == null) || mv.copy){
+    if(correct < mv.words){ playSfx('move_miss'); battleMsg(`${mv.name} failed! (${wordsTag(correct, mv)} words)`); return setTimeout(advanceTurn,900); }
+    if(mv.copy) return runCopycat(mon, mv, target);
+    if(mv.glitch) return runGlitch(mon, mv, target);
+    let line = '';
+    if(mv.mend) line = castMend('player', mon, mv.mend, mv.name);
+    else if(mv.transfuse) line = castTransfuse('player', mon, mv.transfuse, mv.name).line;
+    else if(mv.kindle){
+      const ok = castSideBuff('player', mon, 'kindle', { deal:mv.kindle.deal }, mv.kindle.turns, mv.name);
+      line = ok ? `🔥 <b>${escapeHtml(mv.name)}</b> — for ${mv.kindle.turns} turns your side deals <b>${mv.kindle.deal}×</b>.`
+                : `🔥 ${escapeHtml(mv.name)} — but their diamond dust smothers the flame.`;
+    } else if(mv.gallop){
+      const ok = castSideBuff('player', mon, 'gallop', { init:mv.gallop.init }, mv.gallop.turns, mv.name);
+      line = ok ? `🦄 <b>${escapeHtml(mv.name)}</b> — for ${mv.gallop.turns} turns your side moves a step sooner.`
+                : `🦄 ${escapeHtml(mv.name)} — but their diamond dust holds you back.`;
+    }
+    battleMsg(line);
+    renderStatusBadges();
+    playEffect(mv.name, { type:SPECIES[mon.species].types[0] });
     return setTimeout(()=> afterPlayerAttack(mon, []), 900);
   }
   /* Conversio — it spends itself to bring others back. */
@@ -1457,6 +1742,23 @@ function resolveBattleMove(mv, target, results, opts){
     factor *= ui.battle.bonusMult;          // multiplies with everything else
     ui.battle.bonusMult = 0;
   }
+  /* (3.15) Pent-up Fury pays back a hit taken this round; Random Access rolls
+     its power; an Arcane Meteor that took a hit while it gathered comes down
+     at half. Said with the blow (takePsyNote). */
+  if(ui.battle && factor > 0 && !reentry){
+    let note = '';
+    if(mv.revenge && hurtThisRound(mon)){ factor *= mv.revenge; note += ` Pent-up fury — ${mv.revenge}×!`; }
+    if(mv.randomMult){
+      const [lo, hi] = mv.randomMult, r = +(lo + Math.random() * (hi - lo)).toFixed(2);
+      factor *= r; note += ` Its power rolls ×${r}!`;
+    }
+    if(mv.focusBreak && noQuiz){
+      const f = bState(mon).focus;
+      if(f && f.hurt){ factor *= mv.focusBreak; note += ` Struck while it gathered — it falls at ${Math.round(mv.focusBreak * 100)}%.`; }
+      bState(mon).focus = null;
+    }
+    ui.battle._psyNote = note;
+  }
   if(ui.battle) ui.battle.lastFactor = factor;   // (3.00) the whole blow, bonus and all: what full clones echo half of
   if(factor<=0){ playSfx('move_miss'); battleMsg(`${mv.name} missed! (${wordsTag(correct, mv)} words)`); setTimeout(advanceTurn,900); return; }
   /* A wind-up (Grave Quake, Burn Bright): the words are spent now, the turn
@@ -1464,15 +1766,37 @@ function resolveBattleMove(mv, target, results, opts){
      a Lurk holds through it. */
   if(mv.windup && !noQuiz){
     mon._windup = mv.name;
+    if(mv.focusBreak) bState(mon).focus = { hurt:false };   // (3.15) a hit from here on breaks it
+    /* (3.26) The designer: "overcharge procs should allow it to charge
+       immediately and hit on the same turn". Your Overcharge is rolled as it
+       gathers (its first rate spent, as a charge spends it): up, the blow
+       comes down at once — and that was the Overcharge's repeat for this
+       action (afterPlayerAttackReal rolls no other). */
+    const oc = getPStatus(0,'overcharge');
+    const surge = !!(oc && livingEnemies().length && Math.random() < overchargeChance());
+    if(oc) spendOverchargeFirst(oc);
     renderBattle();
-    battleMsg((mv.windup.say || `{name} gathers itself…`).replace('{name}', displayName(mon)) + ' The turn passes.');
+    battleMsg((mv.windup.say || `{name} gathers itself…`).replace('{name}', displayName(mon)) +
+              (surge ? ' ⚡ The Overcharge surges — it comes down at once!' : ' The turn passes.'));
     playEffect(mv.windup.name || mv.name, { type:SPECIES[mon.species].types[0], duration:700 });
+    if(surge){
+      ui.battle._ocWindupSeq = ui.battle.actionSeq;
+      const ready = Object.assign({}, mv, { words:0, windupReady:true });
+      const t = (target && target.hp > 0) ? target : livingEnemies()[0];
+      return setTimeout(()=>{ if(ui.battle) resolveBattleMove(ready, ready.target === 'Single' ? t : null, [], { noQuiz:true }); }, 1100);
+    }
     return setTimeout(advanceTurn, 1100);
   }
   if(noQuiz) mon._windup = null;
   /* The blow is coming: whatever hid this monster is gone, and the blow that
      ends a Lurk may be an ambush. A bonus round re-enters here harmlessly. */
   if(!reentry) breakCover(mon, mv.spendLurk);
+  if(!reentry){
+    if(mv.shieldGain) gainShieldValue(mon, mv.shieldGain);   // (3.15) Shell Spin, Claw Barrage
+    /* (3.15) its turn's attacks, for a Mime to copy */
+    if(mv.mult != null && !mv.isStone && movesToStrike(mv))
+      noteTurnMove(mon, { name:mv.copiedName || mv.name, mult:mv.mult, target:mv.target, ex:copyExtras(mv, mv.hits) });
+  }
   /* Extinguish: everything it has left, half as much again, on every one of
      them — and then it is gone. */
   if(mv.extinguish){
@@ -1508,7 +1832,7 @@ function resolveBattleMove(mv, target, results, opts){
         const dmg = enemyGuard(t, computeDamage(f, atk, monRef(mon), t, true));   // their Counter reads it too
         return { t, idx, dmg, oldHp:t.hp, newHp:Math.max(0,t.hp-dmg) };
       });
-      battleMsg(`${mv.name}!`);
+      battleMsg(`${mv.name}!` + takePsyNote());
       bob($('#' + pid('playerBob')), +1);
       playEffect(mv.name, { type: SPECIES[mon.species].types[0] });
       return setTimeout(()=>{
@@ -1590,7 +1914,8 @@ function resolveBattleMove(mv, target, results, opts){
     return offerBonusRound(mv, mon, hits, effMsg, results);
   }
   battleMsg(`${mv.name}! ${effMsg}` + (dreamFed ? ' It feeds on the dream — twice as hard!' : '') +
-            (mv.pierce && hits.some(h=> !h.dodged && blockStacksOf(h.t)) ? ' The purple flame passes straight through their block!' : ''));
+            (mv.pierce && hits.some(h=> !h.dodged && blockStacksOf(h.t)) ? ' The purple flame passes straight through their block!' : '') +
+            takePsyNote());
   bob($('#' + pid('playerBob')), +1);
   playEffect(mv.name, { type: mv.stoneType || SPECIES[mon.species].types[0], tier: mv.stoneTier,
                         at: hits[0] ? 'enemy-'+hits[0].idx : null });
@@ -1614,6 +1939,44 @@ function resolveBattleMove(mv, target, results, opts){
         setTimeout(()=> battleMsg(`⚡ ${[...new Set(zapped)].join(' and ')} can't move!`), 650);
       }
     }
+    /* (3.15) a blow that may send to sleep (Lullaby Cloud, Riptide, Counting
+       Sheep, Abyssal Tide Max) — each one it hit, on its own roll */
+    if(mv.sleepHit){
+      const zs = [];
+      hits.forEach(h=>{
+        if(h.t && h.t.hp > 0 && h.dmg > 0 && !h.dodged && Math.random() < mv.sleepHit){ const z = putToSleep(h.t, mv.name); if(z) zs.push(z); }
+      });
+      if(zs.length){ renderStatusBadges(); setTimeout(()=> battleMsg(zs.join(' ')), 900); }
+    }
+    /* (3.25) Blinding Beam: each one it got through to is blinded — a
+       quarter of its own attacks miss, this turn and the next (blindMark) */
+    if(mv.blindHit){
+      const bl = [];
+      hits.forEach(h=>{
+        if(h.t && h.t.hp > 0 && h.dmg > 0 && !h.dodged){ const s = blindMark(h.t, mv.blindHit); if(s) bl.push(s); }
+      });
+      if(bl.length){ renderStatusBadges(); setTimeout(()=> battleMsg(bl.join(' ')), 750); }
+    }
+    /* (3.26) the Squid's Abyssal Gaze Max: a muddle on the one it hits — its
+       next swing turns on its own side (markConfused; Iron Will and their
+       dust keep it out) */
+    const cfh = mv.confuseHit;
+    if(cfh){
+      const cz = [];
+      hits.forEach(h=>{
+        if(!(h.t && h.t.hp > 0 && h.dmg > 0 && !h.dodged) || getEStatus(h.t,'discombobulate') || !(Math.random() < (cfh.chance || 0.25))) return;
+        markConfused(h.t, cfh.ffPower || 1.0, true);
+        if(getEStatus(h.t,'discombobulate')) cz.push(SPECIES[h.t.species].name);
+      });
+      if(cz.length){ renderStatusBadges(); setTimeout(()=> battleMsg(`🌀 ${cz.join(' and ')} ${cz.length > 1 ? 'are' : 'is'} confused — ${cz.length > 1 ? 'their' : 'its'} next swing turns on its own side!`), 800); }
+    }
+    /* (3.15) Random Access: a Glitch on top of the blow */
+    if(mv.glitch && mv.mult != null && hits.some(h=> h.t && !h.dodged)){
+      const t0 = (target && target.hp > 0) ? target : livingEnemies()[0];
+      const kind = glitchPick(true);
+      const said = t0 ? applyGlitch('player', mon, t0, kind) : '';
+      if(said){ renderStatusBadges(); setTimeout(()=> battleMsg(said), 1000); }
+    }
     /* Boo! and Wail: a blow that weakens THEM — their next attack lands soft. */
     const sfp = mv.softenHit;
     if(sfp){
@@ -1634,7 +1997,8 @@ function resolveBattleMove(mv, target, results, opts){
     if(lun && hits.some(h=> h.t && !h.dodged) && Math.random() < (lun.chance || 0.25)){
       let caught = 0;
       livingEnemies().forEach(x=>{ markConfused(x, lun.ffPower || 1.0, true); if(getEStatus(x,'discombobulate')) caught++; });
-      if(caught){ renderStatusBadges(); setTimeout(()=> battleMsg('🌙 The moonlight gets into their heads!'), 650); }
+      /* (3.24) the Ladybird's Dazzle is a Lunacy in light: its own words */
+      if(caught){ renderStatusBadges(); setTimeout(()=> battleMsg(lun.glow ? '✨ The flash leaves them seeing spots — confused!' : '🌙 The moonlight gets into their heads!'), 650); }
     }
     /* Nova (the Phoenix), in your hands as in theirs (2.90): a small Diamond
        Dust — one of their buffs swept away, one of their marks on your side
@@ -1645,8 +2009,25 @@ function resolveBattleMove(mv, target, results, opts){
     }
     if(mv.shell) applyShell(mv, mon);       // Slag Eruption leaves molten armour
     // resolves AFTER Leech Seed, so the field heal lands first
-    const drain = applyPartyDrain(mv, mon);
-    if(drain && drain.healed>0){
+    const drain = applyPartyDrain(mv, mon, hits);
+    if(Array.isArray(drain)){
+      /* (3.19) the gift's Giga Drain: one drink for each one it reached */
+      const got = drain.filter(d=> d.healed > 0);
+      got.forEach((d, k)=>{
+        const onField = playerField().includes(d.target);
+        setTimeout(()=>{
+          if(onField) drainHp(pid('playerHp', d.target), d.from, d.from + d.healed, monMaxHp(d.target));
+          showDamageNumber(onField ? pid('playerBob', d.target) : pid('playerBob'), d.healed, { heal:true });
+        }, 250 * k);
+      });
+      if(got.length){
+        const by = {}, reached = hits.filter(h=> h && h.t && !h.dodged).length;
+        got.forEach(d=>{ const nm = displayName(d.target); by[nm] = (by[nm] || 0) + d.healed; });
+        setTimeout(()=> battleMsg(`🌿 Giga Drain drinks from ${reached === 1 ? 'one of them' : `${reached} of them`} — ` +
+          Object.entries(by).map(([nm, n])=> `<b>${n} HP</b> to ${escapeHtml(nm)}`).join(', ') + '.'), 600);
+      }
+    }
+    else if(drain && drain.healed>0){
       const onField = playerField().includes(drain.target);
       if(onField) drainHp(pid('playerHp', drain.target), drain.target.currentHp-drain.healed, drain.target.currentHp, monMaxHp(drain.target));
       showDamageNumber(onField ? pid('playerBob', drain.target) : pid('playerBob'), drain.healed, { heal:true });
@@ -1676,10 +2057,13 @@ function movesToStrike(mv){
 function muddledSelfStrike(mv, mon, factor){
   { const ef = getESide('confusionField'); if(ef && ef.sure) ef.sureUsed = true; }   // their field's certain turn has worked
   const st = getPStatus(0,'discombobulate');
-  const power = (st && st.ffPower) || 0.60;
-  removePStatus(0,'discombobulate');
+  /* (3.16) A Discombobulate confusion: `self` × its ATK, rolled as it landed;
+     it stays to the end of the turn. A Lunacy's: the move at `ffPower`, and
+     it is gone with the swing. */
+  const dmg = (st && st.self) ? confusionHit(mon, st)
+            : Math.max(1, Math.ceil(factor * monAtk(mon) * ((st && st.ffPower) || 0.60)));
+  if(!st || !st.self || st.once) removePStatus(0,'discombobulate');
   breakCover(mon); mon._ambush = 0;
-  const dmg = Math.max(1, Math.ceil(factor * monAtk(mon) * power));
   /* 2.84: with its partner beside it, the swing lands on the partner — as a
      muddled enemy clouts one of its own side — and on itself only alone. */
   const victim = livingField().find(m=> m !== mon) || mon;
@@ -1724,8 +2108,12 @@ function landStrike(h, opts){
   const before = t.hp;
   if(before <= 0){ h.dmg = 0; h.oldHp = h.newHp = 0; return 0; }   // already down: nothing left to strike
   const raw = h.raw;
-  const through = (raw > 0 && !h.pierce && blockStacksOf(t)) ? applyBlock(t, raw, 'enemyBlk-' + h.idx) : raw;
-  h.blocked = raw - through;
+  /* (3.13) Your Dragon Dance breaks some of their shields first — once an
+     attack, as its first strike on this one lands (breakShields). */
+  if(raw > 0) breakShields('player', null, t, yourStrikeKey(opts), 'enemyBlk-' + h.idx, 'enemy-' + h.idx);
+  const soaked = (raw > 0 && !h.pierce && blockStacksOf(t)) ? applyBlock(t, raw, 'enemyBlk-' + h.idx) : raw;
+  const through = capHit(t, soaked);            // (3.15) their Steelcrab's Carapace: a third of its health at most
+  h.blocked = raw - soaked;
   h.dmg = through;
   h.oldHp = before;
   h.newHp = Math.max(0, before - through);
@@ -1735,13 +2123,27 @@ function landStrike(h, opts){
      long as the tester wants without anything respawning. */
   if(ui.battle && ui.battle.arenaImmortal && h.newHp <= 0) h.newHp = t.maxHp;
   t.hp = h.newHp;
+  h.newHp = t.hp;                               // (3.19) a floor may have held it (the vault's broken Cyborg, at 1)
+  /* (3.15) their Nurse's Lullaby Reflex: the strike reached it — the one of
+     yours that struck may fall asleep. (Not a burn or an echo: `noLeech`.) */
+  if(raw > 0 && !(opts && opts.noLeech)){
+    /* (3.27) and their Squid's Ink Cloud, their Ladybird's Warning Colours */
+    const said = [sleepBackRoll(t, activeMon()), inkBackRoll(t, activeMon()), weakBackRoll(t, activeMon())].filter(Boolean).join(' ');
+    if(said){ renderStatusBadges(); setTimeout(()=> battleMsg(said), 500); }
+  }
   flashHit(document.getElementById('enemy-' + h.idx));
   drainHp('enemyHp-' + h.idx, before, h.newHp, t.maxHp);
   if(h.newHp <= 0){ const el = document.getElementById('enemy-' + h.idx); if(el) el.classList.add('fainted'); }
   /* Leech Seed drinks from what lands. A dodge, or a blow their block soaked
      entirely, gives it nothing — just as their seeds get nothing from a blow
-     of theirs that your block soaks. */
-  if(through > 0 && !(opts && opts.noLeech)) return resolveLeech(t, activeMon());
+     of theirs that your block soaks. (3.16) And your ✦ Spike Armour strikes
+     again on the same terms (spikeRiderYours) — its share counted into the
+     hit's number (`h.rider`). */
+  if(through > 0 && !(opts && opts.noLeech)){
+    const sp = spikeRiderYours(t, activeMon());
+    if(sp > 0){ h.rider = (h.rider || 0) + sp; h.newHp = t.hp; }
+    return resolveLeech(t, activeMon());
+  }
   return 0;
 }
 /* A multi-strike move is planned before any of its strikes land, so the plan
@@ -1750,10 +2152,18 @@ function landStrike(h, opts){
    target's stacks, in the order the real ones will go. */
 function blockPlanner(){
   const left = new Map();
+  /* (3.13) …after your Dragon Dance has broken what it breaks, at this
+     action's first strike on each (as landStrike will) */
+  const key = yourStrikeKey(null), brk = key ? shieldBreakOf('player') : 0;
   return (t, dmg)=>{
     if(!t || !(dmg > 0)) return dmg || 0;
-    const n = left.has(t) ? left.get(t) : blockStacksOf(t);
-    if(n <= 0) return dmg;
+    let n;
+    if(left.has(t)) n = left.get(t);
+    else {
+      n = blockStacksOf(t);
+      if(brk && !shieldBreakDone(key, t)) n = Math.max(0, n - brk);
+    }
+    if(n <= 0){ left.set(t, 0); return dmg; }
     left.set(t, n - 1);
     return Math.max(0, dmg - (t.blockValue || 0));
   };
@@ -1762,7 +2172,7 @@ function blockPlanner(){
    immortal arena a knock-out comes straight back up at full, so the rest of
    the move keeps striking it (it used to stop, and the test stalled). */
 function plannedHp(soak, t, hp, dmg){
-  const left = Math.max(0, hp - soak(t, dmg));
+  const left = Math.max(0, hp - capHit(t, soak(t, dmg), true));   // (3.15) a Carapace caps each strike
   return (left <= 0 && ui.battle && ui.battle.arenaImmortal) ? t.maxHp : left;
 }
 
@@ -1822,10 +2232,17 @@ function afterPlayerAttack(mon, hits){
   return afterPlayerAttackBody(mon, hits);
 }
 function afterPlayerAttackBody(mon, hits){
+  /* (3.15) a Copycat with more of their attacks still to play */
+  const cq = ui.battle && ui.battle.copyQueue;
+  if(cq && cq.length && livingEnemies().length && mon && mon.currentHp > 0){
+    const nx = cq.shift();
+    return setTimeout(()=>{ if(ui.battle) resolveBattleMove(nx.mv, copyTargetFor(nx.mv, nx.t), [], { pre:{ correct:nx.mv.words } }); }, 700);
+  }
+  if(ui.battle) ui.battle.copyQueue = null;
   /* (Dragon Legacy is no longer spent here: it lasts the whole turn and ends
      with the round — endDragonLegacy().) A weakened attack has now been made,
      so the weakening is used up. */
-  if(hits && hits.length && getPStatus(0,'softened')) removePStatus(0,'softened');
+  if(hits && hits.length) spendYourWeaken();
   /* Tachypsychia grants a whole EXTRA ACTION rather than a hidden second hit,
      re-rolled after every action — so a lucky streak can chain several. */
   /* Tachypsychia grants a whole EXTRA ACTION, re-rolled after every action so a
@@ -1946,6 +2363,18 @@ function postPlayerAction(mon, hits){
       showDamageNumber(pid('playerBob'), before - mon.currentHp);
       lines.push(`🔥 Soulfire! The purple flame of his sword burns back — ${before - mon.currentHp}!`);
     }
+    /* (3.15) their Hermit Sloth's Hermit's Patience: every attack that
+       reached one is answered — 0.4× its ATK, no dodging it. */
+    touched.filter(t=> t.hp > 0).forEach(t=>{
+      const rb = retaliateBack(t);
+      if(!(rb > 0) || mon.currentHp <= 0) return;
+      const before = mon.currentHp;
+      mon.currentHp = Math.max(ui.battle.allyUnkillable ? 1 : 0, mon.currentHp - rb);
+      flashHit($('#' + pid('playerBob')));
+      drainHp(pid('playerHp'), before, mon.currentHp, monMaxHp(mon));
+      showDamageNumber(pid('playerBob'), before - mon.currentHp);
+      lines.push(`🦥 ${SPECIES[t.species].name} strikes back — ${before - mon.currentHp}!`);
+    });
   }
   /* Their Goblin Knights: any attack that dealt one of them nothing — dodged,
      or soaked by block — is answered, and so is one that hit his friends and
@@ -1969,6 +2398,11 @@ function postPlayerAction(mon, hits){
       return;
     }
     const seen = ariaPiercedNote();
+    if(!seesThrough(k) && rollBlind(k)){                       // (3.25) blinded: it goes wide — no dodge of yours
+      floatMiss(pid('playerBob'), 'MISS');
+      lines.push(`⚔️ ${who} ripostes — 🔆 blinded, it misses.`);
+      return;
+    }
     if(!seesThrough(k) && Math.random() < playerEvasionFrom(k)){
       floatMiss(pid('playerBob'), dodgeWord(mon)); dodgePlayer();
       lines.push(`⚔️ ${who} ripostes — and finds nothing.`);
@@ -1977,7 +2411,8 @@ function postPlayerAction(mon, hits){
     k._blow = newBlowId('r');                          // a blow of its own (2.97)
     const dmg = computeDamage(p.riposte, enemyAtk(k), k, monRef(mon), false);
     const before = mon.currentHp;
-    const through = applyBlock(mon, dmg, pid('playerBlk'));
+    breakShields('enemy', k, mon, k._blow, pid('playerBlk'), pid('playerBob'));   // their Dragon Dance first (3.13)
+    const through = capHit(mon, applyBlock(mon, dmg, pid('playerBlk')));   // (3.15) a Carapace
     mon.currentHp = Math.max(ui.battle.allyUnkillable ? 1 : 0, mon.currentHp - through);
     if(through > 0) noteHurt(mon);
     counterDrift(document.getElementById('enemyBob-' + b.enemies.indexOf(k)), document.getElementById(pid('playerBob')));
@@ -2057,7 +2492,10 @@ function afterPlayerAttackReal(mon, hits){
     const b0 = ui.battle;
     const flame = !!(b0 && b0._sacredFlameLaid), shock = b0 ? b0._aftershockLaid : null;
     if(b0){ b0._sacredFlameLaid = false; b0._aftershockLaid = null; }
-    const oc = getPStatus(0,'overcharge');
+    /* (3.26) an Overcharge that brought a wind-up down at once was this
+       action's repeat */
+    const ocSpent = !!(b0 && b0._ocWindupSeq != null && b0._ocWindupSeq === b0.actionSeq);
+    const oc = ocSpent ? null : getPStatus(0,'overcharge');
     const ocChance = oc ? (oc.fresh && oc.firstChance != null ? oc.firstChance : (oc.chance||0.25)) : 0;
     /* Only a strike that reached them — landed, or soaked by their block — is
        anything to repeat. With none (the words went wrong, every strike was
@@ -2196,6 +2634,101 @@ function enemyVita(e, def, next){
   renderStatusBadges();
   setTimeout(next, 1100);
 }
+/* (3.16) Its Ice Barrier, a quick cast: castIceBarrier on their side, then
+   `then` (its action goes on). */
+function enemyIceBarrier(e, move, then){
+  const idx = ui.battle.enemies.indexOf(e);
+  bob(document.getElementById('enemyBob-' + idx), -1);
+  playEffect(move[1], { type:'Water', at:'enemy-' + idx });
+  battleMsg(castIceBarrier('enemy', e, move[6].iceBarrier, move[1]));
+  renderStatusBadges();
+  setTimeout(then, 1300);
+}
+/* A shield (Pillow Puff, Bandage Wall) or the Mime's Invisible Wall
+   (castBarrier, 3.14/3.15) on their side. */
+function enemyBarrier(e, move, next){
+  const idx = ui.battle.enemies.indexOf(e);
+  bob(document.getElementById('enemyBob-' + idx), -1);
+  playEffect(move[1], { type:'Water', at:'enemy-' + idx });
+  battleMsg(castBarrier('enemy', e, move[6].barrier, move[1]));
+  renderStatusBadges();
+  setTimeout(next, 1100);
+}
+/* (3.15) The psychics' support moves in their hands. Each when it is worth
+   it, and never the same one twice running (`_lastCast`). The Mime's
+   Invisible Wall and Copycat are its own (enemyActs). */
+const PSY_SUPPORTERS = new Set(['puffball', 'nurse', 'ram', 'polygon', 'unicorn']);   // (3.26) the Firefox's Kindle went
+function foeSupportPick(e){
+  const rows = (MOVES[e.species] || []).filter(r=> r[1] != null && r[2] == null && r[3] !== 'Passive' && r[6] && (e.level || 1) >= r[5]);
+  const hurt = m=> hpOfMon(m) / Math.max(1, maxHpOfMon(m));
+  for(const r of rows){
+    const x = r[6];
+    if(e._lastCast === r[1] || x.copy) continue;
+    if(x.barrier && x.barrier.on === 'partner'){
+      const p = partnerOf('enemy', e);
+      if(p && hurt(p) < 0.75 && !blockStacksOf(p)) return r;
+      continue;
+    }
+    if(x.mend && livingEnemies().some(m=> hurt(m) < 0.6)) return r;
+    if(x.transfuse){ const p = partnerOf('enemy', e); if(p && p !== e && hurt(p) < 0.5 && hurt(e) > 0.5) return r; continue; }
+    if(x.kindle && !getESide('kindle') && !dustBlocks('enemy')) return r;
+    if(x.gallop && !getESide('gallop') && !dustBlocks('enemy')) return r;
+    if(x.glitch && Math.random() < 0.35) return r;
+  }
+  return null;
+}
+function enemyPsySupport(e, move, next){
+  const idx = ui.battle.enemies.indexOf(e), x = move[6], name = SPECIES[e.species].name;
+  bob(document.getElementById('enemyBob-' + idx), -1);
+  playEffect(move[1], { type:e.types[0], at:'enemy-' + idx });
+  let line = '';
+  if(x.mend) line = castMend('enemy', e, x.mend, move[1]);
+  else if(x.transfuse) line = castTransfuse('enemy', e, x.transfuse, move[1]).line;
+  else if(x.kindle){
+    const ok = castSideBuff('enemy', e, 'kindle', { deal:x.kindle.deal }, x.kindle.turns, move[1]);
+    line = ok ? `🔥 ${name} uses <b>${escapeHtml(move[1])}</b> — for ${x.kindle.turns} turns their side deals <b>${x.kindle.deal}×</b>.`
+              : `🔥 ${name} uses ${escapeHtml(move[1])} — your diamond dust smothers the flame.`;
+  } else if(x.gallop){
+    const ok = castSideBuff('enemy', e, 'gallop', { init:x.gallop.init }, x.gallop.turns, move[1]);
+    line = ok ? `🦄 ${name} uses <b>${escapeHtml(move[1])}</b> — for ${x.gallop.turns} turns their side moves a step sooner.`
+              : `🦄 ${name} uses ${escapeHtml(move[1])} — your diamond dust holds them back.`;
+  }
+  battleMsg(line);
+  renderStatusBadges();
+  setTimeout(next, 1100);
+}
+/* Their Glitch: a Data Spike goes on as an ordinary blow (the row returned);
+   anything else is done here (true). */
+function enemyGlitch(e, move, next){
+  const kind = glitchPick(false);
+  if(kind === 'spike') return ['Power1', `${move[1]}: Data Spike`, GLITCH_SPIKE, 'Single', 0, 0, {}];
+  const idx = ui.battle.enemies.indexOf(e);
+  const t = enemyPickTarget(e, null) || activeMon();
+  bob(document.getElementById('enemyBob-' + idx), -1);
+  playEffect(move[1], { type:'Psychic', at:'enemy-' + idx });
+  battleMsg(applyGlitch('enemy', e, t, kind) || `🔷 ${SPECIES[e.species].name}'s Glitch — nothing happens.`);
+  renderStatusBadges();
+  setTimeout(next, 1100);
+  return true;
+}
+/* Their Copycat: one of yours (as a blow would choose), its last turn's
+   attacks — the first returned to go on now, the rest in `_copyQueue`. */
+function enemyCopycat(e, move){
+  const k = (move[6] && move[6].copy) || 1.1;
+  const t = enemyPickTarget(e, null) || activeMon();
+  if(!t) return null;
+  const plan = copyPlan(t);
+  if(!plan.moves.length) return null;
+  const rows = plan.moves.map(r=>{
+    const row = ['Ultimate', `${move[1]}: ${r.name}`, +(r.mult * k).toFixed(4), r.target || 'Single', 0, 0, Object.assign({}, r.ex || {})];
+    row._copiedName = r.name;
+    return row;
+  });
+  e._copyQueue = rows.slice(1);
+  logBattle(`🎭 ${SPECIES[e.species].name} copies ${displayName(t)}: ${plan.moves.map(r=> r.name + ' ' + r.mult + '×').join(', ')} at ${k}×`);
+  return { row:rows[0], note:`🎭 ${SPECIES[e.species].name} copies ${escapeHtml(displayName(t))}'s ${plan.basic ? 'Basic move' : 'last turn'}` +
+    ` — <b>${plan.moves.map(r=> escapeHtml(r.name)).join('</b>, then <b>')}</b>, at ${k}×! ` };
+}
 function enemyVitaTick(e){
   const v = e._vita;
   if(!v || v.turnsLeft <= 0) return false;
@@ -2231,7 +2764,7 @@ function enemyConversio(e, def, next){
   const seen = ariaPiercedNote();
   const dmg = Math.ceil((def.direct || 0.33) * e.maxHp);
   const before = mon.currentHp;
-  mon.currentHp = Math.max(0, mon.currentHp - dmg);
+  mon.currentHp = Math.max(ui.battle.allyUnkillable ? 1 : 0, mon.currentHp - dmg);   // (3.14) a fight where yours cannot fall, as every other blow
   drainHp(pid('playerHp', mon), before, mon.currentHp, monMaxHp(mon));
   battleMsg(`🕊 ${name} uses <b>Conversio</b> — with nobody to raise, the light turns outward and takes ` +
             `<b>${before - mon.currentHp}</b>.` + seen);
@@ -2341,7 +2874,7 @@ function resolveAoeHits(mv, mon, factor, atk, targets){
     volleys.push(volley);
   }
   logBattle(`${displayName(mon)} used ${mv.name} — ${totalHits} strikes on ${targets.length} target(s)`);
-  battleMsg(`${mv.name}!`);
+  battleMsg(`${mv.name}!` + takePsyNote());
   bob($('#' + pid('playerBob')), +1);
   playEffect(mv.name, { type: SPECIES[mon.species].types[0] });
   setTimeout(()=> playVolleys(volleys, 0, ()=>{
@@ -2435,13 +2968,20 @@ function confusedStrike(e, done){
     floatMiss('enemy-'+b.enemies.indexOf(victim), dodgeWord(victim));
     return setTimeout(done, 900);
   }
-  const mv = enemyMoveFor(e) || (MOVES[e.species]||[])[0];
-  const mult = (mv && mv[2]) || 0.3;
-  /* Higher tiers do not turn more swings — they make the turned ones hurt. */
+  /* Higher tiers do not turn more swings — they make the turned ones hurt.
+     (3.16) A Discombobulate confusion's swing is its own: `self` × its ATK,
+     rolled as it landed (0.5–0.8 / 0.8–1.1 / 1.1–1.4) — and it stays
+     confused to the end of the turn. A Lunacy's is its move at `ffPower`,
+     once. */
   const conf = getEStatus(e,'discombobulate');
-  const power = (conf && conf.ffPower) || 0.60;
+  let dmg;
+  if(conf && conf.self) dmg = confusionHit(e, conf);
+  else {
+    const mv = enemyMoveFor(e) || (MOVES[e.species]||[])[0];
+    const mult = (mv && mv[2]) || 0.3;
+    dmg = Math.max(1, Math.ceil(mult * e.atk * ((conf && conf.ffPower) || 0.60)));
+  }
   if(conf && conf.once) removeEStatus(e,'discombobulate');     // a Lunacy is one swing
-  const dmg = Math.max(1, Math.ceil(mult * e.atk * power));
   const idx = b.enemies.indexOf(victim);
   const from = b.enemies.indexOf(e);
   battleMsg(victim === e
@@ -2475,21 +3015,46 @@ function confusedStrike(e, done){
    an attack of yours — an afterimage at the end of the round, a riposte in
    their turn: no guard is read for it and, as their copies and ripostes make
    none of yours, a Mirage leaves no copies when it slips one. */
-function rollDodge(t, idx, delay, sure, reflex){
+function rollDodge(t, idx, delay, sure, reflex, striker){
   if(!reflex) enemyBrace(t);
-  /* Third Eye (2.97): the monster of yours striking — the one in focus —
-     reads them; nothing it throws can be dodged. Their block and guard still
-     have their say. */
-  if(!sure && seesThrough(activeMon())) sure = true;
+  /* Third Eye (2.97): the monster of yours striking — the one in focus, or
+     (3.25) `striker` where it is somebody else (the Monkey King beside you)
+     — reads them; nothing it throws can be dodged. Their block and guard
+     still have their say. */
+  const me = striker !== undefined ? striker : activeMon();
+  if(!sure && seesThrough(me)) sure = true;
+  /* (3.25) Blinded: its own strike goes wide — before any dodge, so nothing
+     of theirs dodged it (no Moonlit Retribution banked, no Mirage copy, no
+     Futuresight fracture); their Knight answers it as a blow that dealt
+     him nothing. */
+  if(!sure && rollBlind(me)){
+    setTimeout(()=>{ floatMiss('enemy-'+idx, 'MISS'); }, delay||0);
+    sayBlindMiss(me, delay);
+    if(ui.battle && !reflex) (ui.battle.actionDodges = ui.battle.actionDodges || []).push(t);
+    return true;
+  }
   const ev = sure ? 0 : enemyEvasion(t);
   if(ev <= 0 || Math.random() >= ev) return false;
   const word = dodgeWord(t);
   setTimeout(()=>{ dodgeEnemy(idx); floatMiss('enemy-'+idx, word); }, delay||0);
   noteFutureDodge(t, delay);                                  // Cyborg's Futuresight (3.00)
   if(reflex) return true;
+  bankDodge('player');                                        // (3.15) your Unicorn's Moonlit Retribution
   noteEnemyMirageDodge(t, idx);
   if(ui.battle) (ui.battle.actionDodges = ui.battle.actionDodges || []).push(t);
   return true;
+}
+
+/* (3.25) A blinded striker of yours went wide: said once an action, after
+   the move's own line (as Futuresight's note is). */
+function sayBlindMiss(me, delay){
+  const b = ui.battle;
+  if(!b || !me) return;
+  const key = b.actionSeq || 0;
+  if(b._blindSaid === key) return;
+  b._blindSaid = key;
+  const name = me.uid ? displayName(me) : SPECIES[me.species].name;
+  setTimeout(()=>{ if(ui.battle === b) battleMsg(`🔆 ${escapeHtml(name)} is blinded — it misses!`); }, (delay || 0) + 250);
 }
 
 /* Futuresight (Cyborg, 3.00): every strike it dodges leaves a Spacetime
@@ -2526,7 +3091,7 @@ function resolveSplitHits(mv, mon, factor, atk, target){
   }
   logBattle(`${displayName(mon)} used ${mv.name} — ${hits.length} strikes on ${SPECIES[target.species].name}`);
   hits.forEach((h,i)=>logBattle(`  strike ${i+1}: ${h.dmg} (${h.oldHp}→${h.newHp})`));
-  battleMsg(`${mv.name}!`);
+  battleMsg(`${mv.name}!` + takePsyNote());
   bob($('#' + pid('playerBob')), +1);
   /* aimed at the target itself: every strike may be dodged (a lurking ghost
      dodges them all), and then there is no first hit to aim at */
@@ -2563,7 +3128,7 @@ function resolveMulti2(mv, mon, correct, target){
   });
   logBattle(`${displayName(mon)} used ${mv.name} (High, ${mv.mult}x ATK ${atk}) on ${hits.length} target(s)`);
   hits.forEach(h=>logBattle(`  → ${SPECIES[h.t.species].name} took ${h.dmg} (${h.oldHp}→${h.newHp})`));
-  battleMsg(`${mv.name}!`);
+  battleMsg(`${mv.name}!` + takePsyNote());
   bob($('#' + pid('playerBob')), +1);
   playEffect(mv.name, { type: mv.stoneType || SPECIES[mon.species].types[0], tier: mv.stoneTier,
                         at: hits[0] ? 'enemy-'+hits[0].idx : null });
@@ -2868,18 +3433,15 @@ function runSingleEnemyTurn(e){
   // a skipping arena dummy simply stands there (and so does Cyborg, 2.94)
   if(standsAside(e)) return advanceTurn();
 
-  // your deep freeze: nobody on their side moves while it holds
-  if(getPStatus(0,'deepFreeze')){
-    battleMsg(`🧊 ${SPECIES[e.species].name} is frozen solid!`);
-    return setTimeout(advanceTurn, 700);
-  }
   // frozen or stunned: it holds its slot but loses the action
+  /* (3.16) Your Ice Tomb: frozen for its next turns — this is one of them. */
   const ice = getEStatus(e,'iceTomb');
   if(ice){
     ice.turnsLeft--;
-    if(ice.turnsLeft<=0) removeEStatus(e,'iceTomb');
+    const left = ice.turnsLeft;
+    if(left <= 0) removeEStatus(e,'iceTomb');
     renderStatusBadges();
-    battleMsg(`🧊 ${SPECIES[e.species].name} is frozen solid!`);
+    battleMsg(`🧊 ${SPECIES[e.species].name} is frozen solid!` + (left > 0 ? ` (${left} more turn${left > 1 ? 's' : ''})` : ' The ice is cracking…'));
     return setTimeout(advanceTurn, 700);
   }
   if(getEStatus(e,'paralysed')){
@@ -2912,13 +3474,10 @@ function enemyTurn(){
   // Ice Tomb: frozen enemies lose their turn; tick the counter and thaw at zero
   const acting = [];
   let frozenCount = 0;
-  const deep = getPStatus(0,'deepFreeze');
   attackers.forEach(e=>{
     const ice = getEStatus(e,'iceTomb');
     const par = getEStatus(e,'paralysed');
-    if(deep){
-      frozenCount++;                        // your field holds every one of them
-    } else if(ice){
+    if(ice){
       frozenCount++;
       ice.turnsLeft--;
       if(ice.turnsLeft<=0) removeEStatus(e,'iceTomb');
@@ -2932,8 +3491,7 @@ function enemyTurn(){
   });
 
   if(acting.length===0){
-    const left = deep ? Math.max(0, deep.turnsLeft - 1)
-      : Math.max(0, ...livingEnemies().map(e=>{ const i=getEStatus(e,'iceTomb'); return i?i.turnsLeft:0; }));
+    const left = Math.max(0, ...livingEnemies().map(e=>{ const i=getEStatus(e,'iceTomb'); return i?i.turnsLeft:0; }));
     // everyone who could act already did, back in the initiative phase
     const allStruck = frozenCount===0 && livingEnemies().length>0
                    && livingEnemies().every(e=>(b.acted||[]).includes(e));
@@ -2973,6 +3531,91 @@ function bestSpecial(e){
   }
   return null;
 }
+/* ============================================================
+   THE PSYCHICS' JUDGEMENT (3.16) — `ai:'smart'`
+   The designer: "please finish the psychic disciples and master. Give them
+   good AI." Every monster of the tower's psychic floors (2, 4, 6, 8, 10 and
+   the Psychic Master's 12) thinks about each turn instead of throwing its
+   biggest move by slot:
+     · its support moves when each is worth it — a shield for a hurt partner,
+       a heal, Kindle or Gallop when not up, a Transfusion, a Glitch now and
+       then (foeSupportPick, in enemyActs, as for every psychic supporter);
+     · otherwise the attack that does the most this turn. Every damaging move
+       it can use now is weighed against your monsters on the field as they
+       stand: what it would really deal (computeDamage as an estimate — your
+       defences, its side's buffs, its passives: a Tailed Cat's Exploit on
+       the confused, a Hydra's Frenzy on your marks), × its strikes, on every
+       one of yours an area move reaches, no more than each has left (and a
+       knock-out worth a little more); Dream Eater on a sleeper, Pent-up Fury
+       once it has been hit, a random roll at its middle, your dodging; what
+       rides on it where it would land on something new (a sleep or a stun
+       on one awake and free to move, a weaken on one not weakened, 3.25 a
+       blinding on one that can still see); a
+       shield it would raise; and a wind-up at half — it takes two turns —
+       and less again if it is likely to be struck while it gathers.
+   The Mime walls up and copies in turn, and Caladrius raises its Ice Barrier
+   whenever it is down (enemyActs). Who a single blow goes for is the usual
+   NPC focus (enemyPickTarget), which knows a Dream Eater wants a sleeper.
+   ============================================================ */
+function smartTarget(e, r, mine){
+  if(mine.length <= 1) return mine[0] || null;
+  const g = soulGuardian('player');
+  if(g) return g;
+  const cur = mine.find(m=> m.uid === ui.battle.foeFocus);
+  if(cur) return cur;
+  return mine.slice().sort((a, c)=> blowsToFinish(e, a, r) - blowsToFinish(e, c, r))[0];
+}
+function smartValue(e, r, mine){
+  const ex = r[6] || {};
+  const atk = enemyAtk(e);
+  const n = Math.max(1, moveHitsFor(e, ex) || 1);
+  const per = (ex.split && n > 1) ? r[2] / n : r[2];
+  const targets = (r[3] === 'AOE' || mine.length <= 1) ? mine : [smartTarget(e, r, mine)];
+  let v = 0;
+  targets.forEach(m=>{
+    if(!m) return;
+    let one = computeDamage(per, atk, e, monRef(m), false, true) * n;   // an estimate (peek)
+    if(ex.sleeperMult && getMStatus(m,'asleep')) one *= ex.sleeperMult;
+    if(ex.revenge && hurtThisRound(e)) one *= ex.revenge;
+    if(ex.randomMult) one *= (ex.randomMult[0] + ex.randomMult[1]) / 2;
+    if(ex.fullHpDouble && e.hp >= e.maxHp) one *= 2;
+    const dodge = (ex.mindRead || seesThrough(e)) ? 0 : Math.min(0.95, playerEvasionFrom(e, m));
+    one *= 1 - dodge;
+    const left = m.currentHp + blockStacksOf(m) * (m.blockValue || 0);
+    let gain = Math.min(one, left);
+    if(one >= left) gain += 0.25 * left;                     // a knock-out is worth more than the health it takes
+    /* what rides on it, where it would land on something new */
+    const ride = (chance, already, w)=>{ if(chance > 0 && !already) gain += chance * w * Math.min(one, left); };
+    ride(ex.sleepHit, getMStatus(m,'asleep') || ironWillHolds(m, { type:'asleep' }), 0.6);
+    ride(ex.stunHit,  getMStatus(m,'stunned') || ironWillHolds(m, { type:'stunned' }), 0.6);
+    ride(ex.softenHit ? ex.softenHit.chance : 0, getMStatus(m,'softened'), 0.3);
+    ride(ex.blindHit ? 1 : 0, blindOf(m), 0.3);                // (3.25) a blinding, on one that can still see
+    ride(ex.confuseHit ? (ex.confuseHit.chance || 0.25) : 0, getMStatus(m,'discombobulate') || ironWillHolds(m, { type:'discombobulate' }), 0.6);   // (3.26)
+    v += gain;
+  });
+  if(ex.shieldGain) v += ex.shieldGain * atk * (blockStacksOf(e) ? 0.3 : 1);   // a shield matters most to one with none
+  if(ex.glitch) v += 0.15 * atk;                                                // and a Glitch on top
+  if(ex.windup && e._windup !== r){
+    /* two turns for one blow — and halved (focusBreak) if anything of yours
+       reaches it while it gathers, which it most likely will */
+    v *= 0.5 * (ex.focusBreak ? 1 - 0.7 * (1 - ex.focusBreak) : 1);
+  }
+  return v;
+}
+function smartMove(e){
+  if(!e || !ui.battle) return null;
+  const mine = livingField();
+  if(!mine.length) return null;
+  const fg = forgottenNames(e);
+  let best = null, bestV = -1;
+  foeMoveRows(e).forEach(r=>{
+    const ex = r[6] || {};
+    if(fg.includes(r[1]) || ex.copy || ex.stoop || ex.charge || r[3] === 'Charge') return;   // (its own scripts)
+    const v = smartValue(e, r, mine);
+    if(v > bestV + 1e-9){ best = r; bestV = v; }
+  });
+  return best;
+}
 /* An evolved wild monster fights unpredictably: it picks from its whole
    unlocked moveset each turn instead of always using the same attack. */
 function enemyMoveFor(e){
@@ -2998,6 +3641,8 @@ function enemyMoveFor(e){
     const mx = (MOVES[e.species] || []).find(m=> m[0] === 'Max' && m[6] && m[6].charge);
     return ['Ultimate','Hyperbeam', chargeMult(mx ? mx[6].charge : { hyper:1.75, unleash:1.25 }, 'hyper', charges),'Single',0,0];
   }
+  /* (3.16) the psychics' judgement: the move that does the most this turn */
+  if(e.ai === 'smart') return smartMove(e) || e.move;
   if(e.ai !== 'random'){
     /* 'best' also knows when its best move has no damage figure. */
     if(e.ai === 'best'){ const sp = bestSpecial(e); if(sp) return sp; }
@@ -3036,9 +3681,15 @@ function runEnemyAttack(i){
   if(!e || e.hp <= 0) return runEnemyAttack(i+1);
   b.acted = b.acted || [];
   if(!b.acted.includes(e)) b.acted.push(e);
+  barrierLapse('enemy', e);                 // (3.14) its Ice Barrier ends as it acts again
 
-  /* Your deep freeze: not even a first strike gets through. */
-  if(getPStatus(0,'deepFreeze')){
+  /* Your Ice Tomb (3.16): a frozen one loses this turn too, however it came
+     to it (runSingleEnemyTurn takes it off before this, as a rule). */
+  const ice = getEStatus(e,'iceTomb');
+  if(ice){
+    ice.turnsLeft--;
+    if(ice.turnsLeft <= 0) removeEStatus(e,'iceTomb');
+    renderStatusBadges();
     battleMsg(`🧊 ${SPECIES[e.species].name} is frozen solid!`);
     return setTimeout(()=> runEnemyAttack(i+1), 700);
   }
@@ -3073,12 +3724,13 @@ function runEnemyAttack(i){
     battleMsg(`💗 ${SPECIES[e.species].name} is charmed and can't attack!`);
     return setTimeout(()=> runEnemyAttack(i+1), 700);
   }
-  /* Asleep: it does nothing at all, and wakes a turn later. Checked before a
-     move is chosen, so a sleeping monster's script does not advance. */
+  /* Asleep: it does nothing at all. Checked before a move is chosen, so a
+     sleeping monster's script does not advance. (3.16) It sleeps on to the
+     end of this turn — tickStatuses wakes it (`spent`) — so your psychics
+     can still feed on it: Dream Eater, Exploit, Feeding Frenzy. */
   const nap = getEStatus(e,'asleep');
   if(nap){
-    nap.turnsLeft--;
-    if(nap.turnsLeft <= 0) removeEStatus(e,'asleep');
+    nap.spent = true;
     renderStatusBadges();
     const el = document.getElementById('enemy-'+ui.battle.enemies.indexOf(e));
     if(el) el.classList.add('is-asleep');
@@ -3106,7 +3758,16 @@ function enemyActs(i, e){
   if(!b) return;
   const idx = b.enemies.indexOf(e);
   const name = SPECIES[e.species].name;
-  const next = ()=> runEnemyAttack(i+1);
+  /* (3.15) a Copycat with more of your attacks still to play goes on with
+     them before the next of theirs moves */
+  const next = ()=>{
+    if(ui.battle && e._copyQueue && e._copyQueue.length && e.hp > 0 && livingField().length){
+      e._forcedMove = e._copyQueue.shift();
+      return setTimeout(()=> enemyActs(i, e), 500);
+    }
+    e._copyQueue = null;
+    runEnemyAttack(i+1);
+  };
 
   /* Their companion (2.87): its leader calls it out at the start of its own
      action — free, as your summon keeps your turn — and then acts. */
@@ -3125,6 +3786,13 @@ function enemyActs(i, e){
     if(msg) battleMsg(msg);
     playEffect((VERY_HIGH[e.stone.type] || {}).name || e.stone.type, { type:e.stone.type, tier:'veryhigh' });
     return setTimeout(()=> enemyActs(i, e), 1500);
+  }
+  /* (3.16) Caladrius's Ice Barrier is a quick cast now, as yours is: up
+     whenever it is down (and your dust would not scatter it), and then its
+     action goes on. Not mid-way through a Copycat's queue. */
+  if(e.species === 'caladrius' && !e._forcedMove && !getESide('iceBarrier') && !dustBlocks('enemy')){
+    const ib = (MOVES.caladrius || []).find(m=> m[6] && m[6].iceBarrier && (e.level || 1) >= m[5]);
+    if(ib) return enemyIceBarrier(e, ib, ()=> enemyActs(i, e));
   }
 
   /* Removed: a call to initiativeMoveFor(), which never existed as a function.
@@ -3173,12 +3841,16 @@ function enemyActs(i, e){
     const dv = (MOVES.cormorant||[]).find(m=>m[1]==='Dive');
     if(dv) move = dv;
   }
-  /* Caladrius steadies itself once, then simply keeps going. */
+  /* Caladrius steadies itself once with Vita. After that it raises any of
+     its own who have fallen (Conversio), and otherwise turns Conversio's
+     light on you. (Its Ice Barrier is a quick cast since 3.16, above.) */
   if(e.species === 'caladrius'){
     const list = MOVES.caladrius || [];
-    e._vitaCast = e._vitaCast || false;
-    move = (!e._vitaCast ? list.find(m=>m[1]==='Vita') : list.find(m=>m[1]==='Conversio')) || move;
-    if(move && move[1]==='Vita') e._vitaCast = true;
+    const by = n=> list.find(m=> m[1] === n && e.level >= m[5]);
+    const want = !e._vitaCast ? 'Vita' : 'Conversio';
+    move = by(want) || by('Conversio') || move;
+    if(move && move[1] === 'Vita') e._vitaCast = true;
+    e._lastCast = move ? move[1] : null;
   }
   /* A Ghost Flame does one thing, and it takes two turns to do it. */
   if(e.species === 'ghost_flame'){
@@ -3192,12 +3864,44 @@ function enemyActs(i, e){
     const stalk = list.find(m=>m[6] && m[6].grant && m[6].grant.lurk && e.level >= m[5]);
     move = (!e.lurk && stalk && !dustBlocks('enemy')) ? stalk : (pounce || move);
   }
+  /* (3.15) the psychics' support moves, when each is worth it (foeSupportPick). */
+  if(PSY_SUPPORTERS.has(e.species) && !e._forcedMove){
+    const sp = foeSupportPick(e);
+    if(sp) move = sp;
+  }
+  /* (3.16) The Mime — the designer: "Mime should block one turn then use his
+     max move". It puts up its Invisible Wall, then copies you (Copycat Max,
+     or Copycat below 51), and round again: wall, copy, wall… A turn it loses
+     (asleep, frozen, muddled) does not move it on; your Diamond Dust, which
+     would scatter the wall, sends it straight to the copy. Without a Copycat
+     yet, its best blow takes the copy's turn. (It used to wall up only below
+     60% health.) */
+  if(e.species === 'mime' && !e._forcedMove){
+    const list = MOVES.mime || [];
+    const by = n=> list.find(m=> m[1] === n && e.level >= m[5]);
+    const wall = by('Invisible Wall'), copy = by('Copycat Max') || by('Copycat');
+    if(wall && !e._mimeWalled && !dustBlocks('enemy')){ move = wall; e._mimeWalled = true; }
+    else { if(copy) move = copy; e._mimeWalled = false; }
+  }
+  /* (3.24) The Ladybird. (3.25) The designer: "The AI should spam the max
+     move since once there is a blind debuff, the next spotlight will do more
+     damage": once it has its beam (41), it beams every turn — Blinding Beam
+     Max from 51. The first blinds; every one after lands on a blinded mind,
+     1.5× (Exploit) — its focus (enemyPickTarget) weighs that like any
+     damage, so it keeps to the one it has blinded. Before 41, its usual
+     judgement. (In 3.24 it flashed Dazzle first while none of yours was
+     marked.) */
+  if(e.species === 'ladybird' && !e._forcedMove){
+    const list = MOVES.ladybird || [];
+    const by = n=> list.find(m=> m[1] === n && (e.level || 1) >= m[5]);
+    const beam = by('Blinding Beam Max') || by('Blinding Beam');
+    if(beam) move = beam;
+  }
+  if(move && move[1]) e._lastCast = move[1];
   /* Something wound up last turn comes down now, whatever else it had in mind. */
   if(e._windup) move = e._windup;
-  /* Its two gifts, turned the other way. These have no damage figure, so they
-     must never fall through to the ordinary strike. */
-  if(move && move[6] && move[6].vita)      return enemyVita(e, move[6].vita, next);
-  if(move && move[6] && move[6].conversio) return enemyConversio(e, move[6].conversio, next);
+  /* (Caladrius's gifts are dispatched further down — after the arena's
+     chosen move and a forgotten one are settled — since 3.14.) */
   if(e.isDummy && e.arenaMove && e.arenaMove !== 'auto'){
     const list = MOVES[e.species] || [];
     const forced = list.find(m=>m[0] === e.arenaMove && m[1] != null);
@@ -3206,6 +3910,8 @@ function enemyActs(i, e){
        High stone is carried in e.stone and cast above, on its first action.) */
     if(e.arenaMove === 'ultra' && e.arenaUltra) move = enemyUltraMove(e.arenaUltra.type, e.arenaUltra.plus);
   }
+  /* (3.15) a Copycat's next copied attack */
+  if(e._forcedMove){ move = e._forcedMove; e._forcedMove = null; }
   /* Steel Soul is once a battle (2.93), whatever picked it — the arena's
      dummy told to use it included. Spent, or about to be scattered by your
      Diamond Dust (which would only send it round again), it swings its Max,
@@ -3225,6 +3931,32 @@ function enemyActs(i, e){
     }
     forgotNote = `💭 ${name} cannot remember ${escapeHtml(move[1])}. `;
     move = row;
+  }
+  /* Caladrius's gifts, turned the other way. These have no damage figure, so
+     they must never fall through to the ordinary strike — whatever picked
+     them: its own judgement, the arena's dummy told to use one, or the best
+     move it still remembers (3.14: they were dispatched before those two). */
+  if(move && move[6] && move[6].vita)      return enemyVita(e, move[6].vita, next);
+  if(move && move[6] && move[6].conversio) return enemyConversio(e, move[6].conversio, next);
+  if(move && move[6] && move[6].barrier)   return enemyBarrier(e, move, next);
+  /* (3.16) An Ice Barrier something else picked (the arena's dummy told to use
+     it): quick, so its action goes on — or, standing already (or about to be
+     scattered by your dust), Conversio instead, or its usual move. */
+  if(move && move[6] && move[6].iceBarrier){
+    if(!getESide('iceBarrier') && !dustBlocks('enemy')) return enemyIceBarrier(e, move, ()=> enemyActs(i, e));
+    move = (MOVES[e.species] || []).find(m=> m[6] && m[6].conversio && (e.level || 1) >= m[5]) || e.move;
+    if(move && move[6] && move[6].conversio) return enemyConversio(e, move[6].conversio, next);
+  }
+  /* (3.15) the psychics' support moves — and a Glitch's Data Spike, or a
+     Copycat's first copied attack, goes on as an ordinary blow */
+  const sx = (move && move[2] == null && move[6]) || null;
+  if(sx && (sx.mend || sx.transfuse || sx.kindle || sx.gallop)) return enemyPsySupport(e, move, next);
+  if(sx && sx.glitch){ const g = enemyGlitch(e, move, next); if(g === true) return; move = g; }
+  if(sx && sx.copy){
+    const c = enemyCopycat(e, move);
+    if(!c){ battleMsg(`🎭 ${name} uses ${move[1]} — there is nothing to copy.`); return setTimeout(next, 900); }
+    forgotNote += c.note;
+    move = c.row;
   }
   const ex = move[6] || {};
 
@@ -3251,10 +3983,18 @@ function enemyActs(i, e){
      holds through it. The move comes down on its next action. */
   if(ex.windup && e._windup !== move){
     e._windup = move;
+    if(ex.focusBreak) bState(e).focus = { hurt:false };   // (3.15) a hit from here on breaks it
+    /* (3.26) their Overcharge, rolled as it gathers, as yours: up, it comes
+       down this same action — and their follow-ups roll no repeat of it */
+    const oc = getESide('overcharge');
+    const surge = !!(oc && livingField().length && Math.random() < ((oc.fresh && oc.firstChance != null) ? oc.firstChance : (oc.chance || 0.25)));
+    if(oc) spendOverchargeFirst(oc);
     renderStatusBadges();
     bob(document.getElementById('enemyBob-'+idx), -1);
     playEffect(ex.windup.name || move[1], { type:e.types[0], duration:700 });
-    battleMsg((ex.windup.say || `{name} gathers itself…`).replace('{name}', name));
+    battleMsg((ex.windup.say || `{name} gathers itself…`).replace('{name}', name) +
+              (surge ? ' ⚡ Their Overcharge surges — it comes down at once!' : ''));
+    if(surge){ e._ocWindup = true; return setTimeout(()=> enemyActs(i, e), 1100); }
     return setTimeout(next, 1100);
   }
   /* Charm and Disrupt in their hands: a cast on your side, not a blow — so it
@@ -3311,6 +4051,17 @@ function enemyActs(i, e){
   noteWrath();
   noteAriaAttack();
   e._blow = newBlowId('e');                       // one attack: its strikes share this (Precognition, 2.97)
+  /* (3.15) settled as the attack begins: Pent-up Fury, Random Access's roll,
+     a broken Arcane Meteor; Shell Spin's shield value; and the attack written
+     down, for a Mime of yours to copy */
+  e._revengeOn = !!(ex.revenge && hurtThisRound(e));
+  e._randRoll = ex.randomMult ? +(ex.randomMult[0] + Math.random() * (ex.randomMult[1] - ex.randomMult[0])).toFixed(2) : 0;
+  if(ex.focusBreak){ const f = bState(e).focus; e._focusBroken = !!(f && f.hurt); bState(e).focus = null; } else e._focusBroken = false;
+  if(ex.shieldGain) gainShieldValue(e, ex.shieldGain);
+  if(move[2] != null) noteTurnMove(e, { name:move._copiedName || move[1], mult:move[2], target:move[3], ex:copyExtras(ex, moveHitsFor(e, ex)) });
+  { const psy = (e._revengeOn ? ` Pent-up fury — ${ex.revenge}×!` : '') + (e._randRoll ? ` Its power rolls ×${e._randRoll}!` : '') +
+                (e._focusBroken ? ` Struck while it gathered — it falls at ${Math.round(ex.focusBreak * 100)}%.` : '');
+    if(psy) forgotNote += psy.trim() + ' '; }
   if(e.lurk || e.cunning){ breakCover(e, ex.spendLurk); renderStatusBadges(); }
   if(e._windup === move) e._windup = null;
   /* Who it goes for (2.84): one of yours — or, an area move, every one of
@@ -3320,7 +4071,7 @@ function enemyActs(i, e){
      sets off as a whole — their Leech Seed's message, Greed, Cunning, a fish,
      the moonlight, their Overcharge — comes once, at the end. */
   const plan = enemyTargetPlan(e, move);
-  if(!plan.length){ e._ambush = 0; burnOut(e, ex); return setTimeout(next, 600); }
+  if(!plan.length){ e._ambush = 0; e._ocWindup = false; burnOut(e, ex); return setTimeout(next, 600); }
   enemyStrikeStep({ i, e, idx, name, move, ex, next, plan, k:0, told:false, note:forgotNote,
                     defs:[], totalTaken:0, seedsFed:0, victims:[], lastWait:700, pendingMsg:'' });
 }
@@ -3393,10 +4144,13 @@ function enemyStrikeOn(ctx, step, done){
      the blow is a mind-read (their Abyssal Gaze, their stolen Tachypsychia). */
   const tacAny = getPStatus(0,'tachy');
   const tac = (tacAny && tacAny.owner === mon.uid) ? tacAny : null;   // its caster's alone (2.80)
-  const evadeChance = sure ? 0 : playerEvasionFrom(e);
+  /* (3.25) Blinded: its own strike goes wide — rolled before any dodge of
+     yours, so nothing of yours dodged it (below). */
+  const blindMissed = !sure && rollBlind(e);
+  const evadeChance = (sure || blindMissed) ? 0 : playerEvasionFrom(e);
   /* Same reasoning as the bonus action: if Tachypsychia is about to expire and
      has never once caused a miss, make this one miss. */
-  const tacLast = !sure && tac && (tac.turnsLeft||0) <= 1 && !tac.evadedOnce;
+  const tacLast = !sure && !blindMissed && tac && (tac.turnsLeft||0) <= 1 && !tac.evadedOnce;
   const evaded = tacLast || (evadeChance > 0 && Math.random() < evadeChance);
   // the window advances once per ROUND, handled at round end
   if(evaded && tac) tac.evadedOnce = true;
@@ -3408,7 +4162,21 @@ function enemyStrikeOn(ctx, step, done){
       (step.shielded ? ` 🛡 ${displayName(mon)}'s ${guardName(mon)} draws the blow away from ${displayName(step.shielded)}!` : ''));
   }
 
+  /* (3.25) …a blinded one's swing goes wide: no dodge of yours (so no
+     Moonlit Retribution banked for them, no Mirage copy of yours), but your
+     Knight answers it as a blow that dealt him nothing. */
+  if(blindMissed){
+    setTimeout(()=>{
+      floatMiss(pid('playerBob'), 'MISS');
+      battleMsg(`🔆 ${name} is blinded — it misses${pair ? ' ' + displayName(mon) : ''}!`);
+      if(last()){ e._ambush = 0; burnOut(e, ex); }
+      const rip = playerRiposte(e);
+      pause(rip ? 1500 : 700);
+    }, 300);
+    return;
+  }
   if(evaded){
+    bankDodge('enemy');                       // (3.15) their Unicorn's Moonlit Retribution
     setTimeout(()=>{
       const pm = mon;
       dodgePlayer();
@@ -3501,6 +4269,11 @@ function enemyStrikeOn(ctx, step, done){
       }
       if(ctx.mults.combo !== 1) dmg = Math.ceil(dmg * ctx.mults.combo);
       if(ctx.mults.rage !== 1) dmg = Math.ceil(dmg * ctx.mults.rage);
+      /* (3.15) Pent-up Fury paid back, Random Access's roll, an Arcane Meteor
+         broken by a hit while it gathered — settled as the attack began */
+      if(ex.revenge && e._revengeOn) dmg = Math.ceil(dmg * ex.revenge);
+      if(ex.randomMult && e._randRoll) dmg = Math.ceil(dmg * e._randRoll);
+      if(ex.focusBreak && e._focusBroken) dmg = Math.ceil(dmg * ex.focusBreak);
       /* Overpower: +25% outright, and a quarter again on anything smaller. */
       const op = overpowerOf(e);
       if(op){
@@ -3534,23 +4307,45 @@ function enemyStrikeOn(ctx, step, done){
     }
     let totalTaken = 0;
     let seedsFed = 0;
+    let spiked = 0;                           // (3.16) their ✦ Spike Armour's strikes, riding on the hits
+    let zzz = '';                             // (3.15) a Lullaby Reflex's line, said after the blow
+    let ink = '', warn = '';                  // (3.27) an Ink Cloud's, a Warning Colours' — the same
+    let crits = 0;                            // (3.26) Feeding Frenzy's criticals
     {
       const oldHp = mon.currentHp;
       let totalBlocked = 0;
+      /* (3.13) Their Dragon Dance breaks some of your shields before the
+         attack hits — once an attack on each of yours (breakShields). */
+      breakShields('enemy', e, mon, e._blow, pid('playerBlk'), pid('playerBob'));
       for(let k = 0; k < hitCount; k++){
         if(mon.currentHp <= 0 && !ui.battle.allyUnkillable) break;
         let thisHit = dmg;
+        /* (3.26) their Hydra's Feeding Frenzy: every strike its own 15% at 2× */
+        const crit = critStrike(e, mon);
+        if(crit > 1){ thisHit = Math.ceil(thisHit * crit); crits++; }
         const beforeBlock = thisHit;
         if(!ex.pierce) thisHit = applyBlock(mon, thisHit, pid('playerBlk'));   // one stack per strike (Wraithblade passes through, 2.97)
         totalBlocked += beforeBlock - thisHit;
+        thisHit = capHit(mon, thisHit);                                         // (3.15) your Steelcrab's Carapace
+        /* (3.15) your Nurse's Lullaby Reflex: a strike reached it */
+        if(beforeBlock > 0 && mon.currentHp - thisHit > 0){
+          if(!zzz) zzz = sleepBackRoll(mon, e);
+          if(!ink) ink = inkBackRoll(mon, e);             // (3.27) your Squid's Ink Cloud
+          if(!warn) warn = weakBackRoll(mon, e);          // (3.27) your Ladybird's Warning Colours
+        }
         mon.lastDamageTaken = beforeBlock;   // reflection returns the FULL figure
         const floor = ui.battle.allyUnkillable ? 1 : 0;
         const was = mon.currentHp;
         mon.currentHp = Math.max(floor, mon.currentHp - thisHit);
         totalTaken += was - mon.currentHp;
         /* Their Leech Seed drinks from every strike that gets through, as
-           yours drinks from every strike of yours on a seeded enemy. */
-        if(thisHit > 0) seedsFed += theirSeedsDrink(e);
+           yours drinks from every strike of yours on a seeded enemy — and
+           (3.16) their ✦ Spike Armour strikes again on the same terms. */
+        if(thisHit > 0){
+          const sp = spikeRiderTheirs(e, mon);
+          spiked += sp; totalTaken += sp;
+          seedsFed += theirSeedsDrink(e);
+        }
       }
       if(totalBlocked > 0) floatBlocked(pid('playerBob'), totalBlocked);
       if(totalTaken > 0) noteHurt(mon);       // a hit: its Focus is broken this round (2.97)
@@ -3567,7 +4362,12 @@ function enemyStrikeOn(ctx, step, done){
       msg += hitCount > 1
         ? `${name} struck ${hitCount} times for ${totalTaken} damage${who}!`
         : `${name} dealt ${totalTaken} damage${who}!`;
+      if(spiked > 0) msg += ` (${spiked} of it from their Spike Armour ✦.)`;
+      if(crits) msg += ` 💥 ${crits === 1 ? 'A critical strike' : crits + ' critical strikes'}!`;
       msg += seen;                            // (3.09) …straight through the haunting
+      if(zzz){ msg += ' ' + zzz; renderStatusBadges(); }
+      if(ink){ msg += ' ' + ink; renderStatusBadges(); }
+      if(warn){ msg += ' ' + warn; renderStatusBadges(); }
       if(totalBlocked > 0) msg = `🛡 Blocked ${totalBlocked}! ` + msg;
       if(dreamFed) msg += ' It feeds on the dream — twice as hard!';
       if(ex.pierce && blockStacksOf(mon)) msg += ' The purple flame passes straight through your block!';
@@ -3602,6 +4402,16 @@ function enemyStrikeOn(ctx, step, done){
         if(nh<=0){ const el=document.getElementById('enemy-'+idx); if(el) el.classList.add('fainted'); }
         msg += ` 🔥 Soulfire! ${displayName(mon)}'s purple flame burns back for ${oh - nh}!`;
       }
+      /* (3.15) your Hermit Sloth's Hermit's Patience: answered, 0.4× its ATK */
+      const rb = retaliateBack(mon);
+      if(rb > 0 && mon.currentHp > 0 && e.hp > 0){
+        const oh = e.hp, nh = Math.max(0, e.hp - rb);
+        e.hp = nh;
+        flashHit(document.getElementById('enemy-'+idx));
+        drainHp('enemyHp-'+idx, oh, nh, e.maxHp);
+        if(nh<=0){ const el=document.getElementById('enemy-'+idx); if(el) el.classList.add('fainted'); }
+        msg += ` 🦥 ${displayName(mon)} strikes back for ${oh - nh}!`;
+      }
     }
     /* A blow that weakens (Sky Splitter Max, Boo!, Wail): the next attack of
        the one it hit may land soft. */
@@ -3618,6 +4428,27 @@ function enemyStrikeOn(ctx, step, done){
       if(ironWillHolds(mon, { type:'stunned' })){ floatOver(mon, 'IRON WILL'); msg += ` ${displayName(mon)}'s Iron Will — it will not be stunned!`; }
       else if(enemyStatusBlocked('stunned')){ msg += ' The diamond dust keeps you steady.'; }
       else { setPStatus(0, { type:'stunned', turnsLeft:2 }); msg += ` ${displayName(mon)} is stunned!`; }
+      renderStatusBadges();
+    }
+    /* (3.15) a blow that may send to sleep (Lullaby Cloud, Riptide, Counting
+       Sheep, Abyssal Tide Max) */
+    if(ex.sleepHit && totalTaken > 0 && mon.currentHp > 0 && Math.random() < ex.sleepHit){
+      const z = putToSleep(mon, `${name}'s ${move[1]}`);
+      if(z){ msg += ' ' + z; renderStatusBadges(); }
+    }
+    /* (3.25) a Blinding Beam that got through: blinded, this turn and the next */
+    if(ex.blindHit && totalTaken > 0 && mon.currentHp > 0){
+      const z = blindMark(mon, ex.blindHit);
+      if(z){ msg += ' ' + z; renderStatusBadges(); }
+    }
+    /* (3.26) a gaze that confuses (the Squid's Abyssal Gaze Max) */
+    if(ex.confuseHit && totalTaken > 0 && mon.currentHp > 0 && !getMStatus(mon,'discombobulate') && Math.random() < (ex.confuseHit.chance || 0.25)){
+      if(ironWillHolds(mon, { type:'discombobulate' })){ floatOver(mon, 'IRON WILL'); msg += ` 💪 ${displayName(mon)}'s Iron Will — it will not be muddled!`; }
+      else if(enemyStatusBlocked('discombobulate')){ msg += ' 💎 The diamond dust keeps your head clear.'; }
+      else {
+        withFocus(mon, ()=> markPlayerConfused(ex.confuseHit.ffPower || 1.0, true));
+        if(getMStatus(mon,'discombobulate')) msg += ` 🌀 ${displayName(mon)} is confused — its next swing turns on its own side!`;
+      }
       renderStatusBadges();
     }
     /* Yours punish a threshold as theirs do (2.87): a Thunderhound driven
@@ -3661,6 +4492,12 @@ function enemyStrikeWrap(ctx){
   let msg = ctx.pendingMsg || '';
   /* (Charm and Disrupt in their hands are casts now, handled before the
      attempt point above.) */
+  /* (3.15) Random Access: a Glitch on top of the blow */
+  if(ex.glitch && move[2] != null){
+    const t0 = (ctx.victims && ctx.victims.find(v=> v.currentHp > 0)) || activeMon();
+    const said = t0 ? applyGlitch('enemy', e, t0, glitchPick(true)) : '';
+    if(said){ renderStatusBadges(); setTimeout(()=> battleMsg(said), 900); }
+  }
   /* Fiery Jaws: it takes hold, and what it has hold of does not leave. */
   if(ex.jaws && !enemyStatusBlocked('jaws')){
     ui.battle.noFlee = true;
@@ -3687,7 +4524,7 @@ function enemyStrikeWrap(ctx){
   if(lun && Math.random() < (lun.chance || 0.25) && !enemyStatusBlocked('discombobulate')){
     livingField().forEach(pm=> withFocus(pm, ()=> markPlayerConfused(lun.ffPower || 1.0, true)));
     renderStatusBadges();
-    msg += ' The moonlight gets into your heads!';
+    msg += lun.glow ? ' ✨ The flash leaves you seeing spots — confused!' : ' The moonlight gets into your heads!';   // (3.24) a Ladybird's Dazzle
   }
   /* Their Nova (2.90): one of your buffs swept away, one of your marks on
      them burnt off. */
@@ -3753,8 +4590,10 @@ function theirSeedsDrink(e){
   let heal = Math.ceil((ls.heal || 0.15) * atk);
   const me = activeMon();
   if(ls.bite && me && me.currentHp > 0){
-    const bite = Math.ceil(ls.bite * atk), before = me.currentHp;
+    /* (3.16) the bite rides on the hit, as yours does (riderDamage) */
+    const bite = capHit(me, riderDamage(ls.bite, atk, e, monRef(me), false)), before = me.currentHp;
     me.currentHp = Math.max(ui.battle && ui.battle.allyUnkillable ? 1 : 0, me.currentHp - bite);
+    if(before > me.currentHp) noteHurt(me);
     drainHp(pid('playerHp'), before, me.currentHp, monMaxHp(me));
     if(ls.biteHeals) heal += Math.ceil((ls.heal || 0.15) * atk);
   }
@@ -3837,6 +4676,11 @@ function enemyFollowUps(i, e, move, ctx, next){
       return setTimeout(then, 650);
     }
     const seen = ariaPiercedNote();
+    if(!seesThrough(e) && rollBlind(e)){                       // (3.25) blinded: it goes wide — no dodge of yours
+      floatMiss(pid('playerBob'), 'MISS');
+      battleMsg(`${label} — 🔆 blinded, it misses.`);
+      return setTimeout(then, 650);
+    }
     if(!seesThrough(e) && Math.random() < playerEvasionFrom(e)){   // (a Third Eye cannot miss, 2.97)
       dodgePlayer(); floatMiss(pid('playerBob'), dodgeWord(me));
       battleMsg(`${label} — and misses.`);
@@ -3844,13 +4688,14 @@ function enemyFollowUps(i, e, move, ctx, next){
     }
     const before = me.currentHp;
     let soaked = 0, fed = 0;
+    breakShields('enemy', e, me, e._blow, pid('playerBlk'), pid('playerBob'));   // (3.13) the same attack: once (breakShields)
     const pierce = !!(repeatOf && move && move[6] && move[6].pierce);     // a Wraithblade repeated still passes through (2.97)
     for(let k = 0; k < (times || 1); k++){
       if(me.currentHp <= 0 && !ui.battle.allyUnkillable) break;
-      const through = pierce ? amount : applyBlock(me, amount, pid('playerBlk'));
+      const through = capHit(me, pierce ? amount : applyBlock(me, amount, pid('playerBlk')));   // (3.15) a Carapace
       soaked += amount - through;
       me.currentHp = Math.max(ui.battle.allyUnkillable ? 1 : 0, me.currentHp - through);
-      if(through > 0) fed += theirSeedsDrink(e);         // their seeds drink from these too
+      if(through > 0){ spikeRiderTheirs(e, me); fed += theirSeedsDrink(e); }   // their ✦ spikes (3.16) and seeds ride on these too
     }
     flashHit($('#' + pid('playerBob')));
     showDamageNumber(pid('playerBob'), before - me.currentHp);
@@ -3872,7 +4717,8 @@ function enemyFollowUps(i, e, move, ctx, next){
   const ocChance = oc ? (oc.fresh && oc.firstChance != null ? oc.firstChance : (oc.chance || 0.25)) : 0;
   /* A blow that reached you is what spends their first rate, as yours. */
   const repeat = (then)=>{
-    if(!oc) return then();
+    const ocUsed = !!e._ocWindup; e._ocWindup = false;   // (3.26) it brought a wind-up down at once
+    if(!oc || ocUsed) return then();
     const go = Math.random() < ocChance;
     spendOverchargeFirst(oc);
     if(!go) return then();
@@ -3913,9 +4759,10 @@ function playerRiposte(e){
     if(rollDodge(e, idx, 0, false, true)){ battleMsg(`⚔️ ${displayName(me)} ripostes — and finds nothing.`); return; }
     /* A reflex, not an attack: it reads no guard of theirs, as their riposte
        reads none of yours. */
-    const dmg = computeDamage(p.riposte, monAtk(me), Object.assign(monRef(me), { _blow:newBlowId('r') }), e, true);
+    const ref = Object.assign(monRef(me), { _blow:newBlowId('r') });
+    const dmg = computeDamage(p.riposte, monAtk(me), ref, e, true);
     const hits = [{ t:e, idx, dmg, oldHp:e.hp, newHp:Math.max(0, e.hp - dmg) }];
-    applyHits(hits, { noLeech:true });
+    applyHits(hits, { noLeech:true, blow:ref._blow });   // an attack of its own: your Dragon Dance breaks shields first (3.13)
     reportHits(hits);
     battleMsg(`⚔️ ${displayName(me)} ripostes — ${dmg}!`);
   }, 700);
@@ -4034,12 +4881,20 @@ function resumeAfterPairFaint(){
   setTimeout(advanceTurn, 700);
 }
 function onPlayerDefeated(){
+  tallyBattleForEyeBreak();        // (3.22) every fight lost counts, its own ending or not (once: they ask again)
+  if(ui.battle && ui.battle.arenaChallenge) return arenaChallengeOver('lost');   // (3.11) the Test Arena: nothing lost
   if(ui.battle && ui.battle.coreSpar) return coreSparEnded('lost');   // training costs nothing (2.86)
   if(ui.battle && ui.battle.tear) return tearEnded('lost');           // the past keeps nothing back (2.94)
+  if(ui.battle && ui.battle.climax && ui.battle.climax.lost) return ui.battle.climax.lost();   // (3.19) the vault: Cyborg turns the room back — nothing lost
   if(ui.battle && ui.battle.guardianTrial) return onGuardianTrialResolved();
   if(ui.battle && ui.battle.scriptedLoss==='padrino'){ restoreRealParty(); return onPadrinoResolved(); }
   if(ui.battle && ui.battle.scriptedLoss==='monkey'){ return onMonkeyResolved(); }
   playSfx('defeat'); stopMusic();
+  /* (3.12) A fight that settles something when it is lost says so itself,
+     once the team has come round — Jax's wager: he takes the stake. Its own
+     page, then, instead of the region. Once only. */
+  const onLose = ui.battle && ui.battle.onLose;
+  if(ui.battle) ui.battle.onLose = null;
   const breakAfterLoss = tallyBattleForEyeBreak();
   const fade=document.createElement('div');
   fade.style.cssText='position:fixed;inset:0;background:#000;z-index:80;opacity:0;transition:opacity .8s;';
@@ -4048,7 +4903,10 @@ function onPlayerDefeated(){
   setTimeout(async ()=>{
     battleParty().forEach(m=>{ m.currentHp=Math.max(1,Math.floor(monMaxHp(m)*0.10)); m.xpFights=xpAfterDefeat(m); });
     await saveProfile();
-    go('region');
+    if(onLose){
+      try { await onLose(); }
+      catch(e){ console.error('onLose:', e); go('region'); }
+    } else go('region');
     fade.style.opacity='0';
     setTimeout(()=>document.body.removeChild(fade),800);
     toast('Your team fainted. They recovered a little.');

@@ -116,7 +116,7 @@ const SPECIES = {
 
   /* --- Caladrius: the bird that looks at the sick --- */
   caladrius:       { name:'Caladrius', tier:'legendary', types:['Water','Flying'], rate:13, nerfedRate:13,
-                     base:60, evo:[], evoMult:1.5, bonusStages:1, pacificus:true,
+                     base:60, evo:[], evoMult:1.5, bonusStages:1, pacificus:0.75,   /* (3.14) three quarters of its attack into health; it was half */
                      color:'#cfe4f0', glyph:'鹤' },
 
   /* --- Jax's bird --- */
@@ -148,11 +148,46 @@ const SPECIES = {
          a ghost; a Physical fighter's quick, early blows break a psychic's
          calm. The two legendaries are the masters' aces in the tower. --- */
   tapir:           { name:'Tapir',          tier:'wild',      types:['Psychic'],       rate:7,  nerfedRate:5,  base:79,  evo:[18], evoMult:1.5, color:'#8a7aa8', glyph:'貘' },
-  tailed_cat:      { name:'Tailed Cat',     tier:'elite',     types:['Psychic'],       rate:11, nerfedRate:11, base:85,  evo:[],   color:'#7a5a9a', glyph:'尾' },
+  /* (3.14) one evolution: one tail as a kitten, two evolved, four crowned —
+     (3.26) the sprite's look; its moves strike a set number of times */
+  tailed_cat:      { name:'Tailed Cat',     tier:'elite',     types:['Psychic'],       rate:11, nerfedRate:11, base:85,  evo:[41], evoMult:1.5, color:'#7a5a9a', glyph:'尾' },
   /* never evolves, so one evolution's worth is baked in, as every such legendary */
   mindcat:         { name:'Mindcat',        tier:'legendary', types:['Psychic'],       rate:13, nerfedRate:13, base:109, evo:[],   evoMult:1.5, bonusStages:1, color:'#9a6ac8', glyph:'念' },
   /* a knight in haunted armour with a flaming purple sword */
   ghost_guardian:  { name:'Ghost Guardian', tier:'legendary', types:['Ghost','Steel'], rate:13, nerfedRate:13, base:110, evo:[31], evoMult:1.5, color:'#5b3f8a', glyph:'卫' },
+
+  /* --- Region 5: the fifteen psychics of the floors under the villa (3.15).
+         The designer's: the wild ones live in the dark under the villa; the
+         elites are rarer there, and fill the Psychic Master's waves. --- */
+  /* wild */
+  leopard:         { name:'Leopard',        tier:'wild',  types:['Psychic'],          rate:7,  nerfedRate:5,  base:92, evo:[18],    evoMult:1.5, color:'#c8a050', glyph:'豹' },
+  /* a support for the Wild core slot: it cushions its partner */
+  puffball:        { name:'Puffball',       tier:'wild',  types:['Psychic'],          rate:7,  nerfedRate:5,  base:92, evo:[11,25], color:'#e8b8d8', glyph:'绒' },
+  /* a support whose every trick is a roll of the dice */
+  polygon:         { name:'Polygon',        tier:'wild',  types:['Psychic','Ground'], rate:7,  nerfedRate:5,  base:93, evo:[11,25], color:'#5ab0c8', glyph:'方' },
+  quetzal:         { name:'Quetzal',        tier:'wild',  types:['Psychic','Flying'], rate:7,  nerfedRate:5,  base:93, evo:[18],    evoMult:1.5, color:'#3aa070', glyph:'羽' },
+  /* a Caladrius in miniature: half its attack given up for health (Pacificus 50%) */
+  nurse:           { name:'Nurse',          tier:'wild',  types:['Psychic'],          rate:7,  nerfedRate:5,  base:94, evo:[11,25], pacificus:0.5, color:'#f0a0a8', glyph:'护' },
+  hermit_sloth:    { name:'Hermit Sloth',   tier:'wild',  types:['Psychic','Water'],  rate:7,  nerfedRate:5,  base:94, evo:[11,25], color:'#8a9a7a', glyph:'懒' },
+  unicorn:         { name:'Unicorn',        tier:'wild',  types:['Psychic'],          rate:7,  nerfedRate:5,  base:95, evo:[18],    evoMult:1.5, color:'#d8d0f0', glyph:'角' },
+  /* (3.24) the designer: "change ram to wild with 1 evolution, psychic,
+     support role, you can keep the moveset" — an elite with no evolution
+     until then */
+  ram:             { name:'Ram',            tier:'wild',  types:['Psychic'],          rate:7,  nerfedRate:5,  base:94, evo:[18],    evoMult:1.5, color:'#e0d8c0', glyph:'羊' },
+  /* elite */
+  /* one head, two, three — and five crowned: (3.26) the sprite's look; its
+     moves strike a set number of times */
+  hydra:           { name:'Hydra',          tier:'elite', types:['Psychic','Dragon'], rate:11, nerfedRate:11, base:98, evo:[21,41], color:'#4a8a6a', glyph:'九' },
+  /* (3.24) bright lights that confuse and blind, and more damage on a mind
+     in trouble — where the Ram stood among the elites */
+  ladybird:        { name:'Ladybird',       tier:'elite', types:['Psychic','Flying'], rate:11, nerfedRate:11, base:97, evo:[21,41], color:'#d8342c', glyph:'瓢' },
+  mime:            { name:'Mime',           tier:'elite', types:['Psychic'],          rate:11, nerfedRate:11, base:97, evo:[21,41], color:'#f0f0f0', glyph:'丑' },
+  /* a fox mage */
+  firefox:         { name:'Firefox',        tier:'elite', types:['Psychic','Fire'],   rate:11, nerfedRate:11, base:97, evo:[],      color:'#e86a3a', glyph:'巫' },
+  seadragon:       { name:'Seadragon',      tier:'elite', types:['Psychic','Water'],  rate:11, nerfedRate:11, base:96, evo:[41],    evoMult:1.5, color:'#3a7ab8', glyph:'蛟' },
+  plasma_manta:    { name:'Plasma Manta',   tier:'elite', types:['Psychic','Flying'], rate:11, nerfedRate:11, base:97, evo:[],      color:'#8a5ae8', glyph:'鲼' },
+  sylph:           { name:'Sylph',          tier:'elite', types:['Psychic','Fairy'],  rate:11, nerfedRate:11, base:98, evo:[21,41], color:'#a8e0c8', glyph:'灵' },
+  steelcrab:       { name:'Steelcrab',      tier:'elite', types:['Psychic','Steel'],  rate:11, nerfedRate:11, base:98, evo:[21,41], color:'#7a8aa0', glyph:'蟹' },
 
   /* --- Legendaries & story --- */
   /* --- Region 2: Rocky Caverns starters --- */
@@ -215,16 +250,16 @@ const MOVES = {
   moth:            [['Basic','Tackle',0.2,'Single',2,1],['Power1','Sting',0.4,'Single',4,5],['Power2','Poison Powder',0.6,'AOE',8,11],['Ultimate','Revitalise',null,'Ally',10,25,{revitalise:{pct:0.10}}]],
   earth_snake:     [['Basic','Tackle',0.2,'Single',2,1],['Power1','Bite',0.4,'Single',4,5],['Power2','Tail Whip',0.6,'AOE',8,11],['Ultimate','Constrict',1.25,'Single',8,25]],
 
-  sparrow:         [['Basic','Peck',0.2,'Single',2,1],['Power1','Quick Attack',0.4,'Single',4,5],['Power2','Whirlwind',0.6,'AOE',8,18],['Ultimate','Sky Dive',1.25,'Single',8,28]],
-  squirrel:        [['Basic','Scratch',0.2,'Single',2,1],['Power1','Headbutt',0.4,'Single',4,5],['Power2','Acorn Barrage',0.6,'AOE',8,18],['Ultimate','Spin Slam',1.25,'Single',8,28]],
-  deer:            [['Basic','Tackle',0.2,'Single',2,1],['Power1','Horn Jab',0.4,'Single',4,5],['Power2','Stampede',0.6,'AOE',8,18],['Ultimate','Antler Charge',1.25,'Single',8,28]],
+  sparrow:         [['Basic','Peck',0.2,'Single',2,1],['Power1','Quick Attack',0.4,'Single',4,5],['Power2','Whirlwind',0.6,'AOE',8,18],['Ultimate','Sky Dive',1.25,'Single',8,25]],
+  squirrel:        [['Basic','Scratch',0.2,'Single',2,1],['Power1','Headbutt',0.4,'Single',4,5],['Power2','Acorn Barrage',0.6,'AOE',8,18],['Ultimate','Spin Slam',1.25,'Single',8,25]],
+  deer:            [['Basic','Tackle',0.2,'Single',2,1],['Power1','Horn Jab',0.4,'Single',4,5],['Power2','Stampede',0.6,'AOE',8,18],['Ultimate','Antler Charge',1.25,'Single',8,25]],
 
-  golem:           [['Basic','Rock Toss',0.2,'Single',2,1],['Power1','Boulder Punch',0.4,'Single',4,5],['Power2','Rockslide',0.6,'AOE',8,18],['Ultimate','Seismic Slam',1.25,'Single',8,28]],
-  bat:             [['Basic','Bite',0.2,'Single',2,1],['Power1','Wing Slash',0.4,'Single',4,5],['Power2','Screech',0.6,'AOE',8,18],['Ultimate','Night Swoop',1.25,'Single',8,28]],
+  golem:           [['Basic','Rock Toss',0.2,'Single',2,1],['Power1','Boulder Punch',0.4,'Single',4,5],['Power2','Rockslide',0.6,'AOE',8,18],['Ultimate','Seismic Slam',1.25,'Single',8,25]],
+  bat:             [['Basic','Bite',0.2,'Single',2,1],['Power1','Wing Slash',0.4,'Single',4,5],['Power2','Screech',0.6,'AOE',8,18],['Ultimate','Night Swoop',1.25,'Single',8,25]],
 
-  starfish:        [['Basic','Slap',0.2,'Single',2,1],['Power1','Water Gun',0.4,'Single',4,5],['Power2','Spiral Spray',0.6,'AOE',8,18],['Ultimate','Tidal Star',1.25,'Single',8,28]],
-  seahorse:        [['Basic','Tackle',0.2,'Single',2,1],['Power1','Bubble Jet',0.4,'Single',4,5],['Power2','Whirlpool',0.6,'AOE',8,18],['Ultimate','Aqua Lance',1.25,'Single',8,28]],
-  duck:            [['Basic','Peck',0.2,'Single',2,1],['Power1','Splash Wing',0.4,'Single',4,5],['Power2','Downpour',0.6,'AOE',8,18],['Ultimate','Torrent Dive',1.25,'Single',8,28]],
+  starfish:        [['Basic','Slap',0.2,'Single',2,1],['Power1','Water Gun',0.4,'Single',4,5],['Power2','Spiral Spray',0.6,'AOE',8,18],['Ultimate','Tidal Star',1.25,'Single',8,25]],
+  seahorse:        [['Basic','Tackle',0.2,'Single',2,1],['Power1','Bubble Jet',0.4,'Single',4,5],['Power2','Whirlpool',0.6,'AOE',8,18],['Ultimate','Aqua Lance',1.25,'Single',8,25]],
+  duck:            [['Basic','Peck',0.2,'Single',2,1],['Power1','Splash Wing',0.4,'Single',4,5],['Power2','Downpour',0.6,'AOE',8,18],['Ultimate','Torrent Dive',1.25,'Single',8,25]],
 
   /* --- Rocky Caverns starters: same shape as the Region 1 starters --- */
   flying_starter:  [['Basic','Peck',0.2,'Single',2,1],['Power1','Wing Slash',0.4,'Single',4,5],['Power2','Gale Force',0.6,'AOE',8,21],['Ultimate','Storm Dive',1.25,'Single',8,41],['Max','Storm Dive Max',1.5,'Single',8,51]],
@@ -235,26 +270,48 @@ const MOVES = {
   ghost_starter:   [['Basic','Touch',0.2,'Single',2,1],['Power1','Nightfall',0.5,'AOE',4,5],
                     ['Power2','Shadow Sneak',null,'Passive',0,21,{passive:{lurk:true, ambush:1.5}}],
                     ['Ultimate','Umbral Rend',1.25,'Single',8,41],['Max','Umbral Rend Max',1.5,'Single',8,51]],
-  /* (2.97) Focus rides on top as a passive of its own — it costs the Fox
-     nothing, not even Psywave. Rows in the 'Passive' slot never become buttons. */
-  psychic_starter: [['Basic','Tackle',0.2,'Single',2,1],['Power1','Mind Jab',0.4,'Single',4,5],['Power2','Psywave',0.6,'AOE',8,21],['Ultimate','Mind Shatter',1.25,'Single',8,41],['Max','Mind Shatter Max',1.5,'Single',8,51],
-                    ['Passive','Focus',null,'Passive',0,21,{passive:{focus:1.2}}]],
+  /* (3.26) The designer: "change psywave to power1, and make focus its power2
+     passive" — a passive sits in the Power 2 slot, as the Ghost starter's
+     Shadow Sneak does, and Psywave takes the 4-word slot at the Ghost
+     starter's Power 1 size: 0.5 on every foe. Mind Jab is gone. (2.97–3.25:
+     Mind Jab 0.4, Psywave 0.6 in Power 2, Focus a sixth row on top.) */
+  psychic_starter: [['Basic','Tackle',0.2,'Single',2,1],['Power1','Psywave',0.5,'AOE',4,5],
+                    ['Power2','Focus',null,'Passive',0,21,{passive:{focus:1.2}}],
+                    ['Ultimate','Mind Shatter',1.25,'Single',8,41],['Max','Mind Shatter Max',1.5,'Single',8,51]],
 
   /* --- Elites: never evolve, so their kit is their whole identity --- */
-  sumo:            [['Basic','Slap',0.2,'Single',2,1],['Power1','Palm Thrust',0.4,'Single',4,5],['Power2','Earth Stomp',0.6,'AOE',8,21],['Ultimate','Grand Charge',1.25,'Single',8,41],['Max','Grand Charge Max',1.5,'Single',8,51],
-                    ['Passive','Iron Will',null,'Passive',0,21,{passive:{ironWill:true}}]],
+  /* (3.27) as the Squid went in 3.26: Earth Stomp is its Power 1 (0.5 on every
+     foe, 4 words; it was Power 2 at 0.6), Iron Will its Power 2 (a sixth row on
+     top until then); Palm Thrust is gone. */
+  sumo:            [['Basic','Slap',0.2,'Single',2,1],['Power1','Earth Stomp',0.5,'AOE',4,5],
+                    ['Power2','Iron Will',null,'Passive',0,21,{passive:{ironWill:true}}],
+                    ['Ultimate','Grand Charge',1.25,'Single',8,41],['Max','Grand Charge Max',1.5,'Single',8,51]],
   /* Goblin's Greed: a landed attack steals one of the other side's buffs. */
   goblin:          [['Basic','Claw',0.2,'Single',2,1],['Power1','Shadow Cackle',0.5,'AOE',4,5],
                     ['Power2','Goblin\'s Greed',null,'Passive',0,21,{passive:{greed:true}}],
                     ['Ultimate','Grave Mischief',1.25,'Single',8,41],['Max','Grave Mischief Max',1.5,'Single',8,51]],
-  squid:           [['Basic','Ink Jet',0.2,'Single',2,1],['Power1','Tentacle Slap',0.4,'Single',4,5],['Power2','Mind Fog',0.6,'AOE',8,21],['Ultimate','Abyssal Gaze',1.25,'Single',8,41,{mindRead:true}],['Max','Abyssal Gaze Max',1.5,'Single',8,51,{mindRead:true}],
-                    ['Passive','Third Eye',null,'Passive',0,21,{passive:{thirdEye:true}}]],
+  /* (3.26) The designer: "change squid's power 2 to power 1, third eye
+     passive should occupy power2's spot … remove certain hit chance from
+     abyssal gaze max, and give it 25% chance to confuse" — and "give mind fog
+     a 25% chance to weaken". Mind Fog takes the 4-word slot (0.4 on every
+     foe, as Riptide, with its rider); Third Eye is its Power 2; the gaze is no
+     mind-read (Third Eye already makes all it throws certain), and its Max
+     muddles the one it hits a quarter of the time (`confuseHit`). Tentacle
+     Slap is gone. Wild under the villa since 3.26.
+     (3.27) "yes, blind works! name the passive Ocular Magic": Third Eye and
+     Ink Cloud — every strike that reaches it has a 25% chance to blind the
+     one that struck, this turn and the next (`inkBack`, inkBackRoll). */
+  squid:           [['Basic','Ink Jet',0.2,'Single',2,1],
+                    ['Power1','Mind Fog',0.4,'AOE',4,5,{softenHit:{chance:0.25, amount:0.5}}],
+                    ['Power2','Ocular Magic',null,'Passive',0,21,{passive:{thirdEye:true, inkBack:{chance:0.25, miss:0.25, turns:2}}}],
+                    ['Ultimate','Abyssal Gaze',1.25,'Single',8,41],
+                    ['Max','Abyssal Gaze Max',1.5,'Single',8,51,{confuseHit:{chance:0.25, ffPower:1.0}}]],
 
-  snail:           [['Basic','Roll',0.2,'Single',2,1],['Power1','Molten Gout',0.4,'Single',4,1],
+  snail:           [['Basic','Roll',0.2,'Single',2,1],['Power1','Molten Gout',0.4,'Single',4,5],
                     ['Power2','Lava Shell',null,'Self',8,18,{shell:{reduce:0.6, thorns:0.5, turns:1}}],
                     ['Ultimate','Magma Goo',null,'AOE',8,25,{dot:{pct:0.3, turns:5, rider:'noflee'}}]],
-  boobybird:       [['Basic','Fire Punch',0.2,'Single',2,1],['Power1','Fire Breath',0.4,'Single',4,1],['Power2','Flamethrower',0.6,'AOE',8,11],['Ultimate','Eruption',1.0,'AOE',8,25]],
-  firefly:         [['Basic','Cinder',0.2,'Single',2,1],['Power1','Cinder Wing',0.4,'Single',4,1],['Power2','Cinder Gust',0.6,'AOE',8,18],
+  boobybird:       [['Basic','Fire Punch',0.2,'Single',2,1],['Power1','Fire Breath',0.4,'Single',4,5],['Power2','Flamethrower',0.6,'AOE',8,11],['Ultimate','Eruption',1.0,'AOE',8,25]],
+  firefly:         [['Basic','Cinder',0.2,'Single',2,1],['Power1','Cinder Wing',0.4,'Single',4,5],['Power2','Cinder Gust',0.6,'AOE',8,18],
                     ['Ultimate','Scorching Ash',null,'AOE',8,25,{dot:{pct:0.3, turns:5, rider:'miss', miss:0.20}}]],
   toad:            [['Basic','Leap',0.2,'Single',2,1],['Power1','Flame Lash',0.4,'Single',4,1],['Power2','Slag Cannon',0.6,'AOE',8,21],
                     ['Ultimate','Slag Eruption',0.8,'AOE',8,41,{shell:{reduce:0, thorns:0.3, turns:1}}],
@@ -266,7 +323,7 @@ const MOVES = {
                     ['Max','Heavensplitter Max',1.5,'Single',7,999,{bonus:{words:4, mult:2}, coreOnly:true}]],
 
   /* --- Story monsters --- */
-  lanternfish:     [['Basic','Bump',0.2,'Single',2,1],['Power1','Shock Bubble',0.4,'Single',4,5],['Power2','Lantern Flash',0.6,'AOE',8,18],['Ultimate','Deep Current',1.25,'Single',8,28]],
+  lanternfish:     [['Basic','Bump',0.2,'Single',2,1],['Power1','Shock Bubble',0.4,'Single',4,5],['Power2','Lantern Flash',0.6,'AOE',8,18],['Ultimate','Deep Current',1.25,'Single',8,25]],
   /* Cataclysm is a CHARGING ultimate — see the charge engine below. Its 'Max'
      upgrade is unlocked by the Dragon Core, not by level. */
   water_dragon:    [['Basic','Aqua Fang',0.3,'Single',4,1],['Power1','Torrent Claw',0.6,'Single',8,5],['Power2','Tsunami',0.8,'AOE',10,35],
@@ -277,7 +334,7 @@ const MOVES = {
                     ['Max','Cataclysm Max',null,'Charge',10,999,{charge:{max:3, unleash:1.25, hyper:1.75, unleashBy:[1.25,1.5,1.8,2.15], hyperBy:[1.75,2.25,2.85,3.5]}, coreOnly:true}]],
   dragon_egg:      [['Basic',null,null,null,null,999],['Power1',null,null,null,null,999],['Power2',null,null,null,null,999],['Ultimate',null,null,null,null,999]],
 
-  phoenix:         [['Basic','Ember',0.3,'Single',4,1],['Power1','Firestorm',0.6,'AOE',8,5],['Power2','Nova',1.0,'AOE',8,35,{purge:{enemyBuffs:1, playerDebuffs:1}}],
+  phoenix:         [['Basic','Scorch',0.3,'Single',4,1],   /* (3.27) not "Ember" — the Fire starter's Power 1 */['Power1','Firestorm',0.6,'AOE',8,5],['Power2','Nova',1.0,'AOE',8,35,{purge:{enemyBuffs:1, playerDebuffs:1}}],
                     ['Ultimate','Incinerate',1.25,'Single',8,45,{scale:{per:0.15,max:2.0}}],
                     ['Max','Incinerate Max',1.5,'Single',8,55,{scale:{per:0.15,max:2.75,words:15}}]],
   forest_fairy:    [['Basic','Fairy Wind',0.4,'Single',2,1],['Power1','Giga Drain',0.8,'Single',5,5],['Power2','Overgrowth',0.7,'AOE',8,35],
@@ -285,10 +342,14 @@ const MOVES = {
                     ['Max','Verdant Wrath Max',1.8,'Single',10,55,{hits:3, split:true}]],
   newt_baby:       [['Basic',null,null,null,null,999],['Power1',null,null,null,null,999],['Power2',null,null,null,null,999],['Ultimate',null,null,null,null,999]],
   newt:            [['Basic','Psyshock',0.2,'Single',4,31,{paralyse:0.20}],
-                    ['Power1','Psywave',0.5,'AOE',8,31,{paralyse:0.20}],
-                    ['Power2','Tachypsychia',null,'Self',4,35,{tachy:{turns:3, bonusAction:0.30, evadeFirst:0.80, evadeAfter:0.30}}],
-                    ['Ultimate','Volt Concussion',0.4,'Single',8,45,{hits:3, paralyse:0.20}],
-                    ['Max','Volt Concussion Max',0.4,'Single',8,999,{hits:4, paralyse:0.20, coreOnly:true}]],
+                    ['Power1','Volt Wave',0.6,'AOE',8,31,{paralyse:0.20}],   // (3.26) "Psywave" was the Fox's too; 0.5 until then
+                    /* (3.27) "let's go with tachypsychia's upgrade": it Meditates, cast or
+                       not (`always` — passiveDefOf; a ✦ Curse mutes it); the cast is as it was */
+                    ['Power2','Tachypsychia',null,'Self',4,35,{tachy:{turns:3, bonusAction:0.30, evadeFirst:0.80, evadeAfter:0.30}, always:{meditate:0.15, meditateMax:4}}],
+                    /* (3.27) "thunder newt's ultimate should hit for 1.5 (3 hits times 0.5)
+                       and [its Max] for 1.8 (3 hits times 0.6)" — 3 × 0.4, and 4 × 0.4 at Max, until then */
+                    ['Ultimate','Volt Concussion',0.5,'Single',8,45,{hits:3, paralyse:0.20}],
+                    ['Max','Volt Concussion Max',0.6,'Single',8,999,{hits:3, paralyse:0.20, coreOnly:true}]],
   ankylosaurus:    [['Basic','Hammertail',0.1,'Single',4,1,{hits:3}],
                     ['Power1','Seismic Shock',0.2,'AOE',8,1,{hits:2}],
                     ['Power2','Steel Soul',null,'Self',4,35,{soul:{turns:1, reduce:0.2, bonus:0.1}}],   // a passive 20% always; a quick cast once a battle (2.93)
@@ -297,23 +358,23 @@ const MOVES = {
   /* Swift Strike: an enemy using it seizes the initiative; the player, who
      usually moves first anyway, gets extra power instead. */
   thunderdog:      [['Basic','Bite',0.2,'Single',2,1],
-                    ['Power1','Swift Strike',0.3,'Single',4,1,{first:true, playerBonus:0.2}],
+                    ['Power1','Swift Strike',0.3,'Single',4,5,{first:true, playerBonus:0.2}],
                     ['Power2','Thunderhowl',0.5,'AOE',8,18],
                     ['Ultimate','Pack Attack',0.5,'Single',8,25,{hits:3}]],
   zebra:           [['Basic','Kick',0.2,'Single',2,1],
-                    ['Power1','Swift Strike',0.3,'Single',4,1,{first:true, playerBonus:0.2}],
+                    ['Power1','Swift Strike',0.3,'Single',4,5,{first:true, playerBonus:0.2}],
                     ['Power2','Blitz Strike',0.5,'AOE',8,18],
                     ['Ultimate','Thundercrash',1.5,'Single',8,25]],
   thunderlion:     [['Basic','Claw',0.2,'Single',2,1],
-                    ['Power1','Swift Strike',0.3,'Single',4,1,{first:true, playerBonus:0.2}],
-                    ['Power2','Thundershred',0.6,'AOE',8,25],
+                    ['Power1','Swift Strike',0.3,'Single',4,5,{first:true, playerBonus:0.2}],
+                    ['Power2','Thundershred',0.6,'AOE',8,18],
                     ['Ultimate','Pride Attack',0.5,'Single',8,25,{hits:3}]],
   thundersquirrel: [['Basic','Tackle',0.2,'Single',2,1],
-                    ['Power1','Acorn Bolt',0.4,'Single',4,1],
+                    ['Power1','Acorn Bolt',0.4,'Single',4,5],
                     ['Power2','Thunderroll',0.6,'AOE',8,18],
                     ['Ultimate','Charm',null,'Single',8,25,{charm:{turns:5, chance:0.20}}]],
   magnet:          [['Basic','Spark',0.2,'Single',2,1],
-                    ['Power1','Magnet Pulse',0.4,'Multi2',5,1],
+                    ['Power1','Magnet Pulse',0.4,'Multi2',5,5],
                     ['Power2','Magnet Wave',0.5,'AOE',8,18],
                     ['Ultimate','Disrupt',null,'Single',8,25,{disrupt:{turns:5, stun:0.15}}]],
   tiger:           [['Basic','Tackle',0.2,'Single',2,1],
@@ -336,9 +397,9 @@ const MOVES = {
   /* Several of these are BOTH passive and active: the passive fires on entering
      the field, the active can be used again later for the same effect. */
   sea_turtle:      [['Basic','Slap',0.2,'Single',2,1],
-                    ['Power1','Beak Crush',0.4,'Single',4,1],
+                    ['Power1','Beak Crush',0.4,'Single',4,5],
                     ['Power2','Iron Shell',null,'Passive',0,18,{passive:{block:3}}],
-                    ['Ultimate','Whirlpool',0.8,'AOE',8,25]],
+                    ['Ultimate','Maelstrom',0.8,'AOE',8,25]],   // (3.27) not "Whirlpool" — the Seahorse's Power 2
   plesiosaur:      [['Basic','Slam',0.3,'Single',2,1],
                     ['Power1','Water Jet',0.5,'Single',4,1],
                     ['Power2','Crashing Wave',0.6,'AOE',8,21],
@@ -366,50 +427,52 @@ const MOVES = {
          their old 0.5× AOE Power2 (2.73). The rest trade their AOE Power2 for a
          passive stance and take a weak AOE on Power1 instead. --- */
   boxer:           [['Basic','Jab',0.2,'Single',2,1],
-                    ['Power1','Lead Hook',0.3,'Single',4,1,{first:true, playerBonus:0.2}],
-                    ['Power2','Quick Hands',null,'Passive',0,1,{passive:{quick:0.25}}],
+                    ['Power1','Lead Hook',0.3,'Single',4,5,{first:true, playerBonus:0.2}],
+                    ['Power2','Quick Hands',null,'Passive',0,18,{passive:{quick:0.25}}],
                     ['Ultimate','Knockout Flurry',1,'AOE',8,25]],
   kicker:          [['Basic','Low Kick',0.2,'Single',2,1],
-                    ['Power1','Snap Kick',0.3,'Single',4,1,{first:true, playerBonus:0.2}],
-                    ['Power2','Quick Feet',null,'Passive',0,1,{passive:{quick:0.25}}],
+                    ['Power1','Snap Kick',0.3,'Single',4,5,{first:true, playerBonus:0.2}],
+                    ['Power2','Quick Feet',null,'Passive',0,18,{passive:{quick:0.25}}],
                     ['Ultimate','Tornado Kick',1,'AOE',8,25]],
   spinner:         [['Basic','Palm Strike',0.2,'Single',2,1],
-                    ['Power1','Whirl Step',0.3,'Single',4,1,{first:true, playerBonus:0.2}],
-                    ['Power2','Quick Spin',null,'Passive',0,1,{passive:{quick:0.25}}],
+                    ['Power1','Whirl Step',0.3,'Single',4,5,{first:true, playerBonus:0.2}],
+                    ['Power2','Quick Spin',null,'Passive',0,18,{passive:{quick:0.25}}],
                     ['Ultimate','Cyclone',1,'AOE',8,25]],
 
   judo_blue:       [['Basic','Grip',0.2,'Single',2,1],
-                    ['Power1','Osoto Gari',0.3,'AOE',4,1],
-                    ['Power2','Kumi-kata',null,'Passive',0,21,{passive:{block:1}}],
+                    ['Power1','Osoto Gari',0.3,'AOE',4,5],
+                    ['Power2','Kumi-kata',null,'Passive',0,18,{passive:{block:1}}],
                     ['Ultimate','Seoi Nage',null,'Single',8,25,{reflect:1.0}]],
   judo_red:        [['Basic','Grip',0.2,'Single',2,1],
-                    ['Power1','Harai Goshi',0.3,'AOE',4,1],
-                    ['Power2','Kumi-kata',null,'Passive',0,21,{passive:{block:1}}],
+                    ['Power1','Harai Goshi',0.3,'AOE',4,5],
+                    ['Power2','Kumi-kata',null,'Passive',0,18,{passive:{block:1}}],
                     ['Ultimate','Seoi Nage',null,'Single',8,25,{reflect:1.0}]],
   weasel:          [['Basic','Push Hands',0.2,'Single',2,1],
-                    ['Power1','Cloud Hands',0.3,'AOE',4,1],
-                    ['Power2','Silk Reeling',null,'Passive',0,21,{passive:{counterStack:1}}],
+                    ['Power1','Cloud Hands',0.3,'AOE',4,5],
+                    ['Power2','Silk Reeling',null,'Passive',0,18,{passive:{counterStack:1}}],
                     ['Ultimate','Four Ounces',null,'Single',8,25,{reflect:1.0}]],
 
   yoga:            [['Basic','Breath Strike',0.2,'Single',2,1],
-                    ['Power1','Sun Salutation',0.3,'AOE',4,1],
-                    ['Power2','Stillness',null,'Passive',0,21,{passive:{evadeTurns:1, evadeChance:1.0}}],
+                    ['Power1','Sun Salutation',0.3,'AOE',4,5],
+                    ['Power2','Stillness',null,'Passive',0,11,{passive:{evadeTurns:1, evadeChance:1.0}}],
                     ['Ultimate','Asana Flow',0.2,'Single',8,25,{hits:6, fullHpDouble:true}]],
 
   fighting_ape:    [['Basic','Knuckle Drag',0.2,'Single',2,1],
-                    ['Power1','Chest Beat',0.3,'AOE',4,1],
-                    ['Power2','Iron Hide',null,'Passive',0,21,{passive:{block:1}}],
+                    ['Power1','Chest Beat',0.3,'AOE',4,5],
+                    ['Power2','Iron Hide',null,'Passive',0,18,{passive:{block:1}}],
                     ['Ultimate','Ground Pound',0.6,'AOE',8,25]],
   lizardape:       [['Basic','Tail Lash',0.35,'Single',2,1],
                     ['Power1','Seismic Roar',0.5,'AOE',4,1],
                     ['Power2','Scaled Stance',null,'Passive',0,21,{passive:{block:1, counterStack:1}}],
                     ['Ultimate','Primal Rend',0.5,'Single',8,41,{hits:3}],
                     ['Max','Primal Rend Max',0.4,'Single',8,51,{hits:4, fullHpDouble:true}]],
+  /* (3.27) "yes, please rename the passives": Braced Stance and Iron Will
+     are one Power 2 passive with a name of its own, Unshakeable (it was two
+     rows, its pill "Braced Stance & Iron Will"); at 11, a wild one's Power 2. */
   strongman:       [['Basic','Shoulder Barge',0.2,'Single',2,1],
-                    ['Power1','Shockwave Clap',0.3,'AOE',4,1],
-                    ['Power2','Braced Stance',null,'Passive',0,21,{passive:{block:2}}],
-                    ['Ultimate','Bearhug',1.0,'Single',8,25,{stunHit:0.50}],
-                    ['Passive','Iron Will',null,'Passive',0,21,{passive:{ironWill:true}}]],
+                    ['Power1','Shockwave Clap',0.3,'AOE',4,5],
+                    ['Power2','Unshakeable',null,'Passive',0,11,{passive:{block:2, ironWill:true}}],
+                    ['Ultimate','Bearhug',1.0,'Single',8,25,{stunHit:0.50}]],
 
   /* --- Electric --- */
   thunderhound:    [['Basic','Snap',0.2,'Single',2,1],
@@ -442,37 +505,49 @@ const MOVES = {
   firehound:       [['Basic','Snarl',0.3,'Single',2,1],
                     ['Power1','Cinders',0.5,'AOE',4,1],
                     ['Power2','Terrorize',null,'Passive',0,21,{passive:{terrorize:0.20, unsweepable:true}}],
-                    ['Ultimate','Fiery Jaws',1.3,'Single',8,25,{jaws:true}],
+                    ['Ultimate','Fiery Jaws',1.3,'Single',8,41,{jaws:true}],   // (3.27) an elite's Ultimate: 41 (it was 25)
                     ['Max','Fiery Jaws Max',1.5,'Single',10,51,{jaws:true}]],
 
   pelican:         [['Basic','Beak Jab',0.3,'Single',2,1],
-                    ['Power1','Gullet Scoop',0.5,'Single',4,1],
+                    ['Power1','Gullet Scoop',0.5,'Single',4,5],
                     ['Power2','Wing Slam',0.7,'AOE',8,18],
                     ['Ultimate','Deluge',1.2,'AOE',8,25]],
   swan:            [['Basic','Preen',0.25,'Single',2,1],
-                    ['Power1','Wing Buffet',0.5,'AOE',4,1],
+                    ['Power1','Wing Buffet',0.5,'AOE',4,5],
                     ['Power2','Neck Strike',0.8,'Single',8,18],
                     ['Ultimate','Swan Song',1.3,'Single',8,25]],
   /* Dives and dives and dives, and sometimes comes up with lunch. */
   cormorant:       [['Basic','Snap',0.3,'Single',2,1],
-                    ['Power1','Plunge',0.5,'Single',4,1],
+                    ['Power1','Plunge',0.5,'Single',4,5],
                     ['Power2','Oiled Feathers',0.7,'AOE',8,18],
-                    ['Ultimate','Dive',0.9,'Single',8,1,{fish:{chance:0.25, heal:0.25}}]],
-  mantaray:        [['Basic','Tail Whip',0.25,'Single',2,1],
-                    ['Power1','Glide',0.4,'AOE',4,1],
-                    ['Power2','Shadowed Wings',null,'Passive',0,1,{passive:{evadeAlways:0.35, unsweepable:true}}],
+                    ['Ultimate','Dive',0.9,'Single',8,25,{fish:{chance:0.25, heal:0.25}}]],   // (3.27) a wild one's Ultimate: 25 (it was 1)
+  /* (3.27) Fin Sweep, not "Tail Whip" — the Earth Snake's area Power 2 has
+     that name; Shadowed Wings at 18, a wild one's Power 2 (it was 1). */
+  mantaray:        [['Basic','Fin Sweep',0.25,'Single',2,1],
+                    ['Power1','Glide',0.4,'AOE',4,5],
+                    ['Power2','Shadowed Wings',null,'Passive',0,18,{passive:{evadeAlways:0.35, unsweepable:true}}],
                     ['Ultimate','Breach',0.8,'AOE',8,25]],
-  /* It sings things to sleep the harder it is pressed. */
+  /* It sings things to sleep the harder it is pressed. (3.26) "lunacy should
+     be learned ultimate and ultimate max at the appropriate levels": an
+     elite's, 1.25 at 41 and 1.5 at 51 (it was 1.5 at 25, with no Max).
+     (3.27) "yes pair the 2 passive effects under Nocturne": Nocturne is its
+     threshold sleeps and Meditate — hit it and it sings you to sleep, leave
+     it alone and it grows stronger. */
   moon_swan:       [['Basic','Moonlight',0.3,'Single',2,1],
                     ['Power1','Lunar Wake',0.5,'AOE',4,1],
-                    ['Power2','Nocturne',null,'Passive',0,1,{passive:{thresholdSleep:[0.75,0.50,0.25]}}],
-                    ['Ultimate','Lunacy',1.5,'Single',8,25,{lunacy:{chance:0.25, turns:1, ffPower:1.0}}]],
+                    ['Power2','Nocturne',null,'Passive',0,1,{passive:{thresholdSleep:[0.75,0.50,0.25], meditate:0.15, meditateMax:4}}],
+                    ['Ultimate','Lunacy',1.25,'Single',8,41,{lunacy:{chance:0.25, turns:1, ffPower:1.0}}],
+                    ['Max','Lunacy Max',1.5,'Single',8,51,{lunacy:{chance:0.25, turns:1, ffPower:1.0}}]],
 
   /* No Max move: the slot is taken by PACIFICUS, which is not a move at all but
      the conversion that makes this bird what it is. Its Ultimate is therefore
      never replaced. */
   caladrius:       [['Basic','Glance',0.3,'Single',4,1],
-                    ['Power1','Pinion',0.5,'AOE',6,1],
+                    /* (3.14) for Pinion (0.5 AOE): "a support-based cleansing type move".
+                       (3.16) "an instant move (doesn't consume a turn) that reduces enemy attack by
+                       30% for 5 turns and purges 1 harmful effect on player monsters per turn. Can
+                       be extended by diamond dust" — castIceBarrier, iceBarrierPulse */
+                    ['Power1','Ice Barrier',null,'Self',6,1,{iceBarrier:{cut:0.30, turns:5, purge:1}}],
                     ['Power2','Vita',null,'Self',8,1,{vita:{turns:5, pulse:0.2}}],
                     ['Ultimate','Conversio',null,'Self',8,1,{conversio:{revives:2, pct:0.33, direct:0.33}}],
                     ['Max','Pacificus',null,'Passive',0,1,{statNote:true}]],
@@ -480,12 +555,12 @@ const MOVES = {
   eagle:           [['Basic','Talon Rake',0.3,'Single',2,1],
                     ['Power1','Wind Shear',0.5,'AOE',4,1],
                     ['Power2','Keen Eye',null,'Passive',0,21,{passive:{first:true}}],
-                    ['Ultimate','Piercing Stoop',null,'Charge',8,25,{stoop:{max:3, evade:[0.25,0.50,0.75], pierce:[0.50,0.75,1.00]}}],
+                    ['Ultimate','Piercing Stoop',null,'Charge',8,41,{stoop:{max:3, evade:[0.25,0.50,0.75], pierce:[0.50,0.75,1.00]}}],
                     ['Max','Piercing Stoop Max',null,'Charge',10,51,{stoop:{max:3, evade:[0.25,0.50,0.75], pierce:[0.60,0.90,1.20]}}]],
 
   whale:           [['Basic','Tail Slap',0.25,'Single',2,1],
-                    ['Power1','Breaching Swell',0.4,'AOE',4,1],
-                    ['Power2','Bulk',null,'Passive',0,1,{passive:{block:2}}],
+                    ['Power1','Breaching Swell',0.4,'AOE',4,5],
+                    ['Power2','Bulk',null,'Passive',0,18,{passive:{block:2}}],
                     ['Ultimate','Depth Charge',1.5,'Single',8,25]],
 
   /* Every move pays more the worse things are going. */
@@ -503,29 +578,29 @@ const MOVES = {
   /* Ill Omen: a passive 20% evasion, and cast it for a turn of 66% and a
      next blow 66% harder. Murder of Crows doubles its birds on the weak. */
   crow:            [['Basic','Peck',0.25,'Single',2,1],
-                    ['Power1','Wing Flurry',0.15,'Single',4,1,{hits:4}],
+                    ['Power1','Wing Flurry',0.15,'Single',4,5,{hits:4}],
                     ['Power2','Ill Omen',null,'Self',4,18,{passive:{evadeAlways:0.20}, grant:{evadeTurns:1, evadeChance:0.66, omen:0.66}, blockedWhile:'evadeTurns'}],
                     ['Ultimate','Murder of Crows',0.2,'Single',8,25,{hits:5, execute:{below:0.30, hits:10}}]],
   /* Bog Lurker: it lurks when it steps on, and the other side moves a step
      slower for as long as it stands (2.74: the bog goes when it falls).
      Grave Quake winds up (keeping the Lurk), then falls on everyone. */
   cyclops:         [['Basic','Stomp',0.3,'Single',2,1],
-                    ['Power1','Evil Eye',0.35,'Single',4,1,{stunHit:0.25}],
+                    ['Power1','Evil Eye',0.35,'Single',4,5,{stunHit:0.25}],
                     ['Power2','Bog Lurker',null,'Passive',0,11,{passive:{lurk:true, bog:true}}],
                     ['Ultimate','Grave Quake',2.0,'AOE',8,25,{windup:{say:'The ground under {name} begins to heave…'}}]],
   /* Peekaboo: every attack has an even chance of leaving it Cunning. */
   ghost:           [['Basic','Boo!',0.25,'Single',2,1,{softenHit:{chance:0.20, amount:0.5}}],
-                    ['Power1','Chill',0.45,'Single',4,1],
+                    ['Power1','Chill',0.45,'Single',4,5],
                     ['Power2','Peekaboo',null,'Passive',0,18,{passive:{cunning:{first:0.5, after:0.5}}}],
                     ['Ultimate','Wail',0.9,'AOE',8,25,{softenHit:{chance:1.0, amount:0.5}}]],
   /* It burns bright for a turn, then puts itself out on you. */
   ghost_flame:     [['Basic','Flicker',0.25,'Single',2,1],
-                    ['Power1','Will-o\'-Wisp',0.45,'Single',4,1],
+                    ['Power1','Will-o\'-Wisp',0.45,'Single',4,5],
                     ['Power2','Foxfire',0.6,'AOE',8,18],
                     ['Ultimate','Extinguish',null,'AOE',8,25,{windup:{name:'Burn Bright', say:'{name} burns brighter and brighter…'}, extinguish:{hpMult:1.5}}]],
   /* Riposte: Cunning once, and any blow that deals him nothing is answered. */
   goblin_knight:   [['Basic','Rusted Blade',0.3,'Single',2,1],
-                    ['Power1','Shield Bash',0.45,'Single',4,1,{stunHit:0.20}],
+                    ['Power1','Shield Bash',0.4,'AOE',4,1,{stunHit:0.20}],   // (3.27) every foe, 20% stun each (one foe at 0.45 until then)
                     ['Power2','Riposte',null,'Passive',0,21,{passive:{riposte:0.4, cunning:{first:1, after:0}}}],
                     ['Ultimate','Grave Charge',1.25,'Single',8,41,{first:true, playerBonus:0.2}],
                     ['Max','Grave Charge Max',1.5,'Single',8,51,{first:true, playerBonus:0.2}]],
@@ -545,20 +620,26 @@ const MOVES = {
                     ['Max','Pounce Max',1.5,'Single',8,51,{spendLurk:1.5}]],
   /* --- Region 5: the hill's psychics (2.97; handover/05 §9) --- */
   /* Hypnosis: every blow it lands has a 20% chance to put what it hit to
-     sleep for a turn. Dream Eater lands twice as hard on a sleeper. */
+     sleep for a turn. Dream Eater lands twice as hard on a sleeper. (3.26)
+     Drowsy Mist sends to sleep itself, 20% each — rolled apart from
+     Hypnosis's 20%, so from 18 a foe it hits sleeps 36% of the time. */
   tapir:           [['Basic','Snout Bump',0.25,'Single',2,1],
-                    ['Power1','Drowsy Mist',0.4,'AOE',4,1],
+                    ['Power1','Drowsy Mist',0.4,'AOE',4,5,{sleepHit:0.20}],
                     ['Power2','Hypnosis',null,'Passive',0,18,{passive:{hypnosis:0.20}}],
                     ['Ultimate','Dream Eater',1.0,'Single',8,25,{sleeperMult:2}]],
-  /* Two tails, two strikes: every move lands once per tail, each strike the
-     power written here — three tails, three strikes, when crowned (`tails`).
-     Composure (1.3× at full health) with Exploit (1.4× on the muddled and the
-     sleeping) riding on it. */
-  tailed_cat:      [['Basic','Tail Swipe',0.15,'Single',2,1,{hits:2, tails:true}],
-                    ['Power1','Witchfire',0.25,'AOE',4,1,{hits:2, tails:true}],
-                    ['Power2','Composure & Exploit',null,'Passive',0,21,{passive:{composure:1.3, exploit:1.4}}],
-                    ['Ultimate','Spirit Pounce',0.625,'Single',8,41,{hits:2, tails:true}],
-                    ['Max','Spirit Pounce Max',0.75,'Single',8,51,{hits:2, tails:true}]],
+  /* (3.26) The designer: "crowning should not change the moves … give it a
+     flat 2 hits/4 hits at ultimate and max levels for tailed cat (still scaled
+     to 1.25, 1.5x atk)". Every move strikes a set number of times, the power
+     written the whole move's, shared out (`split`); the tails are the
+     sprite's look (one as a kitten, two evolved, four crowned), not its
+     strikes. (3.14–3.25: one strike a tail.) Its passive has a name of its
+     own: Calm Hunter — Composure (1.3× at full health) and Exploit (1.4× on
+     a troubled mind). */
+  tailed_cat:      [['Basic','Tail Swipe',0.3,'Single',2,1,{hits:2, split:true}],
+                    ['Power1','Witchfire',0.5,'AOE',4,1,{hits:2, split:true}],
+                    ['Power2','Calm Hunter',null,'Passive',0,21,{passive:{composure:1.3, exploit:1.4}}],
+                    ['Ultimate','Spirit Pounce',1.25,'Single',8,41,{hits:2, split:true}],
+                    ['Max','Spirit Pounce Max',1.5,'Single',8,51,{hits:4, split:true}]],
   /* Awakened Mind: Precognition (the first blow to reach it each round, half)
      and Amnesia on everything it does (a blow that lands makes its target
      forget its best move for its next turn). */
@@ -576,16 +657,181 @@ const MOVES = {
                     ['Power2','Knight\'s Oath',null,'Passive',0,35,{passive:{guardian:true, armour:0.30, soulfire:0.30}}],
                     ['Ultimate','Wraithblade',1.25,'Single',8,45,{pierce:true}],
                     ['Max','Wraithblade Max',1.5,'Single',8,55,{pierce:true}]],
+  /* --- (3.15) the fifteen psychics of the floors under the villa ---
+     The designer's, move by move. Every effect works the same in either
+     side's hands; every passive is read through passiveOf, so a ✦ Curse on
+     its side mutes it. */
+  /* Sixth Sense: it always moves first. (3.26: Premonition until then — too
+     like the Mindcat's Precognition.) (3.27) Sudden Leap: "Mind Pounce" was
+     too like the Mindcat's Mind Pulse, and one of three Pounces. */
+  leopard:         [['Basic','Swipe',0.25,'Single',2,1],
+                    ['Power1','Sudden Leap',0.45,'Single',4,5],
+                    ['Power2','Sixth Sense',null,'Passive',0,18,{passive:{first:true}}],
+                    ['Ultimate','Phantom Rush',0.4,'Single',8,25,{hits:3}]],
+  /* "early companion support slot": Pillow Puff puts a shield on its partner
+     (on itself, alone) worth twice its ATK; it walks in behind one of its own. */
+  puffball:        [['Basic','Bounce',0.2,'Single',2,1],
+                    ['Power1','Pillow Puff',null,'Self',4,5,{barrier:{shields:1, on:'partner', worth:2, icon:'☁️'}}],
+                    ['Power2','Soft Fluff',null,'Passive',0,11,{passive:{block:1}}],
+                    ['Ultimate','Lullaby Cloud',0.5,'AOE',8,25,{sleepHit:0.30}]],
+  /* "companion support with random wild effects": Glitch rolls one of six
+     (glitchRoll); Random Access is a blow of anything from half to twice its
+     power, and a Glitch on top. */
+  polygon:         [['Basic','Pixel Poke',0.25,'Single',2,1],
+                    ['Power1','Glitch',null,'Single',4,5,{glitch:true}],
+                    ['Power2','Static Grid',0.6,'AOE',8,11],
+                    ['Ultimate','Random Access',1.0,'Single',8,25,{randomMult:[0.5, 2.0], glitch:true}]],
+  quetzal:         [['Basic','Plume Flick',0.25,'Single',2,1],
+                    ['Power1','Sun Feathers',0.15,'Single',4,5,{hits:3}],
+                    ['Power2','Shimmering Plumage',null,'Passive',0,18,{passive:{evadeAlways:0.20, meditate:0.15, meditateMax:4}}],   // (3.26) and Meditate
+                    ['Ultimate','Feathered Serpent',0.9,'AOE',8,25]],
+  /* "like caladrius but weaker": Pacificus at 50% (SPECIES.nurse.pacificus);
+     Bandage Wall, 2 shields on its partner; Lullaby Reflex, a 50% chance with
+     every strike that reaches it to put the attacker to sleep; Transfusion,
+     its own health given to its partner, point for point. */
+  nurse:           [['Basic','Gentle Tap',0.25,'Single',2,1],
+                    ['Power1','Bandage Wall',null,'Self',4,5,{barrier:{shields:2, on:'partner', worth:1, icon:'🩹'}}],
+                    ['Power2','Lullaby Reflex',null,'Passive',0,11,{passive:{sleepBack:0.5}}],
+                    ['Ultimate','Transfusion',null,'Self',8,25,{transfuse:{pct:0.30}}],
+                    ['Passive','Selfless Heart',null,'Passive',0,1,{statNote:true}]],
+  /* "passively slower but passive retaliation" — and its Ultimate pays back
+     a hit it has taken this round. */
+  hermit_sloth:    [['Basic','Slow Swipe',0.3,'Single',2,1],
+                    ['Power1','Hook Claw',0.45,'Single',4,5],
+                    ['Power2','Hermit\'s Patience',null,'Passive',0,11,{passive:{slow:1, retaliate:0.4}}],
+                    ['Ultimate','Pent-up Fury',1.0,'Single',8,25,{revenge:1.5}]],
+  /* "team initiative support" (Gallop); Moonlit Retribution: every strike of
+     its side the other side dodges banks 1.2× its ATK, which falls on all of
+     them at the end of the turn — no dodging it ("counter to ghosts").
+     (3.27) Silver Horn: "Horn Jab" is the Deer's Power 1 too. */
+  unicorn:         [['Basic','Silver Horn',0.25,'Single',2,1],
+                    ['Power1','Gallop',null,'Self',4,5,{gallop:{init:1, turns:3}}],
+                    ['Power2','Moonlit Retribution',null,'Passive',0,18,{passive:{dodgeBank:1.2, bankCap:5}}],
+                    ['Ultimate','Prism Lance',1.0,'Single',8,25,{mindRead:true}]],
+  /* (3.26) "3 hits/5 hits for hydra (scaled to 1.2, 1.5x atk)": every move
+     strikes a set number of times, the power written the whole move's, shared
+     out (`split`); its heads are the sprite's look (one, two, three, five
+     crowned). (3.15–3.25: one strike a head.) "keep the name of feeding
+     frenzy but change it to two passive effects: exploit and a chance to
+     critical hit (15% chance for 2x damage multiplier)" — every strike its own
+     roll. (Until 3.26: +25% for every mark on what it struck, to 2×.) */
+  hydra:           [['Basic','Bite',0.3,'Single',2,1,{hits:3, split:true}],
+                    ['Power1','Venom Spray',0.6,'AOE',4,1,{hits:3, split:true}],
+                    ['Power2','Feeding Frenzy',null,'Passive',0,21,{passive:{exploit:1.4, crit:{chance:0.15, mult:2}}}],
+                    ['Ultimate','Many-Headed Strike',1.2,'Single',8,41,{hits:3, split:true}],
+                    ['Max','Many-Headed Strike Max',1.5,'Single',8,51,{hits:5, split:true}]],
+  /* "support companion: healing + status debuffs" — (3.24) a wild one now,
+     evolving once at 18. (3.26) "put ram on a wild monster timetable, no max
+     move (keep the ultimate damage at 0.8 every foe)": Baa-rage at 18,
+     Counting Sheep at 25 at its old Max's 0.8 (its 35% sleep kept). "fold
+     thick fleece passive effect into Power 1's heal": Woolly Warmth heals
+     its side and wraps it in fleece — 15% less from every blow for 3 turns
+     (`fleece`, a side buff). (3.27) Ram Slam: "Headbutt" is the Squirrel's
+     Power 1 too. */
+  ram:             [['Basic','Ram Slam',0.3,'Single',2,1,{stunHit:0.15}],
+                    ['Power1','Woolly Warmth',null,'Self',4,5,{mend:{pct:0.15, fleece:{reduce:0.15, turns:3}}}],
+                    ['Power2','Baa-rage',0.5,'AOE',8,18,{softenHit:{chance:0.5, amount:0.5}}],
+                    ['Ultimate','Counting Sheep',0.8,'AOE',8,25,{sleepHit:0.35}]],
+  /* (3.24) The designer: "elite psychic/flying, 2 evolutions, focusing on
+     bright lights confusing or causing monsters to miss and doing more damage
+     to debuffed opponents". Dazzle: if it lands, a 25% chance the whole other
+     side is confused for its next swing — a Lunacy in light (`glow`: its own
+     words), at 60% of the swing's power.
+     (3.25) "Merge glow's effect into blinding beam — triggered on a single
+     target upon a hit, raised to 25%": the beam that gets through BLINDS the
+     one it hit (`blindHit`) — a quarter of its own strikes miss, this turn
+     and the next (blindOf / rollBlind). And "exploit for increasing damage
+     against monsters with mental-related debuffs": the Spotlight is the
+     planned Exploit (exploitable — asleep, confused, blinded, charmed,
+     forgetting) — 1.4×, as every Exploit is (3.26; 1.5× in 3.25, as the
+     Spotlight was). In their hands (enemyActs)
+     "the AI should spam the max move": it beams every turn.
+     (3.27) "Name the pair under passive name Mind Sear": Exploit and Warning
+     Colours — every strike that reaches it has a 25% chance to weaken the one
+     that struck, its next attack at half (`weakBack`, weakBackRoll); bright
+     colours warn a hunter that it will taste bad. */
+  ladybird:        [['Basic','Spot Tap',0.3,'Single',2,1],
+                    ['Power1','Dazzle',0.4,'AOE',4,1,{lunacy:{chance:0.25, turns:1, ffPower:0.6, glow:true}}],
+                    ['Power2','Mind Sear',null,'Passive',0,21,{passive:{exploit:1.4, weakBack:{chance:0.25, amount:0.5}}}],
+                    ['Ultimate','Blinding Beam',1.25,'Single',8,41,{blindHit:{miss:0.25, turns:2}}],
+                    ['Max','Blinding Beam Max',1.5,'Single',8,51,{blindHit:{miss:0.25, turns:2}}]],
+  /* Invisible Wall: "creates one block and gives a one-turn 50% damage
+     reduction (cannot be extended with diamond dust)" (castBarrier). In their
+     hands (3.16) "Mime should block one turn then use his max move": it walls
+     up, then copies, and round again (enemyActs). Copycat:
+     "copies all a single opponent's moves in the previous turn at a 1.1x
+     damage multiplier, but using mime's own attack value" — 1.2× at Max. */
+  mime:            [['Basic','Pantomime Punch',0.3,'Single',2,1],
+                    ['Power1','Invisible Rope',0.45,'Single',4,1,{stunHit:0.20}],
+                    ['Power2','Invisible Wall',null,'Self',4,21,{barrier:{shields:1, reduce:0.5, label:'🎭 Invisible Wall', icon:'🎭'}}],
+                    ['Ultimate','Copycat',null,'Single',8,41,{copy:1.1}],
+                    ['Max','Copycat Max',null,'Single',8,51,{copy:1.2}]],
+  /* A fox mage: "damage buffs + evasion-penetration, charging ultimate big
+     damage if no hits taken". Arcane Meteor gathers for a turn; a hit while
+     it gathers halves it (focusBreak). (3.26) "firefox needs an AOE damaging
+     move for Power1, remove kindle as arcane sight now uses meditate":
+     Spellfire, 0.5 on every foe, in Kindle's place (not "Foxfire" — the
+     Ghost Flame's Power 2 has that name); its passive, Stargazer, is
+     Arcane Sight and Meditate. "arcane meteor should be improved to
+     3.25/4.5" (2.5/3.0 until then) — and an Overcharge that comes up as it
+     gathers brings it down the same turn (resolveBattleMove, enemyActs). */
+  firefox:         [['Basic','Ember Bolt',0.3,'Single',2,1],
+                    ['Power1','Spellfire',0.5,'AOE',4,1],
+                    ['Power2','Stargazer',null,'Passive',0,21,{passive:{trueSight:0.5, meditate:0.15, meditateMax:4}}],
+                    ['Ultimate','Arcane Meteor',3.25,'Single',8,41,{windup:{name:'Gathering Starlight', say:'{name} raises its staff, and the air begins to glow…'}, focusBreak:0.5}],
+                    ['Max','Arcane Meteor Max',4.5,'Single',8,51,{windup:{name:'Gathering Starlight', say:'{name} raises its staff, and the air begins to glow…'}, focusBreak:0.5}]],
+  /* "defensive/supportive, applies debuffs hydra uses": it weakens and sends
+     to sleep; Tidal Ward, its side takes 15% less while it stands. (3.27)
+     "Name the pair Psionic Tide": Tidal Ward and Undertow — while it stands,
+     the other side moves a step later (`undertow`, an aura: the Plasma
+     Manta's Slipstream turned round). Dragon Tide, not "Abyssal Tide" — too
+     like the Squid's Abyssal Gaze. */
+  seadragon:       [['Basic','Brine Spit',0.3,'Single',2,1,{softenHit:{chance:0.3, amount:0.5}}],
+                    ['Power1','Riptide',0.4,'AOE',4,1,{sleepHit:0.20}],
+                    ['Power2','Psionic Tide',null,'Passive',0,21,{passive:{ward:0.15, undertow:1}}],
+                    ['Ultimate','Dragon Tide',0.8,'AOE',8,41,{softenHit:{chance:1.0, amount:0.5}}],
+                    ['Max','Dragon Tide Max',1.0,'AOE',8,51,{softenHit:{chance:1.0, amount:0.5}, sleepHit:0.25}]],
+  /* "attack support, increases initiative for companion and itself" —
+     (3.26) "an additional power on its passive - allows monsters on its side
+     of the field to pierce evasion": Plasma Current is Slipstream and Lock-On
+     (`lockOn`, an aura — while it stands, nothing its side throws can be
+     dodged: seesThrough). */
+  plasma_manta:    [['Basic','Spark Fin',0.3,'Single',2,1],
+                    ['Power1','Plasma Glide',0.5,'AOE',4,1],
+                    ['Power2','Plasma Current',null,'Passive',0,21,{passive:{slipstream:1, lockOn:1}}],
+                    ['Ultimate','Ion Breach',1.25,'Single',8,41],
+                    ['Max','Ion Breach Max',1.5,'Single',8,51]],
+  /* "removes a negative debuff at end-phase each turn, chance to sleep
+     opposing monsters at start-phase" */
+  sylph:           [['Basic','Breeze',0.3,'Single',2,1],
+                    ['Power1','Pollen Gust',0.4,'AOE',4,1],
+                    ['Power2','Sylph\'s Grace',null,'Passive',0,21,{passive:{cleanseEnd:1, drowse:0.15}}],
+                    ['Ultimate','Moonbeam Waltz',1.25,'Single',8,41],
+                    ['Max','Moonbeam Waltz Max',1.5,'Single',8,51,{sleepHit:0.25}]],   // (3.26) "waltz max another 25% chance to sleep its target"
+  /* "tanky, speed self-penalty, starts with 2 shields, gains shield value
+     with moves" (shieldGain: a full 1 is a shield, at once) — and Carapace:
+     no single hit takes more than a third of its health (a ✦ Curse lifts it). */
+  steelcrab:       [['Basic','Pinch',0.3,'Single',2,1],
+                    ['Power1','Shell Spin',0.5,'AOE',4,1,{shieldGain:1.5}],
+                    ['Power2','Carapace',null,'Passive',0,1,{passive:{block:2, slow:1, hitCap:1/3}}],
+                    ['Ultimate','Claw Barrage',0.35,'Single',8,41,{hits:4, shieldGain:0.75}],
+                    ['Max','Claw Barrage Max',0.4,'Single',8,51,{hits:4, shieldGain:0.75}]],   // (3.26) "reduce to 0.4 per hit" (0.42)
   /* The time monster (2.94). In the tear it never acts; these are its blows
      for when the story's climax gives it a turn. */
   /* (3.00) Futuresight: it dodges half of every attack, and each dodge is a
      Spacetime Fracture — a stack its Spacetime Rift Max hits 1.1× harder for,
      multiplying (1.1, 1.21, 1.33 …). A ✦ Curse mutes Futuresight; a Diamond
-     Dust sweeps the fractures away and lets no new one form while it holds. */
+     Dust sweeps the fractures away and lets no new one form while it holds.
+     (3.13) Organosteel Body, a second passive: 3 shields (block stacks, worth
+     its ATK each) as it takes the field and 1 more at the end of every turn
+     (organosteelTurn). No dust touches a shield now; a Dragon Dance breaks
+     1 / 2 / 3 with each attack — the Monkey King's ✦ the most. A ✦ Curse
+     stops the new ones. */
   cyborg:          [['Basic','Second Hand',0.3,'Single',2,1],
                     ['Power1','Clockwork Crush',0.6,'Single',4,1],
                     ['Power2','Time Quake',0.5,'AOE',8,1],
                     ['Passive','Futuresight',null,'Passive',0,1,{passive:{futuresight:0.5}}],
+                    ['Passive','Organosteel Body',null,'Passive',0,1,{passive:{block:3, organosteel:1}}],
                     ['Ultimate','Spacetime Rift',1.2,'Single',8,1],
                     ['Max','Spacetime Rift Max',1.5,'Single',8,1,{fracture:1.1}]],
 };

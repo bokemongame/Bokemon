@@ -371,38 +371,65 @@ async function onGuardianTrialResolved(){
 
 /* ============================================================
    EYE BREAK
-   Counts wild and NPC battles only — Recovery and practice are already gated
-   by HP, so they don't add to the tally. The break is stored as a WALL-CLOCK
-   deadline from the device, so reloading the page can't skip it. It never
-   interrupts a battle: the check happens once the victory screen is up.
+   Counts WAVES, as the day does (3.23, the designer: "yes eye breaks too!" —
+   it counted battles, and a battle is anything from 1 wave to 42): every wave
+   of monsters that comes onto the field, beaten, lost to or run from
+   (tallyWave → countWaveForEyeBreak), but not in the grown-ups' Test Arena.
+   Recovery and practice are already gated by HP, so they don't add to the
+   tally. A break that falls due is `eyeBreakDue` (its length) until it is
+   first shown — and it is never shown in the middle of a fight: it waits for
+   the battle's end (over the victory page, after a defeat, a spar, the
+   tear's round, the vault — or at the next screen after a trainer's fight).
+   Shown, it becomes the WALL-CLOCK deadline `eyeBreakUntil`, so reloading the
+   page can't skip it and a scene after a fight can't use it up.
    ============================================================ */
 function eyeBreakActive(){
-  return !!(state && state.eyeBreakUntil && Date.now() < state.eyeBreakUntil);
+  return !!(state && (state.eyeBreakDue || (state.eyeBreakUntil && Date.now() < state.eyeBreakUntil)));
 }
 function eyeBreakRemaining(){
   return Math.max(0, (state.eyeBreakUntil||0) - Date.now());
 }
-/* Called when a battle finishes. Returns true if a break has just begun. */
 const EYE_IDLE_RESET_MS = 20 * 60 * 1000;
-function tallyBattleForEyeBreak(){
-  if(!state) return false;
-  battlesToday(); state.battlesToday.n++;           // every battle counts toward the day, breaks on or off
-  const every = state.settings.eyeBreakEvery || 0;
-  if(every <= 0) return false;                       // 0 disables the feature
-  /* Twenty minutes without a battle is a rest in itself, so the count starts
-     again from nothing. */
+const EYE_WAVES_MAX = 100;
+/* How many waves between breaks (0: no breaks). A limit set in battles became
+   three waves a battle (normalizeProfile). */
+function eyeBreakWaves(){
+  const v = state && state.settings && state.settings.eyeBreakWaves;
+  return (v == null || isNaN(v)) ? 0 : Math.max(0, Math.min(EYE_WAVES_MAX, Math.round(+v)));
+}
+/* A wave has come onto the field: one toward the next break (loadWave saves
+   it). Twenty minutes without a wave is a rest in itself, so the count starts
+   again from nothing; while a break is due or running, nothing counts. */
+function countWaveForEyeBreak(){
+  const every = eyeBreakWaves();
+  if(!state || every <= 0 || eyeBreakActive()) return;
   const now = Date.now();
-  if(state.lastBattleAt && now - state.lastBattleAt >= EYE_IDLE_RESET_MS) state.battlesSinceBreak = 0;
-  state.lastBattleAt = now;
-  state.battlesSinceBreak = (state.battlesSinceBreak||0) + 1;
-  if(state.battlesSinceBreak >= every){
-    state.battlesSinceBreak = 0;
-    state.eyeBreakUntil = Date.now() + (state.settings.eyeBreakMins||5)*60*1000;
-    saveProfile();
-    return true;
+  if(state.lastWaveAt && now - state.lastWaveAt >= EYE_IDLE_RESET_MS) state.wavesSinceBreak = 0;
+  state.lastWaveAt = now;
+  state.wavesSinceBreak = (state.wavesSinceBreak || 0) + 1;
+  if(state.wavesSinceBreak >= every){
+    state.wavesSinceBreak = 0;
+    state.eyeBreakDue = (state.settings.eyeBreakMins || 5) * 60 * 1000;    // its clock starts when it is shown
   }
-  saveProfile();
-  return false;
+}
+/* Called when a battle finishes, won or lost — by every way one can end
+   (onBattleWon, onChallengeWon and onPlayerDefeated for all of them, and the
+   spars', the tear's rounds' and the vault's own endings). It counts the
+   battle for the day (the grown-ups see it beside the waves) — ONCE, however
+   many of them ask; the tear's rounds are each a battle of their own
+   (`opts.round`) — and answers whether an eye break is due, fallen due in its
+   waves, for the ending to show. (The name is older than the waves.) */
+function tallyBattleForEyeBreak(opts){
+  if(!state) return false;
+  const b = (typeof ui !== 'undefined' && ui && ui.battle) || null;
+  if(b && (b.arena || b.arenaChallenge)) return false;     // the grown-ups' Test Arena is not the child's day
+  const round = !!(opts && opts.round);
+  if(!b || round || !b.tallied){
+    battlesToday(); state.battlesToday.n++;
+    if(b && !round) b.tallied = true;
+    saveProfile();
+  }
+  return eyeBreakActive();
 }
 
 let _eyeTimer = null;
@@ -412,11 +439,14 @@ function endEyeBreak(msg){
   if(o && o.parentNode) o.parentNode.removeChild(o);
   document.body.classList.remove('eye-locked');
   state.eyeBreakUntil = 0;
+  state.eyeBreakDue = 0;
   saveProfile();
   toast(msg || 'Break over — welcome back!');
 }
 function showEyeBreak(){
   if(document.getElementById('eyeBreakOverlay')) return;
+  /* A break that fell due starts its clock now, as it is shown (3.22). */
+  if(state.eyeBreakDue){ state.eyeBreakUntil = Date.now() + state.eyeBreakDue; state.eyeBreakDue = 0; saveProfile(); }
   const ov = document.createElement('div');
   ov.id = 'eyeBreakOverlay';
   ov.className = 'eye-overlay';
@@ -472,11 +502,15 @@ function showEyeBreak(){
   _eyeTimer = setInterval(tick, 250);
 }
 /* Re-assert the locks on any render, so a reload stays locked. The day's limit
-   comes first: it is the bigger of the two. */
+   comes first: it is the bigger of the two. Neither starts in the middle of a
+   fight or a spelling (3.22: both count waves, so either can fall due half
+   way through a battle — the battle is finished first); a break already
+   running is held on every screen. */
 function enforceEyeBreak(){
-  if(dailyLimitActive()) return showDailyLock();
+  const midFight = ['battle', 'quiz'].includes(ui.screen);
+  if(!midFight && dailyLimitActive()) return showDailyLock();
   if(dailyOverrideActive()) scheduleDailyRecheck();
-  if(eyeBreakActive()) showEyeBreak();
+  if(eyeBreakActive() && !(midFight && state.eyeBreakDue)) showEyeBreak();
 }
 
 
@@ -624,19 +658,24 @@ function renderChallengeR2(){
   if(cr) cr.addEventListener('click', ()=>{
     if(r2.rivalCleared){ toast('You have already beaten him here.'); return; }
     if(!ensurePool()) return;
-    beginBattle({ isNpc:true, name:'Jax', npcId:'rival',
-      waves: r2RivalWaves().map(w=>w.map(e=>({...e, ai:'best', nerfed:false}))),
-      onWin:onR2RivalWin });
+    beginBattle(Object.assign(rivalR2Battle(), { onWin:onR2RivalWin }));
   });
   const c = $('#cWater');
   if(c) c.addEventListener('click', ()=>{
     const st = nextWaterStage();
     if(!st){ toast('You have already cleared the Water Dojo.'); return; }
     if(!ensurePool()) return;
-    beginBattle({ isNpc:true, name:st.label, npcId:st.id,
-      waves: st.waves.map(w=>w.map(e=>({...e, ai:st.ai, nerfed:false}))),
-      onWin:()=>onWaterStageWin(st) });
+    beginBattle(Object.assign(waterStageBattle(st), { onWin:()=>onWaterStageWin(st) }));
   });
+}
+/* (3.11) The setups, shared with the Test Arena's Challengers. */
+function rivalR2Battle(){
+  return { isNpc:true, name:'Jax', npcId:'rival',
+    waves: r2RivalWaves().map(w=>w.map(e=>({...e, ai:'best', nerfed:false}))) };
+}
+function waterStageBattle(st){
+  return { isNpc:true, name:st.label, npcId:st.id,
+    waves: st.waves.map(w=>w.map(e=>({...e, ai:st.ai, nerfed:false}))) };
 }
 async function onR2RivalWin(){
   const r2 = state.progress.region2;
@@ -776,19 +815,22 @@ async function disused8(){
 
 
 /* --- 9: Don Padrino. Unwinnable by design; losing is the story. --- */
-function disused9Fight(){
-  const r2 = state.progress.region2;
-  r2.padrinoMet = true;
-  beginBattle({
+function padrinoR2Battle(){
+  return {
     isNpc:true, name:'Don Padrino', npcId:'padrino', noFlee:true, scriptedLoss:'padrino',
     enemiesFirst:true, alwaysFirst:true,   // he moves before you EVERY round
     waves:[[
       {species:'water_dragon',   level:100, ai:'cataclysm', supplements:10, crowned:true, boss:true},
       {species:'flying_starter', level:91,  ai:'best'},
       {species:'physical_starter', level:81, ai:'best'},
-    ]],
+    ]] };
+}
+function disused9Fight(){
+  const r2 = state.progress.region2;
+  r2.padrinoMet = true;
+  beginBattle(Object.assign(padrinoR2Battle(), {
     onWin: ()=> onPadrinoResolved(),   // if somehow won, the story still runs
-  });
+  }));
 }
 
 /* The party falls — and the Sacred Seed answers. */
@@ -835,9 +877,8 @@ async function onPadrinoResolved(){
 }
 
 /* --- 10: riding the dragon. One button, no spelling. --- */
-function disused10Fight(){
-  advancePath('disused');   // scenes 9 and 10 are one continuous beat
-  beginBattle({
+function dragonRideBattle(){
+  return {
     isNpc:true, name:'Sottocapo', npcId:'sottocapo', noFlee:true, scriptedAlly:'water_dragon',
     allyLevel:100, allyCrowned:true, allyMove:'unleashMax',
     waves:[
@@ -850,9 +891,11 @@ function disused10Fight(){
       [{species:'physical_starter',level:85,ai:'best'}],
     ],
     // the last wave is a single foe, so the dragon switches to Hyperbeam
-    onWaveStart:(i)=>{ ui.battle.allyMove = (i>=2) ? 'hyperbeamMax' : 'unleashMax'; },
-    onWin: ()=> disused11Intro(),
-  });
+    onWaveStart:(i)=>{ ui.battle.allyMove = (i>=2) ? 'hyperbeamMax' : 'unleashMax'; } };
+}
+function disused10Fight(){
+  advancePath('disused');   // scenes 9 and 10 are one continuous beat
+  beginBattle(Object.assign(dragonRideBattle(), { onWin: ()=> disused11Intro() }));
 }
 
 function disused11Intro(){
@@ -864,8 +907,8 @@ function disused11Intro(){
 }
 
 /* --- 11: the last stand. The dragon cannot die, and cannot win. --- */
-function disused11Fight(){
-  beginBattle({
+function lastStandBattle(){
+  return {
     isNpc:true, name:'Don Padrino', npcId:'padrino', noFlee:true,
     scriptedAlly:'water_dragon', allyLevel:100, allyCrowned:true,
     allyMove:'dragonLegacy', allyUnkillable:true, enemiesFirst:true,
@@ -873,9 +916,10 @@ function disused11Fight(){
       {species:'flying_starter',   level:91, ai:'best'},
       {species:'physical_starter', level:81, ai:'best'},
       {species:'ghost_starter',    level:81, ai:'best'},
-    ]],
-    onWin: ()=> disused12Farewell(),
-  });
+    ]] };
+}
+function disused11Fight(){
+  beginBattle(Object.assign(lastStandBattle(), { onWin: ()=> disused12Farewell() }));
 }
 
 /* --- 12: the farewell, in a white room --- */
@@ -1090,12 +1134,14 @@ function exploreCavernPath(pathId){
   if(nx.kind==='scene')  return runDisusedScene(nx.scene);
 }
 
+function mafiaBattle(def){
+  return { isNpc:true, name:def.label, npcId:def.npcId,
+    waves: def.waves.map((w,i)=>w.map(e=>({...e, ai:def.ai[i]||'power1', nerfed:false}))) };
+}
 function startMafiaFight(def, pathId){
   if(!ensurePool()) return;
   ui.cavernAdvanceOnWin = pathId;
-  beginBattle({ isNpc:true, name:def.label, npcId:def.npcId,
-    waves: def.waves.map((w,i)=>w.map(e=>({...e, ai:def.ai[i]||'power1', nerfed:false}))),
-    onWin: ()=> onMafiaWin(def, pathId) });
+  beginBattle(Object.assign(mafiaBattle(def), { onWin: ()=> onMafiaWin(def, pathId) }));
 }
 
 async function advancePath(pathId){
@@ -1431,23 +1477,45 @@ function plantBossReward(){
 }
 
 /* ============================================================
-   BATTLES PER DAY
-   A blunter lever than eye breaks: how many battles one calendar day may hold
-   (0–100). Reaching it closes the game until tomorrow, or until a grown-up
-   opens it with the password for 1 to 60 minutes. At 0 it stays closed until a
-   grown-up opens it. Counts exactly what eye breaks count.
+   WAVES PER DAY
+   A blunter lever than eye breaks: how many WAVES one calendar day may hold
+   (0–200). (3.22 — it counted battles, and the designer: "some battles last
+   forever". A battle is one wave in the wild, two for a soldato, three for a
+   capo, six for a tower floor, Jax or Figlio, nineteen in the vault and
+   forty-two in the tear's seven rounds. A limit set in battles became three
+   waves a battle: normalizeProfile.) A wave counts as it comes onto the field
+   (tallyWave, from loadWave) — beaten, lost to or run from — but not in the
+   grown-ups' Test Arena. A battle is never stopped half way: the wave that
+   reaches the number is fought, and the rest of its battle; then the game
+   closes until tomorrow, or until a grown-up opens it with the password for 1
+   to 60 minutes. At 0 it stays closed until a grown-up opens it. Battles are
+   still counted beside the waves, for the grown-ups to see; the eye breaks
+   count waves too (EYE BREAK, above).
    ============================================================ */
-const DAILY_DEFAULT = 100;
+const DAILY_DEFAULT = 200;
+const DAILY_MAX = 200;
 let _dailyTimer = null;
 function dailyLimit(){
-  const v = state && state.settings && state.settings.dailyBattles;
-  return (v == null || isNaN(v)) ? DAILY_DEFAULT : Math.max(0, Math.min(100, +v));
+  const v = state && state.settings && state.settings.dailyWaves;
+  return (v == null || isNaN(v)) ? DAILY_DEFAULT : Math.max(0, Math.min(DAILY_MAX, Math.round(+v)));
 }
-function battlesToday(){
-  if(!state) return 0;
+/* The day's tally — { day, n: battles, w: waves } — a new one each calendar day. */
+function dayTally(){
+  if(!state) return null;
   const t = today();
-  if(!state.battlesToday || state.battlesToday.day !== t) state.battlesToday = { day:t, n:0 };
-  return state.battlesToday.n;
+  if(!state.battlesToday || state.battlesToday.day !== t) state.battlesToday = { day:t, n:0, w:0 };
+  return state.battlesToday;
+}
+function battlesToday(){ const d = dayTally(); return d ? d.n : 0; }
+function wavesToday(){ const d = dayTally(); return d ? (d.w || 0) : 0; }
+/* A wave has come onto the field: one more for the day, and one toward the
+   next eye break (loadWave saves it). */
+function tallyWave(){
+  const b = (typeof ui !== 'undefined' && ui && ui.battle) || null;
+  if(!state || !b || b.arena || b.arenaChallenge) return;
+  const d = dayTally();
+  d.w = (d.w || 0) + 1;
+  countWaveForEyeBreak();
 }
 /* Unlimited switches the daily limit off altogether (the number is kept for
    when it is switched back on). */
@@ -1457,7 +1525,7 @@ function dailyUnlimited(){ return !!(state && state.settings && state.settings.d
 function dailyOverrideActive(){
   return !!(state && (state.dailyOverrideOpen || (state.dailyOverrideUntil && Date.now() < state.dailyOverrideUntil)));
 }
-function dailyLimitActive(){ return !!state && !dailyUnlimited() && !dailyOverrideActive() && battlesToday() >= dailyLimit(); }
+function dailyLimitActive(){ return !!state && !dailyUnlimited() && !dailyOverrideActive() && wavesToday() >= dailyLimit(); }
 function lockDailyAgain(){
   state.dailyOverrideOpen = false;
   state.dailyOverrideUntil = 0;
@@ -1493,7 +1561,7 @@ function showDailyLock(){
       <div class="eye-title">${limit === 0 ? 'Battles are switched off' : "That's all for today"}</div>
       <div class="eye-note">${limit === 0
         ? 'A grown-up has switched the game off for now.'
-        : `You've had ${battlesToday()} battles today — the most for one day. See you tomorrow!`}</div>
+        : `You've fought ${wavesToday()} waves of monsters today — the most for one day. See you tomorrow!`}</div>
       <div id="dayGate" style="display:none;margin-top:16px;text-align:left;">
         <input type="password" id="dayPw" placeholder="Password" inputmode="numeric" autocomplete="off"
           style="width:100%;box-sizing:border-box;">

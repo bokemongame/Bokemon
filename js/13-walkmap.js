@@ -419,9 +419,11 @@ async function takePrize(deck, i){
   await saveProfile();
   const d = DECKS[deck], region = d.region || 4;
   const total = Object.values(book).reduce((n,o)=>n + Object.keys(o).length, 0);
-  /* (the Old Town's tier counts once its gate is open — 2.88; and a place
-     that names when it opens — 3.03, the town's rooms — once it has) */
+  /* (the Old Town's tier counts once its gate is open — 2.88; the floors
+     under the villa once you can go down — 3.18; and a place that names when
+     it opens — 3.03, the town's rooms — once it has) */
   const sealed = x=> (x.tier === 2 && typeof r5Tier2Open === 'function' && !r5Tier2Open()) ||
+                     (x.tier === 3 && typeof r5Tier3Open === 'function' && !r5Tier3Open()) ||   // (3.18) under the villa
                      (typeof x.opens === 'function' && !x.opens());
   const all = Object.values(DECKS).filter(x=> (x.region || 4) === region && !sealed(x))
                 .reduce((n, x)=> n + (x.prizes || []).length, 0);
@@ -465,7 +467,7 @@ function cuainAboard(){ const g = r4(); return !!g.ghostAccepted; }
    net on its rack, 'V' a barber's chair and 'L' a bench. Everything else is
    floor ('.', ',' bones, paving or a rug, '=' a bridge or steps, 's' sand,
    '_' a stage). */
-const WALK_SOLID = '#~o*cGbrkxtBgwKSFDRHPACZJNVL';
+const WALK_SOLID = '#~o*cGbrkxtBgwKSFDRHPACZJNVLhMQEY';   // (3.18) h: a catacomb wall with a child's chalk drawing on it; (3.19) the vault's M Q E Y
 const wSolid = (d,x,y)=> (y<0||y>=d.rows.length||x<0||x>=d.rows[0].length) ? true : WALK_SOLID.includes(d.rows[y][x]);
 /* A catacomb guard stands on his tile like anybody else. */
 function wOccupied(d, x, y){
@@ -529,6 +531,8 @@ function walkCss(){
   st.id = 'walkCss';
   st.textContent = `
     .walk-still .walk-world, .walk-still .walk-ent{transition:none !important;}
+    /* (3.20) a crowned picture (Cuain, his core home) fills its tile as a plain one does */
+    .walk-ent .crowned-wrap{width:100% !important;height:100% !important;}
     .walk-mark{position:absolute;aspect-ratio:40/96;transform:translateX(-50%);pointer-events:none;
       z-index:55;animation:walkMarkBob 1.1s ease-in-out infinite;}
     .walk-mark svg{width:100%;height:100%;display:block;filter:drop-shadow(0 2px 2px rgba(0,0,0,.25));}
@@ -609,8 +613,9 @@ function renderWalkDeck(id){
      its painting drawn from its grid at runtime. */
   const nat = d.nat || { weather_deck:[797,1209], cabin_deck:[832,1262], laboratory_deck:[832,1262] }[id];
   const artUrl = d.paint ? d.paint(d) : `assets/zones/${d.art}.png`;
-  /* fit the view across whatever the stage turns out to be */
-  WALK_VIEW = walkView();
+  /* fit the view across whatever the stage turns out to be — (3.19) or a
+     set-piece room's own, wide enough to hold all of it (the vault: `view`) */
+  WALK_VIEW = d.view || walkView();
   const avail = Math.min(window.innerWidth - 24, Math.max(220, window.innerHeight - 330));
   WALK_T = Math.max(30, Math.round(avail / WALK_VIEW));
   screenEl.innerHTML = `
@@ -777,7 +782,7 @@ function renderWalkDeck(id){
   if(cuainAboard()){
     const gh = document.createElement('div');
     gh.className = 'walk-ent walk-ghost'; gh.id = 'walkGhost';
-    gh.innerHTML = monPortrait('whalelord', 30, { view:'front', bare:true });
+    gh.innerHTML = monPortrait('whalelord', 30, { view:'front', bare:true, crowned:whaleName() === 'Cuain' });   // (3.20) his core home: crowned
     world.appendChild(gh);
     if(!w.ghostAt) w.ghostAt = {};
     if(!w.ghostAt[id]) w.ghostAt[id] = { x:d.spawn[0], y:d.spawn[1] };
@@ -932,8 +937,10 @@ function refreshWalk(){
   if(cuainAboard()){
     const b = document.createElement('button');
     b.className = 'wact live ghost';
-    b.innerHTML = monPortrait('whalelord', 34, { view:'front', bare:true }) +
-                  `<span>Talk to<br>Whalelord’s Ghost</span>`;
+    /* (3.20) once his core is home he has his name back: Cuain */
+    const named = whaleName() === 'Cuain';
+    b.innerHTML = monPortrait('whalelord', 34, { view:'front', bare:true, crowned:named }) +
+                  `<span>Talk to<br>${named ? 'Cuain' : 'Whalelord’s Ghost'}</span>`;
     /* a deck elsewhere (Cosa Nostia) gives him its own things to say */
     b.addEventListener('click', ()=>{
       if(walkState().busy) return;

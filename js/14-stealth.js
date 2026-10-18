@@ -59,7 +59,7 @@
    whoever comes alongside you can be talked to (15-region5.js).
    ============================================================ */
 
-const STEALTH_OPAQUE = '#ocGbrk';      // what light cannot pass (water, braziers, rails and tables do not stop it)
+const STEALTH_OPAQUE = '#ocGbrkh';      // what light cannot pass (water, braziers, rails and tables do not stop it)
 const STEALTH_VIEW = 9;                // how far off you can make out a light
 const DIRS = { u:[0,-1], d:[0,1], l:[-1,0], r:[1,0] };
 const TURN = { u:'r', r:'d', d:'l', l:'u' };           // a quarter clockwise
@@ -142,12 +142,16 @@ function guardKeepsWatch(def){
 }
 function guardHaunted(d, def){
   if(stealthRush(d)) return true;
+  /* (3.18) under the villa no ghost comes: Nino keeps the dead away from his
+     brother's house (15-region5.js, the floors under the villa — `under`) */
+  if(d && d.under) return false;
   return stealthHauntedForGood(d) && !!def && !guardKeepsWatch(def);
 }
 /* In the Family's own colours (2.91): a junior soldato, and nobody on watch
    looks twice at one of those — in the catacombs or in the Old Town. They walk
    their rounds; you walk yours. Wild monsters do not care what you wear. */
-function stealthDisguised(d){ return !!(d && d.region === 5 && typeof r5 === 'function' && r5().disguised); }
+/* (3.18) …but not under the villa: the Padrino's own men know every face. */
+function stealthDisguised(d){ return !!(d && d.region === 5 && !d.under && typeof r5 === 'function' && r5().disguised); }
 /* A guard stands on his tile: nobody walks through him. */
 function stealthOccupied(d, x, y){
   const st = ui.stealth && ui.stealth[d.key];
@@ -561,12 +565,14 @@ function caughtFight(id, d, g, def, shout){
   /* Nothing left standing to fight with: he marches you out, and that is all. */
   if(!battleParty().some(m=> m.currentHp > 0)){
     return sceneSay([face], roster.label,
-      `<b>"Look at the state of you."</b><br><br>He marches you all the way back through the tunnels and ` +
-      `pushes you out of the sea cave onto the beach.`, 'Continue').then(()=>{
+      `<b>"Look at the state of you."</b><br><br>` + (d.under
+        ? `He marches you all the way back up the stairs and out through the villa's cellar door.`     // (3.18)
+        : `He marches you all the way back through the tunnels and pushes you out of the sea cave onto the beach.`), 'Continue').then(()=>{
         stealthHold(false);
         walkTeardown();
         ui.stealthFresh = true;
         if(typeof r5BackToEntry === 'function') r5BackToEntry(id);   // next time: the stair you came in by
+        if(d.under && typeof goFloor === 'function') return goFloor('villa', 'cellar');
         if(typeof r5ToHarbour === 'function') r5ToHarbour(); else go('explore');
       });
   }
@@ -579,9 +585,7 @@ function caughtFight(id, d, g, def, shout){
   sceneSay([face], roster.label, shout || roster.shout || `<b>"Hey! You — in the light!"</b>`, 'Fight').then(()=>{
     stealthHold(false);
     walkTeardown();
-    beginBattle({ isNpc:true, name:roster.label, npcId:who,
-      waves: roster.waves.map((w, wi)=> w.map(s=> Object.assign({ ai: s.ai || (roster.ai || [])[wi] || 'power1', nerfed:false }, s))),
-      catacomb:true, bgKey:'battle_catacombs', noFlee:true,
+    beginBattle(Object.assign(rosterBattle(roster, who), {
       onWin: ()=>{
         const list = stealthBeaten(id);
         if(!list.includes(g.id)) list.push(g.id);
@@ -592,8 +596,15 @@ function caughtFight(id, d, g, def, shout){
         storyModal(npcPortrait(who, def.kind === 'capo' ? '🕴️' : '💂', 130, 'transparent'), roster.label,
           roster.beaten || `He will not be back on watch today.`,
           ()=> go(id), { subtitle:d.title });
-      } });
+      } }));
   });
+}
+/* (3.11) A roster's fight underground — shared with the Test Arena's
+   Challengers: every Ghost of theirs arrives lurking, and no running. */
+function rosterBattle(roster, who){
+  return { isNpc:true, name:roster.label, npcId:who,
+    waves: roster.waves.map((w, wi)=> w.map(s=> Object.assign({ ai: s.ai || (roster.ai || [])[wi] || 'power1', nerfed:false }, s))),
+    catacomb:true, bgKey:'battle_catacombs', noFlee:true };
 }
 /* An evade floor: too many of them to fight. Caught, you cannot move: the rest
    of the floor comes running — soldatos and lookouts, one after another, each
@@ -850,11 +861,11 @@ function paintCatacomb(d){
   if(!g) return '';
   const rnd = (x, y, k)=>{ const s = Math.sin(x * 127.1 + y * 311.7 + (k || 0) * 74.7) * 43758.5453; return s - Math.floor(s); };
   const at = (x, y)=> (y < 0 || y >= H || x < 0 || x >= W) ? '#' : d.rows[y][x];
-  const solidWall = (x, y)=> at(x, y) === '#';
+  const solidWall = (x, y)=> at(x, y) === '#' || at(x, y) === 'h';   // (3.18) a chalked wall is a wall
   g.fillStyle = '#0b0a0d'; g.fillRect(0, 0, W * P, H * P);
   for(let y = 0; y < H; y++) for(let x = 0; x < W; x++){
     const ch = at(x, y), X = x * P, Y = y * P;
-    if(ch === '#'){
+    if(ch === '#' || ch === 'h'){
       /* rough rock: darker the further from any floor */
       const edge = !solidWall(x, y + 1) || !solidWall(x, y - 1) || !solidWall(x + 1, y) || !solidWall(x - 1, y);
       g.fillStyle = edge ? '#2a2630' : '#141217';
@@ -863,6 +874,22 @@ function paintCatacomb(d){
         g.fillStyle = 'rgba(160,150,170,0.10)';
         for(let k = 0; k < 4; k++) g.fillRect(X + rnd(x, y, k) * (P - 6), Y + rnd(x, y, k + 9) * (P - 6), 6, 4);
         if(!solidWall(x, y + 1)){ g.fillStyle = '#3a3542'; g.fillRect(X, Y + P - 5, P, 5); }
+        /* (3.18) a child's chalk drawing on the wall: two little stick people
+           (Nino's — `h`; the newest brighter, d.chalkFresh) */
+        if(ch === 'h'){
+          const fresh = (d.chalkFresh || []).some(([fx, fy])=> fx === x && fy === y);
+          g.strokeStyle = fresh ? 'rgba(250,248,240,0.9)' : 'rgba(235,230,215,0.55)'; g.lineWidth = 1.4; g.lineCap = 'round';
+          const fig = (cx, top, h)=>{
+            g.beginPath(); g.arc(cx, top + h * 0.16, h * 0.16, 0, Math.PI * 2); g.stroke();
+            g.beginPath(); g.moveTo(cx, top + h * 0.32); g.lineTo(cx, top + h * 0.7);
+            g.moveTo(cx - h * 0.22, top + h * 0.45); g.lineTo(cx + h * 0.22, top + h * 0.45);
+            g.moveTo(cx, top + h * 0.7); g.lineTo(cx - h * 0.18, top + h);
+            g.moveTo(cx, top + h * 0.7); g.lineTo(cx + h * 0.18, top + h); g.stroke();
+          };
+          fig(X + 11, Y + 5, 19); fig(X + 22, Y + 11, 13);
+          g.beginPath(); g.moveTo(X + 3, Y + P - 5); g.lineTo(X + P - 3, Y + P - 6); g.stroke();
+          continue;
+        }
         /* now and then a burial niche in the wall face, with something pale in it */
         if(!solidWall(x, y + 1) && rnd(x, y, 11) < 0.22){
           g.fillStyle = '#0e0c11'; g.fillRect(X + 6, Y + 8, P - 12, P - 16);
@@ -921,11 +948,59 @@ function paintCatacomb(d){
       g.strokeRect(X + 3, Y + 3, P - 7, P - 7);
       g.beginPath(); g.moveTo(X + 3, Y + 3); g.lineTo(X + P - 4, Y + P - 4); g.stroke();
     }
-    if(ch === 'G'){                                  // a gate of iron bars, shut
+    if(ch === 'G' && d.vaultDoor){                   // (3.18) the vault's great iron door, rivets and all
+      g.fillStyle = '#1c1a20'; g.fillRect(X, Y, P, P);
+      g.fillStyle = '#3d3a44'; g.fillRect(X, Y + 3, P, P - 3);
+      g.fillStyle = '#2a2830'; for(let k = 0; k < 3; k++) g.fillRect(X, Y + 8 + k * 8, P, 1.5);
+      g.fillStyle = '#76717f';
+      for(let k = 0; k < 2; k++) for(let j = 0; j < 3; j++){ g.beginPath(); g.arc(X + 8 + k * 16, Y + 6 + j * 9, 1.6, 0, Math.PI * 2); g.fill(); }
+      const lx = at(x - 1, y) === 'G', rx = at(x + 1, y) === 'G';
+      if(lx && !rx){ g.fillStyle = '#0d0c10'; g.fillRect(X + P - 3, Y + 3, 3, P - 3); }
+      if(!lx || !rx){ g.fillStyle = '#0d0c10'; g.fillRect(lx ? X + P - 2 : X, Y, 2, P); }
+      if(lx && rx && at(x + 2, y) !== 'G'){         // the ring, on the middle of the door
+        g.strokeStyle = '#a89a6a'; g.lineWidth = 2.5; g.beginPath(); g.arc(X + P, Y + P / 2 + 2, 5, 0, Math.PI * 2); g.stroke();
+      }
+    }
+    else if(ch === 'G'){                             // a gate of iron bars, shut
       g.fillStyle = '#16141a'; g.fillRect(X, Y, P, P);
       g.fillStyle = '#5b5866';
       for(let k = 0; k < 5; k++) g.fillRect(X + 3 + k * 6.5, Y, 3, P);
       g.fillRect(X, Y + 5, P, 3); g.fillRect(X, Y + P - 8, P, 3);
+    }
+    /* ---- under the villa (3.18) ---- */
+    if(ch === 'w'){                                  // a wine rack: bottle ends in rows
+      g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(X + 2, Y + 5, P - 2, P - 6);
+      g.fillStyle = '#4a3420'; g.fillRect(X, Y + 2, P, P - 6);
+      g.fillStyle = '#2a1c10'; for(let k = 0; k < 4; k++) g.fillRect(X, Y + 2 + k * 8, P, 1.5);
+      for(let k = 0; k < 4; k++) for(let j = 0; j < 3; j++){
+        const q = rnd(x, y, k * 3 + j + 20);
+        g.fillStyle = q < 0.18 ? '#141210' : (q < 0.6 ? '#3c5a2a' : '#5e2a30');
+        g.beginPath(); g.arc(X + 4 + k * 8, Y + 6 + j * 8, 2.7, 0, Math.PI * 2); g.fill();
+      }
+    }
+    if(ch === 'Z'){
+      const grave = d.grave && d.grave[0] === x && d.grave[1] === y;
+      if(grave){                                     // a small grave, a little wooden boat on it
+        g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(X + 6, Y + 6, P - 9, P - 8);
+        g.fillStyle = '#8a8478'; g.fillRect(X + 4, Y + 3, P - 9, P - 8);
+        g.fillStyle = '#a7a194'; g.fillRect(X + 4, Y + 3, P - 9, 4);
+        g.fillStyle = '#7a5434'; g.beginPath(); g.moveTo(X + 9, Y + 15); g.lineTo(X + 23, Y + 15); g.lineTo(X + 20, Y + 19); g.lineTo(X + 12, Y + 19); g.closePath(); g.fill();
+        g.fillStyle = '#e8e2d2'; g.beginPath(); g.moveTo(X + 16, Y + 7); g.lineTo(X + 16, Y + 14); g.lineTo(X + 21, Y + 14); g.closePath(); g.fill();
+      } else {                                       // a tomb from above, two tiles long: a knight with a sword carved on it
+        const left = at(x + 1, y) === 'Z' && !(at(x - 1, y) === 'Z');
+        g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(X + (left ? 4 : 0), Y + 7, P - (left ? 4 : 2), P - 8);
+        g.fillStyle = '#6f6a62'; g.fillRect(X + (left ? 2 : 0), Y + 3, P - (left ? 2 : 3), P - 8);
+        g.fillStyle = '#86807a'; g.fillRect(X + (left ? 2 : 0), Y + 3, P - (left ? 2 : 3), 3);
+        g.strokeStyle = 'rgba(40,30,50,0.6)'; g.lineWidth = 1.5;
+        if(left){                                    // the knight's helmet
+          g.beginPath(); g.arc(X + 14, Y + 15, 5, 0, Math.PI * 2); g.stroke();
+          g.beginPath(); g.moveTo(X + 10, Y + 15); g.lineTo(X + 18, Y + 15); g.stroke();
+        } else {                                     // …and his sword, faintly purple
+          g.strokeStyle = 'rgba(150,100,210,0.55)'; g.lineWidth = 2;
+          g.beginPath(); g.moveTo(X + 1, Y + 15); g.lineTo(X + 22, Y + 15); g.stroke();
+          g.beginPath(); g.moveTo(X + 4, Y + 11); g.lineTo(X + 4, Y + 19); g.stroke();
+        }
+      }
     }
     if(ch === '*'){                                  // a brazier
       g.fillStyle = '#2b2320'; g.beginPath(); g.arc(X + P / 2, Y + P / 2 + 3, P * 0.34, 0, Math.PI * 2); g.fill();
@@ -975,7 +1050,84 @@ function paintCatacomb(d){
       if(n(0, 1))  g.fillRect(X + P / 2 - 2, Y + P / 2, 4, P / 2);
       g.fillStyle = '#3a2513'; g.fillRect(X + P / 2 - 4, Y + P / 2 - 4, 8, 8);
     }
+    /* ---- the vault (3.19) ---- */
+    if(ch === 'M'){                                  // Cyborg's cradle: an iron dais, glowing conduits
+      g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(X, Y + 4, P, P - 2);
+      g.fillStyle = '#2a2633'; g.fillRect(X, Y + 2, P, P - 4);
+      g.fillStyle = '#3d384a'; g.fillRect(X, Y + 2, P, 4);
+      const mid = at(x - 1, y) === 'M' && at(x + 1, y) === 'M';
+      g.strokeStyle = 'rgba(150,110,255,0.75)'; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(X, Y + P - 9); g.lineTo(X + P, Y + P - 9); g.stroke();
+      g.strokeStyle = 'rgba(90,230,255,0.55)'; g.lineWidth = 1.2;
+      g.beginPath(); g.moveTo(X, Y + P - 6); g.lineTo(X + P, Y + P - 6); g.stroke();
+      if(mid){                                       // the dais: a clock ring
+        g.strokeStyle = 'rgba(190,160,255,0.85)'; g.lineWidth = 2;
+        g.beginPath(); g.arc(X + P / 2, Y + P / 2, P * 0.36, 0, Math.PI * 2); g.stroke();
+        for(let k = 0; k < 12; k++){
+          const a = k / 12 * Math.PI * 2;
+          g.beginPath(); g.moveTo(X + P / 2 + Math.cos(a) * P * 0.28, Y + P / 2 + Math.sin(a) * P * 0.28);
+          g.lineTo(X + P / 2 + Math.cos(a) * P * 0.34, Y + P / 2 + Math.sin(a) * P * 0.34); g.stroke();
+        }
+      } else {                                       // its arms: rivets and a cable
+        g.fillStyle = '#77708a';
+        for(let k = 0; k < 3; k++){ g.beginPath(); g.arc(X + 6 + k * 10, Y + 9, 1.6, 0, Math.PI * 2); g.fill(); }
+      }
+    }
+    if(ch === 'Q'){                                  // the cage's floor: moss and roots on the stones
+      g.fillStyle = 'rgba(40,90,40,0.55)'; g.fillRect(X, Y, P, P);
+      g.strokeStyle = 'rgba(120,85,50,0.85)'; g.lineWidth = 2;
+      for(let k = 0; k < 2; k++){
+        g.beginPath(); g.moveTo(X + rnd(x, y, k + 70) * P, Y);
+        g.quadraticCurveTo(X + rnd(x, y, k + 72) * P, Y + P / 2, X + rnd(x, y, k + 74) * P, Y + P); g.stroke();
+      }
+      g.fillStyle = '#6ab35e';
+      for(let k = 0; k < 4; k++){ g.beginPath(); g.ellipse(X + 4 + rnd(x, y, k + 80) * (P - 8), Y + 4 + rnd(x, y, k + 84) * (P - 8), 3.5, 1.8, rnd(x, y, k + 88) * 3, 0, Math.PI * 2); g.fill(); }
+    }
+    if(ch === 'E'){                                  // a stone table
+      g.fillStyle = 'rgba(0,0,0,0.38)'; g.fillRect(X + 2, Y + 7, P - 2, P - 8);
+      g.fillStyle = '#8b857a'; g.fillRect(X + (at(x - 1, y) === 'E' ? 0 : 2), Y + 4, P - (at(x - 1, y) === 'E' ? 0 : 2) - (at(x + 1, y) === 'E' ? 0 : 2), P - 10);
+      g.fillStyle = '#a49e92'; g.fillRect(X + (at(x - 1, y) === 'E' ? 0 : 2), Y + 4, P - (at(x - 1, y) === 'E' ? 0 : 2) - (at(x + 1, y) === 'E' ? 0 : 2), 3);
+    }
+    if(ch === 'Y'){                                  // a humming machine against the wall: dials, and empty glass jars
+      g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(X + 2, Y + 5, P - 2, P - 4);
+      g.fillStyle = '#34303d'; g.fillRect(X + 1, Y + 1, P - 3, P - 4);
+      g.strokeStyle = '#4c465a'; g.lineWidth = 1.5; g.strokeRect(X + 1.5, Y + 1.5, P - 4, P - 5);
+      for(let k = 0; k < 2; k++){
+        const jx = X + 6 + k * 12, jy = Y + 6;
+        g.fillStyle = 'rgba(170,130,255,0.22)'; g.fillRect(jx, jy, 8, 13);
+        g.strokeStyle = 'rgba(200,180,255,0.7)'; g.lineWidth = 1; g.strokeRect(jx + 0.5, jy + 0.5, 7, 12);
+      }
+      g.fillStyle = '#c9a24a'; g.beginPath(); g.arc(X + P / 2, Y + P - 9, 2.5, 0, Math.PI * 2); g.fill();
+    }
   }
+  /* (3.19) the vault: a great clock-face carved into the middle of the floor */
+  if(d.vaultClock){
+    const [cx, cy, r] = d.vaultClock;
+    g.strokeStyle = 'rgba(170,140,230,0.22)'; g.lineWidth = 3;
+    g.beginPath(); g.arc(cx * P, cy * P, r * P, 0, Math.PI * 2); g.stroke();
+    g.lineWidth = 1.5;
+    g.beginPath(); g.arc(cx * P, cy * P, (r - 0.35) * P, 0, Math.PI * 2); g.stroke();
+    for(let k = 0; k < 12; k++){
+      const a = k / 12 * Math.PI * 2, r0 = (r - 0.3) * P, r1 = (r - (k % 3 ? 0.1 : -0.05)) * P;
+      g.lineWidth = k % 3 ? 1.5 : 3;
+      g.beginPath(); g.moveTo(cx * P + Math.cos(a) * r0, cy * P + Math.sin(a) * r0); g.lineTo(cx * P + Math.cos(a) * r1, cy * P + Math.sin(a) * r1); g.stroke();
+    }
+    g.lineWidth = 3; g.strokeStyle = 'rgba(170,140,230,0.18)';
+    g.beginPath(); g.moveTo(cx * P, cy * P); g.lineTo(cx * P - 0.55 * r * P, cy * P - 0.25 * r * P); g.stroke();   // the hands, running backwards
+    g.beginPath(); g.moveTo(cx * P, cy * P); g.lineTo(cx * P + 0.15 * r * P, cy * P - 0.8 * r * P); g.stroke();
+  }
+  /* (3.18) a trail of green leaves across the floor */
+  (d.leaves || []).forEach(([x, y])=>{
+    const X = x * P, Y = y * P;
+    for(let k = 0; k < 3; k++){
+      const lx = X + 5 + rnd(x, y, k + 30) * (P - 10), ly = Y + 5 + rnd(x, y, k + 40) * (P - 10), a = rnd(x, y, k + 50) * Math.PI;
+      g.save(); g.translate(lx, ly); g.rotate(a);
+      g.fillStyle = rnd(x, y, k + 60) < 0.5 ? '#5fae5a' : '#86c66a';
+      g.beginPath(); g.ellipse(0, 0, 4.5, 2.2, 0, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = 'rgba(30,70,30,0.6)'; g.lineWidth = 0.8; g.beginPath(); g.moveTo(-4, 0); g.lineTo(4, 0); g.stroke();
+      g.restore();
+    }
+  });
   try { _cataArt[d.key] = c.toDataURL('image/png'); } catch(e){ _cataArt[d.key] = ''; }
   return _cataArt[d.key];
 }

@@ -441,10 +441,13 @@ function refitWriteBox(){
   _fitTimer = setTimeout(()=>{ if(ui.screen==='quiz' && ui.quiz && !ui.quiz.resolved) initQuizChar(ui.quiz.charIndex); }, 180);
 }
 let _battleFitTimer = null;
+/* (3.11) Only the fight itself is redrawn: a page shown over a finished one
+   (a result, a scene) stays put when the device turns, rather than giving
+   way to the fight it closed. */
 function refitBattle(){
-  if(ui.screen !== 'battle' || !ui.battle) return;
+  if(ui.screen !== 'battle' || !ui.battle || !document.getElementById('battleStage')) return;
   clearTimeout(_battleFitTimer);
-  _battleFitTimer = setTimeout(()=>{ if(ui.screen==='battle' && ui.battle) renderBattle(); }, 200);
+  _battleFitTimer = setTimeout(()=>{ if(ui.screen==='battle' && ui.battle && document.getElementById('battleStage')) renderBattle(); }, 200);
 }
 try{
   window.addEventListener('resize', ()=>{ refitWriteBox(); refitBattle(); });

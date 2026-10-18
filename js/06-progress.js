@@ -368,6 +368,7 @@ function rollTokenDrop(){
 
 function onBattleWon(){
   const b = ui.battle;
+  tallyBattleForEyeBreak();        // (3.22) counted here, once, however it goes on (showVictory asks again)
   if(b.guardianTrial) return onGuardianTrialResolved();
   if(b.scriptedLoss==='padrino'){ restoreRealParty(); return onPadrinoResolved(); }
   if(b.scriptedLoss==='monkey'){ return onMonkeyResolved(); }   // winning her is still the scripted beat
@@ -454,14 +455,15 @@ function playEvolutions(list, done){
   let i = 0;
   const next = ()=>{
     if(i >= list.length){ done(); return; }
-    /* if a previous scene was cut short, its fanfare must not follow us */
-    if(playEvolutions._f) clearTimeout(playEvolutions._f);
     const ev = list[i++];
     playSfx('evolution');
-    /* The reveal lands on the same fanfare a Very High or Ultra stone gets —
-     the climb has been building for fourteen seconds and used to arrive in
-     silence. */
-    playEvolutions._f = setTimeout(()=> playSfx('stone_veryhigh'), EVO_FLASH_MS - 200);
+    /* (3.28) The fanfare is made ready now, so it can start the instant the
+       new form shows (finish). A Very High stone's fanfare used to be timed
+       for EVO_FLASH_MS − 200 — but the flicker starts 500 ms in and runs a
+       little past EVO_FLASH_MS, so it went off while the forms were still
+       flickering, 0.7 s before the reveal, and the reveal's own fanfare came
+       after it. One fanfare now, on the reveal. */
+    preloadSfx(['stone_ultra']);
     const sp = SPECIES[ev.species];
     /* Explicit stages when the caller worked them out; otherwise derive them.
        The pair must always be CONSECUTIVE — the form you were, and the form you
@@ -536,18 +538,24 @@ function playEvolutions(list, done){
 
     const finish = ()=>{
       clearTimeout(timer);
-      /* The transformation loop has to stop before the fanfare, or the two
-         overlap and neither reads. Same fanfare as winning an Ultra stone. */
-      fadeOutSfx('evolution', 320);
-      setTimeout(()=> playSfx('stone_ultra'), 260);
+      /* The transformation sound gives way to the fanfare the moment the new
+         form shows: a short fade under the fanfare's first notes — the same
+         fanfare as winning an Ultra stone. (3.28: it started 260 ms after
+         the fade, from an <audio> element that could still be fetching its
+         file — or, on an iPad, not start at all so long after a tap: it plays
+         from memory now — playSfx, playSfxSoon.) */
+      fadeOutSfx('evolution', 250);
+      playSfxSoon('stone_ultra', 1500);
       // settle on the NEW form, full colour, with the old one gone for good
       layerFrom.style.display = 'none';
       layerTo.style.opacity = '1';
       layerTo.classList.remove('evo-inverted');
       spriteBox.classList.add('evo-pop');
+      /* (3.20) a story's own words for it — a core come home — and a line under */
       ov.querySelector('#evoText').innerHTML =
-        `<b>${escapeHtml(ev.name)}</b> ${ev.crowned?'is crowned!':(ev.hatched?'hatched!':'evolved!')}` +
-        (ev.newMoves.length ? `<div class="evo-learn">Learned ${escapeHtml(ev.newMoves.join(', '))}!</div>` : '');
+        (ev.headline || `<b>${escapeHtml(ev.name)}</b> ${ev.crowned?'is crowned!':(ev.hatched?'hatched!':'evolved!')}`) +
+        (ev.newMoves.length ? `<div class="evo-learn">Learned ${escapeHtml(ev.newMoves.join(', '))}!</div>` : '') +
+        (ev.note ? `<div class="evo-learn evo-note">${ev.note}</div>` : '');
       ov.querySelector('#evoActions').innerHTML =
         `<button class="btn btn-primary" id="evoNext" style="width:auto;padding:12px 30px;">Continue</button>`;
       ov.querySelector('#evoNext').addEventListener('click', ()=>{
