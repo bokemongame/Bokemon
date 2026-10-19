@@ -204,7 +204,7 @@ function renderStub(title, emoji, msg, back){
 /* ---------- SCREEN: spelling list admin (password-gated) ---------- */
 /* The old default is now the *starting* password; this is the master override,
    which is never shown as a hint. */
-const MASTER_CODE  = '10110507605';
+const MASTER_CODE  = '101105';   // the backup home's (tools/new-home.js)
 const DEFAULT_PASS = '101105';
 const RESET_CODE   = MASTER_CODE;
 function currentPass(){ return (state && state.settings && state.settings.password) || DEFAULT_PASS; }

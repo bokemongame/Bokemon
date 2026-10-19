@@ -732,13 +732,16 @@ function computeMaxStat(species, level, supplements, mon, forHp){
    Anonymous auth ties the cloud identity to THIS BROWSER's local storage. If
    that's ever cleared, the link is lost even though the cloud data survives —
    the JSON backup file remains the manual safety net for that case. */
+/* The backup home's Firebase project (bokem0n), for
+   bokemongame.github.io/Bokemon. The default copy of this file, for the old
+   home (samzouen/BOKEMON), uses b0kemon. Made by tools/new-home.js. */
 const firebaseConfig = {
-  apiKey: "AIzaSyBEg78ygTrSF7RPnfxrjcZ_Bg_2DQ4FrD0",
-  authDomain: "b0kemon.firebaseapp.com",
-  projectId: "b0kemon",
-  storageBucket: "b0kemon.firebasestorage.app",
-  messagingSenderId: "91724853668",
-  appId: "1:91724853668:web:6d22831d0da10717189131"
+  apiKey: "AIzaSyB4yTj6fz5mA5CAh7XBYwU5p0XElxiYCt8",
+  authDomain: "bokem0n.firebaseapp.com",
+  projectId: "bokem0n",
+  storageBucket: "bokem0n.firebasestorage.app",
+  messagingSenderId: "465337644075",
+  appId: "1:465337644075:web:97f4a8347d4525e511266e"
 };
 const CLOUD_COLLECTION = 'saves';
 let cloudUid = null;
