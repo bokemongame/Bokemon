@@ -1,0 +1,1962 @@
+/* ============================================================
+   WALKABLE DECKS
+   The three decks of the Vane Shear, walked rather than tapped. One grid per
+   deck, the painting behind it, a D-pad, and an action button for every thing
+   you are standing beside.
+
+   Nothing here talks to the network. The guards, the camera and the steps are
+   all local; only the usual save touches Firebase.
+   ============================================================ */
+
+/* How close the camera sits. The stage is square, so this is how many tiles
+   you see across it. Seven keeps a phone close to the action; a tablet has the
+   room for nine, which shows more of the ship and asks less of the paintings,
+   since each tile is then stretched less. Recomputed on every render, so
+   turning a tablet or resizing a window picks the right one up. */
+let WALK_VIEW = 7;
+function walkView(){ return Math.min(window.innerWidth, window.innerHeight) >= 700 ? 9 : 7; }
+let WALK_T = 44;                         // recomputed to fit the stage
+
+/* A thing can be bigger than one tile (the Whalelord's body is two by two) and
+   some are only there at a certain point in the story (`when`). Everything that
+   asks "what is standing here" goes through these, so the picture, the blocking
+   and the buttons can never disagree. */
+/* A picture that will not load must still show something. An invisible thing
+   that blocks four tiles is the worst of both worlds. */
+/* (3.97) A figure's feet on its square's floor: most pictures have some empty rows under the feet (a quarter of the
+   picture, some of them), so the figure stood that high above its square ("chestnut knights are not well placed").
+   Measured once a picture (its lowest row with anything in it), it is let down that far: --feet, read by the
+   figures' CSS (.jg-art and .ca-art, translate:-50% var(--feet)). Where a picture cannot be read (opened from a
+   file), it stays as it was. */
+const SPRITE_FEET = {};
+function spriteFeet(img){
+  const src = img && img.getAttribute('src');
+  if(!src) return;
+  if(SPRITE_FEET[src] == null){
+    try {
+      const w = img.naturalWidth, h = img.naturalHeight;
+      if(!w || !h) return;
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      const g = c.getContext('2d', { willReadFrequently:true });
+      g.drawImage(img, 0, 0);
+      const d = g.getImageData(0, 0, w, h).data;
+      let low = -1;                                                   // the row under the lowest one with anything in it
+      for(let y = h - 1; y >= 0 && low < 0; y--) for(let x = 0; x < w; x++) if(d[(y * w + x) * 4 + 3] > 24){ low = y + 1; break; }
+      SPRITE_FEET[src] = low < 0 ? 0 : (h - low) / h;
+    } catch(e){ SPRITE_FEET[src] = 0; }
+  }
+  const f = SPRITE_FEET[src];
+  if(f > 0.005) img.style.setProperty('--feet', (f * 100).toFixed(1) + '%');
+}
+function walkArtMissing(img, icon, px, rot){
+  const s = document.createElement('span');
+  s.className = 'walk-emoji';                    // (2.95) it turns, as the picture would have
+  s.textContent = icon || '❓';
+  s.style.cssText = `font-size:${px}px;line-height:1;` + (rot ? `transform:rotate(${rot}deg);` : '');
+  img.replaceWith(s);
+}
+function deckThings(d){ return d.things.filter(t => !t.when || t.when()); }
+function thingCovers(t, x, y){
+  return x >= t.x && x < t.x + (t.w || 1) && y >= t.y && y < t.y + (t.h || 1);
+}
+function wThingAt(d, x, y){ return deckThings(d).find(t => thingCovers(t, x, y)); }
+function wBlockedBy(d, x, y){ const t = wThingAt(d, x, y); return !!(t && !t.walk); }
+function thingNear(t, p){
+  const dx = Math.max(t.x - p.x, 0, p.x - (t.x + (t.w || 1) - 1));
+  const dy = Math.max(t.y - p.y, 0, p.y - (t.y + (t.h || 1) - 1));
+  return dx + dy <= 1;
+}
+
+/* ------------------------------------------------------------
+   WHICH WAY A PICTURE FACES (2.95)
+   Every sprite is drawn facing LEFT — the monsters' _front pictures and the
+   NPCs alike. So whoever is moving right, or is turned to something on their
+   right, is flipped. One class does it everywhere: `face-r` on the box (you,
+   the Whalelord, a person on the deck, a guard, a scene's actor), which is
+   `scale:-1 1` on the picture inside — added to whatever else the picture is
+   doing (a guard's shake, a faint, a bob), never in place of it.
+   Moving up or down keeps the way you last faced.
+   ------------------------------------------------------------ */
+function faceRight(el, right){ if(el) el.classList.toggle('face-r', !!right); return el; }
+/* Turned toward tx (tiles) from cx — unless it is straight above or below,
+   when it keeps the way it faces. */
+function faceToward(el, cx, tx){
+  if(el && cx != null && tx != null && Math.abs(tx - cx) > 0.05) faceRight(el, tx > cx);
+  return el;
+}
+/* A scene's actor (sceneActor's, or a monster on the deck): by id or box. */
+function actorFace(a, right){
+  const el = typeof a === 'string' ? document.getElementById('sa-' + a) : a;
+  if(!el) return null;
+  if(el._o) el._o.flip = !!right;
+  return faceRight(el, right);
+}
+function actorFaceToward(a, tx){
+  const el = typeof a === 'string' ? document.getElementById('sa-' + a) : a;
+  const o = el && el._o;
+  if(!o || tx == null) return el;
+  const cx = o.x + (o.w || 1) / 2;
+  if(Math.abs(tx - cx) > 0.05) actorFace(el, tx > cx);
+  return el;
+}
+/* You turn to face something at tile column tx (its middle). */
+function walkFaceToward(tx){
+  const w = walkState(), p = w.at && w.at[w.deck];
+  if(!p || tx == null || Math.abs(tx - (p.x + 0.5)) <= 0.05) return;
+  w.faceX = tx > p.x + 0.5 ? 'r' : 'l';
+  faceRight(document.getElementById('walkYou'), w.faceX === 'r');
+}
+/* …and the Whalelord, likewise. */
+function walkGhostFaceToward(tx){
+  const w = walkState(), q = w.ghostAt && w.ghostAt[w.deck];
+  if(!q || tx == null || Math.abs(tx - (q.x + 0.5)) <= 0.05) return;
+  w.ghostFaceX = tx > q.x + 0.5 ? 'r' : 'l';
+  faceRight(document.getElementById('walkGhost'), w.ghostFaceX === 'r');
+}
+/* The middle of a deck thing, across. */
+function thingMidX(t){
+  const ox = (typeof t.dx === 'function' ? t.dx() : t.dx) || 0;
+  return t.x + ox + (t.w || 1) / 2;
+}
+/* A person on the deck (not a door, a sign or a body on the floor): turns to
+   look at you while you are beside them. (3.07) `faceR`: someone who sits
+   facing right (to a table on their right, say) — turned back that way when
+   you walk on. */
+function thingTurns(t){ return !!((t.sprite || t.html) && !t.walk && !t.rot && !t.still); }
+function thingFaceNear(t, p, near){
+  const dx = p ? p.x + 0.5 - thingMidX(t) : 0;
+  faceRight(t.el, near && Math.abs(dx) > 0.05 ? dx > 0 : !!t.faceR);
+}
+
+/* Each deck: its grid, who stands where, and where its painting sits — all in
+   TILE units, so the numbers mean the same at any zoom. */
+const DECKS = {
+  weather_deck: {
+    art:'weather_deck', music:'zone_weather_deck',
+    bx:0.1750, by:0.010, bs:0.032500,
+    rows:[
+"##########################","##########################","##########################","#############.############",
+"############...###########","###########.....##########","##########.......#########","#########..#####.#########",
+"#########.######..########","#########.######..########","#########.#######.########","#########.#######.########",
+"#########.#.....#.########","#########.#.###.#.########","#########.#.###.#.########","#########.#.###.#.########",
+"#########...###....#######","######.#..#######.########","######...########.########","######.#.########.########",
+"########.########..#######","########.########.########","########..#######.########","#########...###....#######",
+"#########.#.....#.########","#########.#.###.#.########","#########.#.###.#.########","#########.#.###.#..#######",
+"#########.#.###.#.########","#########.#.###.#.########","#########.#..#..#.########","#########.##...##..#######",
+"#########.#######.########","#########.#######.########","#########..#####..########","##########..###..#########",
+"###########.....##########","##########################","##########################",
+    ],
+    spawn:[16,9],
+    prizes:[[13,12],[13,24],[13,31],[13,36]],
+    things:[
+      /* one ladder over the side: Pell runs it, Ines just watches */
+      { x:6,  y:17, sprite:'diver1', icon:'🤿', verb:'Dive', act:()=> diveFromDeck() },
+      { x:6,  y:19, sprite:'diver2', icon:'🤿', verb:'Talk', act:()=> diverChat() },
+      { x:18, y:16, sprite:'fisherman1', icon:'🎣', verb:'Help', act:()=> railHelp(1) },
+      { x:18, y:20, sprite:'fisherman2', icon:'🎣', verb:'Help', act:()=> railHelp(2) },
+      { x:18, y:23, sprite:'fisherman3', icon:'🎣', verb:'Help', act:()=> railHelp(3) },
+      { x:18, y:27, sprite:'fisherman4', icon:'🎣', verb:'Help', act:()=> railHelp(4) },
+      { x:18, y:31, sprite:'fisherman5', icon:'🎣', verb:'Help', act:()=> railHelp(5) },
+      { x:16, y:9,  walk:true, verb:'Down', where:'Cabin Deck', act:()=> goDeck('cabin_deck') },
+      /* The Whalelord's body, laid across the bow the way the fishermen left
+         it: two tiles by two, turned. It blocks the bow tip while it lies
+         there, which is what a whale on a foredeck would do. */
+      { x:12, y:4, w:2, h:2, sprite:'whalelord_corpse', rot:30, icon:'🐋', verb:'The body',
+        when:()=> !!(typeof r4 === 'function' && r4().corpseSeen && !r4().corpseGone),
+        act:()=> corpseChat() },
+      /* These two are only here while the scene on deck is playing — and that
+         is remembered in the save, so leaving and coming back finds them. */
+      { x:13, y:6, sprite:'ship_captain', icon:'⚓', verb:'Captain',
+        when:()=> !!(typeof r4 === 'function' && r4().corpseStage === 'deck'), act:()=> corpseDeckCaptain() },
+      { x:14, y:6, sprite:'scientist_supervisor', icon:'🧑‍🔬', verb:'Supervisor',
+        when:()=> !!(typeof r4 === 'function' && r4().corpseStage === 'deck'), act:()=> corpseDeckSupervisor() },
+    ],
+  },
+  cabin_deck: {
+    art:'cabin_deck', music:'zone_cabin_deck',
+    bx:-4.1393, by:-0.5131, bs:0.031868,
+    rows:[
+"###################","###################","###################","###################",
+"###################","###################","#######.###.#######","#######......######",
+"######..###..######","######.############","#####...###...#####","#####.#.###.#.#####",
+"#####.#.###.#.#####","####..#.###.#..####","####...........####","#########.#########",
+"#########.#########","#####.........#####","#####...#.#...#####","#########.#########",
+"#########.#########","####...........####","####..###.##...####","####..###.#########",
+"#########.#########","#########.#....####","#####..........####","#####...#.#....####",
+"#########.#########","####...##.#########","######.##.....#####","#####.....###.#####",
+"#######...###.#####","#######.......#####","#########.#########","#########.#########",
+"###################","###################","###################",
+    ],
+    spawn:[12,8],
+    prizes:[[13,10],[4,29],[9,35]],
+    things:[
+      { x:11, y:6,  sprite:'ship_captain', icon:'⚓', verb:'Talk', act:()=> chartRoom(),
+        extra:()=> suspectOf('ship_captain') },
+      { x:7,  y:6,  sprite:'shipkeeper',   icon:'⚓', verb:'Shop', act:()=> shipkeeperShop(),
+        extra:()=> suspectOf('shipkeeper') },
+      { x:12, y:8,  walk:true, verb:'Up',   where:'Weather Deck', act:()=> goDeck('weather_deck') },
+      { x:12, y:8,  walk:true, verb:'Down', where:'Laboratory',   act:()=> goDeck('laboratory_deck') },
+      { x:5,  y:17, sprite:'sailor1', icon:'⚓', verb:'Talk', act:()=> sailorChat(1), extra:()=> suspectOf('sailor1') },
+      { x:13, y:17, sprite:'sailor2', icon:'⚓', verb:'Talk', act:()=> sailorChat(2), extra:()=> suspectOf('sailor2') },
+      { x:4,  y:22, sprite:'sailor3', icon:'⚓', verb:'Talk', act:()=> sailorChat(3), extra:()=> suspectOf('sailor3') },
+      /* Sailor Cato has the two of them on buckets now: at the bunks on even
+         hours, at the right-hand heads on odd ones. */
+      { x:12, y:22, sprite:'sailor5',              icon:'⚓',   verb:'Talk', act:()=> catoChat(),
+        when:()=> catoPlace() === 'bunk' },
+      { x:13, y:22, sprite:'scientist_supervisor', icon:'🧑‍🔬', verb:'Talk', act:()=> culpritChat('barnaby'),
+        when:()=> catoPlace() === 'bunk' },
+      { x:14, y:22, sprite:'scientist6',           icon:'🧑‍🔬', verb:'Talk', act:()=> culpritChat('mireille'),
+        when:()=> catoPlace() === 'bunk' },
+      { x:13, y:10, sprite:'sailor5',              icon:'⚓',   verb:'Talk', act:()=> catoChat(),
+        when:()=> catoPlace() === 'heads' },
+      { x:13, y:12, sprite:'scientist_supervisor', icon:'🧑‍🔬', verb:'Talk', act:()=> culpritChat('barnaby'),
+        fx:'disgust', when:()=> catoPlace() === 'heads' },
+      { x:14, y:13, sprite:'scientist6',           icon:'🧑‍🔬', verb:'Talk', act:()=> culpritChat('mireille'),
+        fx:'disgust', when:()=> catoPlace() === 'heads' },
+      { x:13, y:22, sprite:'rival',   icon:'🧑', verb:'Talk', act:()=> rivalCabin(),
+        when:()=> !(r4().solved || r4().escapeStage),     // gone once he has taken the core
+        extra:()=> suspectOf('rival') },
+      { x:5,  y:26, sprite:'sailor4', icon:'⚓', verb:'Talk', act:()=> sailorChat(4), extra:()=> suspectOf('sailor4') },
+      { x:14, y:25, walk:true, verb:'Recover', act:()=> leaveDeck('recover') },
+      { x:13, y:27, walk:true, verb:'Storage', act:()=> leaveDeck('storage') },
+      { x:8,  y:32, sprite:'cook',    icon:'🧑‍🍳', verb:'Talk', act:()=> cookChat(),
+        extra:()=> suspectOf('cook') },
+      { x:5,  y:31, sprite:'sailor5', icon:'⚓', verb:'Talk', act:()=> sailorChat(5), extra:()=> suspectOf('sailor5'),
+        when:()=> !catoOnDuty() },                 // he has moved up to mind the prisoners
+    ],
+  },
+  laboratory_deck: {
+    art:'laboratory_deck', music:'zone_laboratory_deck',
+    bx:-0.080, by:-0.6300, bs:0.031500,
+    rows:[
+"##########################","##########################","##########################","##########################",
+"##########################","############...###########","###########......#########","###########.......########",
+"##########..###...########","##########.######.########","#########...###...########","#########.#.###.#.########",
+"#########.#.###.#.########","#########.#.###.#.########","########..........########","#############.############",
+"#############.############","########...........#######","########....#.############","#############.############",
+"#############.############","########...........#######","########....#.#.##.#######","#############.#....#######",
+"#############.############","########....#.############","########...........#######","########....#.##...#######",
+"#############.############","#########...#.############","#########.........########","#########...#.....########",
+"#############.....########","##########.......#########","############...###########","##########################",
+"##########################","##########################","##########################",
+    ],
+    spawn:[16,8],
+    prizes:[[17,30],[10,33],[13,34]],
+    aquarium:[{sp:'starfish',x:11,y:35},{sp:'loong',x:13,y:36},{sp:'seahorse',x:16,y:35}],
+    things:[
+      { x:13, y:5,  sprite:'scientist_supervisor', icon:'🧑‍🔬', verb:'Report',
+        act:()=> crewUpFront() ? upFrontChat('scientist_supervisor') : labSupervisor(),
+        dx:()=> crewUpFront() ? 0.2 : 0,            // the two of them shoulder to shoulder
+        dizzy:()=> crewUpFront() && !!r4().escapeStage,
+        when:()=> labStage() !== 'after' },
+      /* Named, and standing beside him: Mireille, until the story moves on. */
+      { x:14, y:5,  sprite:'scientist6', icon:'🧑‍🔬', verb:'Talk', act:()=> upFrontChat('scientist6'),
+        dx:-0.2, dizzy:()=> !!r4().escapeStage, when:()=> crewUpFront() },
+      /* Once it is over, Rhona stands where he stood — and means to earn it. */
+      { x:13, y:5,  sprite:'scientist9', icon:'🧑‍🔬', verb:'Talk', act:()=> rhonaTask(),
+        when:()=> labStage() === 'after', mark:()=> rhonaHasTask() },
+      { x:16, y:8,  walk:true, verb:'Up', where:'Cabin Deck', act:()=> goDeck('cabin_deck') },
+      { x:8,  y:14, sprite:'scientist1', icon:'🧑‍🔬', verb:'Talk', act:()=> labScientist(1) , mark:()=> sciHasHunt(1) },
+      { x:8,  y:17, sprite:'scientist2', icon:'🧑‍🔬', verb:'Talk', act:()=> labScientist(2) , mark:()=> sciHasHunt(2) },
+      { x:18, y:17, sprite:'scientist3', icon:'🧑‍🔬', verb:'Talk', act:()=> labScientist(3) , mark:()=> sciHasHunt(3) },
+      { x:8,  y:22, sprite:'scientist4', icon:'🧑‍🔬', verb:'Talk', act:()=> labScientist(4) , mark:()=> sciHasHunt(4) },
+      { x:18, y:21, sprite:'scientist5', icon:'🧑‍🔬', verb:'Talk', act:()=> labScientist(5) , mark:()=> sciHasHunt(5) },
+      { x:8,  y:26, sprite:'scientist6', icon:'🧑‍🔬', verb:'Talk', act:()=> labScientist(6),
+        when:()=> labStage() !== 'after' && !crewUpFront() },
+      { x:18, y:26, sprite:'scientist7', icon:'🧑‍🔬', verb:'Talk', act:()=> labScientist(7) , mark:()=> sciHasHunt(7) },
+      { x:9,  y:30, sprite:'scientist8', icon:'🧑‍🔬', verb:'Talk', act:()=> labScientist(8) , mark:()=> sciHasHunt(8) },
+      { x:15, y:32, sprite:'scientist9', icon:'🧑‍🔬', verb:'Talk', act:()=> labScientist(9),
+        when:()=> labStage() !== 'after' && !crewUpFront() },
+      /* Once Mireille has been named: Rhona, the captain and the shipkeeper stand
+         by near the supervisor until the scene moves up to the bow. */
+      { x:14, y:7,  sprite:'scientist9',   icon:'🧑‍🔬', verb:'Talk', act:()=> upFrontChat('scientist9'),   when:()=> crewUpFront() },
+      { x:15, y:6,  sprite:'ship_captain', icon:'⚓',   verb:'Talk', act:()=> upFrontChat('ship_captain'), when:()=> crewUpFront() },
+      { x:12, y:5,  sprite:'shipkeeper',   icon:'🧰',   verb:'Talk', act:()=> upFrontChat('shipkeeper'),   when:()=> crewUpFront() },
+    ],
+  },
+};
+
+/* Where you are, per deck, so a deck remembers you when you come back. */
+function walkState(){
+  ui.walk = ui.walk || { deck:null, at:{}, face:'d', last:0, busy:false };
+  return ui.walk;
+}
+/* ------------------------------------------------------------
+   THE RAIL
+   A fisherman shouts for about half a minute, then gives up and gets on with
+   it for a bit before the next lot arrive. You are not being tested on
+   reactions here — you are being asked to come over.
+   ------------------------------------------------------------ */
+const CALL_FOR = 30000, REST_MIN = 10000, REST_VAR = 10000;
+function railState(){
+  ui.rail = ui.rail || { who:null, until:0, next:0 };
+  return ui.rail;
+}
+function railTick(){
+  const r = railState(), now = Date.now();
+  const g = r4();
+  /* nobody has time for birds while the whales are across the lane, and the
+     Whalelord will not hear of it at all */
+  if(!g.diversBeaten || whaleHolds() || (g.wallFound && !g.solved)){ r.who = null; return; }
+  if(r.who && now > r.until){ r.who = null; r.next = now + REST_MIN + Math.random()*REST_VAR; }
+  if(!r.who && now > r.next){ r.who = 1 + Math.floor(Math.random()*5); r.until = now + CALL_FOR; }
+  paintRail();
+}
+function paintRail(){
+  const r = railState();
+  document.querySelectorAll('.rail-call').forEach(e=>e.remove());
+  if(!r.who || walkState().deck !== 'weather_deck') return;
+  const d = DECKS.weather_deck;
+  const t = d.things.find(x=>x.sprite === 'fisherman'+r.who);
+  if(!t || !t.el) return;
+  const s = document.createElement('div');
+  s.className = 'rail-call';
+  s.textContent = '🆘';
+  t.el.appendChild(s);
+}
+let _railTimer = null;
+function startRail(){ clearInterval(_railTimer); _railTimer = setInterval(railTick, 1000); railTick(); }
+function stopRail(){ clearInterval(_railTimer); _railTimer = null; }
+
+/* Whoever is still pinging can be investigated. It is a separate button, so
+   talking to somebody never turns into accusing them by accident. */
+function suspectOf(id){
+  if(typeof pings !== 'function' || !pings(id)) return null;
+  return { verb:'🔍 Investigate',
+           act:()=> (id === 'rival') ? rivalCabin() : crewChallenge(id) };
+}
+/* Anything that takes you off the deck notes where to come back to. */
+function leaveDeck(where){
+  walkTeardown();
+  ui.walkBack = walkState().deck;
+  go(where);
+}
+/* Drawn triangles rather than ▲▼◀▶. The characters were real text, so a long
+   press selected them and popped up the copy menu mid-walk. */
+function TRI(dir){
+  const pts = { u:'12,6 20,18 4,18', d:'12,18 4,6 20,6',
+                l:'6,12 18,4 18,20', r:'18,12 6,4 6,20' }[dir];
+  return `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">` +
+         `<polygon points="${pts}" fill="currentColor"/></svg>`;
+}
+/* ------------------------------------------------------------
+   THE TANKS
+   Three specimens drifting in the aquarium at the stern of the laboratory.
+   Each wanders its own little box at its own pace: the starfish barely moves,
+   the seahorse ambles, the loong is comparatively busy. Facing follows the
+   direction of travel — (2.95) its front picture, which faces left, going
+   left, and the same picture flipped (face-r) going right.
+
+   It runs on one 50ms tick rather than a 60fps loop: the motion is slow
+   enough that nothing is gained by drawing it sixty times a second, and the
+   phone stays cool.
+   ------------------------------------------------------------ */
+const SWIM = {
+  /* per second, as a fraction of a tile, and how often the vertical drift
+     changes its mind */
+  starfish: { sx:[0.015,0.035], sy:[0.010,0.022], flip:[4500,6200] },
+  seahorse: { sx:[0.030,0.060], sy:[0.020,0.040], flip:[3000,4000] },
+  loong:    { sx:[0.050,0.100], sy:[0.035,0.065], flip:[2000,2600] },
+};
+const SWIM_X = 0.45, SWIM_Y = 0.30;      // how far either way, in tiles
+/* Drawn bigger than a tile. Only the picture changes: the drift box (SWIM_X /
+   SWIM_Y) and the speeds are in tiles and stay exactly as they were. */
+const SWIM_SCALE = { starfish:2, loong:2, seahorse:2 };
+function fishScale(sp){ return SWIM_SCALE[sp] || 1; }
+function fishArt(sp, view){
+  return monPortrait(sp, Math.round(WALK_T * 0.5 * fishScale(sp)), { view, bare:true, stage:0 });
+}
+const rnd = (a,b)=> a + Math.random()*(b-a);
+let _tank = null, _tankTimer = null;
+
+function buildAquarium(world, d){
+  if(!d.aquarium) return;
+  _tank = d.aquarium.map(f=>{
+    const el = document.createElement('div');
+    el.className = 'walk-fish';
+    const box = WALK_T * fishScale(f.sp), off = (box - WALK_T) / 2;
+    el.style.cssText = `left:${f.x*WALK_T - off}px;top:${f.y*WALK_T - off}px;` +
+                       `width:${box}px;height:${box}px;`;
+    el.innerHTML = fishArt(f.sp, 'front');
+    world.appendChild(el);
+    const k = SWIM[f.sp] || SWIM.seahorse;
+    return { el, k, sp:f.sp, dx:1, dy:1, x:rnd(-SWIM_X,SWIM_X), y:rnd(-SWIM_Y,SWIM_Y),
+             vx:rnd(k.sx[0],k.sx[1]), vy:rnd(k.sy[0],k.sy[1]),
+             next:performance.now()+rnd(k.flip[0],k.flip[1]), face:'left' };
+  });
+  clearInterval(_tankTimer);
+  _tankTimer = setInterval(swimTick, 50);
+}
+function stopAquarium(){ clearInterval(_tankTimer); _tankTimer = null; _tank = null; }
+function swimTick(){
+  if(!_tank) return;
+  const now = performance.now();
+  _tank.forEach(f=>{
+    f.x += f.dx * f.vx * 0.05;
+    if(f.x >  SWIM_X){ f.x =  SWIM_X; f.dx = -1; f.vx = rnd(f.k.sx[0], f.k.sx[1]); }
+    if(f.x < -SWIM_X){ f.x = -SWIM_X; f.dx =  1; f.vx = rnd(f.k.sx[0], f.k.sx[1]); }
+    /* it turns round to face the way it is going */
+    const want = f.dx < 0 ? 'left' : 'right';
+    if(want !== f.face){
+      f.face = want;
+      faceRight(f.el, want === 'right');
+    }
+    f.y += f.dy * f.vy * 0.05;
+    if(Math.abs(f.y) > SWIM_Y){ f.y = Math.sign(f.y)*SWIM_Y; f.dy *= -1; }
+    /* the vertical drift changes its mind on its own clock, without waiting
+       to reach an edge */
+    if(now > f.next){
+      f.dy *= -1;
+      f.vy = rnd(f.k.sy[0], f.k.sy[1]);
+      f.next = now + rnd(f.k.flip[0], f.k.flip[1]);
+    }
+    f.el.style.transform = `translate(${f.x*WALK_T}px, ${f.y*WALK_T}px)`;
+  });
+}
+
+/* ------------------------------------------------------------
+   SOMETHING FOR LOOKING
+   Nothing is drawn and nothing is hinted at. Walk onto the tile and ten skill
+   tokens arrive. Ten of them across the three decks, one hundred tokens for
+   nobody's reason but curiosity. Each is claimed once, ever.
+   ------------------------------------------------------------ */
+const PRIZE_TOKENS = 10;
+/* Each region keeps its own finds: the ship's in r4(), the catacombs' in r5(), (3.96) the jungle's in r6(). */
+function prizeBook(deck){
+  const d = DECKS[deck];
+  const g = (d && d.region === 6 && typeof r6 === 'function') ? r6()
+          : (d && d.region === 5 && typeof r5 === 'function') ? r5() : r4();
+  g.found = g.found || {};
+  return g.found;
+}
+/* (3.96) A find glints now and then. The designer: "Make all of these do a
+   subtle twinkle occasionally. Make all previous tickets in Region 4 and 5
+   do the same twinkle too, please." Still nothing to point at most of the
+   time: a small star that flashes for a moment every six to ten seconds,
+   each at its own pace, somewhere on its square. */
+const WALK_TWINKLE_SVG = '<svg viewBox="-10 -10 20 20" aria-hidden="true"><path d="M0-10C1-3 3-1 10 0C3 1 1 3 0 10C-1 3-3 1-10 0C-3-1-1-3 0-10Z" fill="#fffbe2"/><circle r="2.4" fill="#fff"/></svg>';
+function walkTwinkleEl(x, y, i){
+  const h = k=>{ const v = Math.sin(x * 127.1 + y * 311.7 + (i || 0) * 74.7 + k * 19.3) * 43758.5453; return v - Math.floor(v); };
+  const el = document.createElement('i');
+  el.className = 'walk-twinkle';
+  el.setAttribute('aria-hidden', 'true');
+  const T = WALK_T, sz = Math.max(10, Math.round(T * 0.42));
+  el.style.cssText = `left:${((x + 0.28 + 0.44 * h(1)) * T).toFixed(1)}px;top:${((y + 0.3 + 0.42 * h(2)) * T).toFixed(1)}px;width:${sz}px;height:${sz}px;` +
+    `z-index:${10 + y};--tw:${(6 + 4 * h(3)).toFixed(2)}s;--td:${(-(h(4) * 10)).toFixed(2)}s;`;
+  el.innerHTML = WALK_TWINKLE_SVG;
+  return el;
+}
+function prizeTaken(deck, i){
+  return !!(prizeBook(deck)[deck] || {})[i];
+}
+async function takePrize(deck, i){
+  const book = prizeBook(deck);
+  book[deck] = book[deck] || {};
+  if(book[deck][i]) return;
+  book[deck][i] = true;
+  walkTeardown();                         // a floor's guards wait while you look
+  /* Skill Tokens are state.inventory.tokens, like every other token in the
+     game. (Until 2.74 finds went into a `skillTokens` nothing read, so they
+     never reached the shop; runProfileMigrations hands those over.) */
+  state.inventory.tokens = (state.inventory.tokens || 0) + PRIZE_TOKENS;
+  await saveProfile();
+  const d = DECKS[deck], region = d.region || 4;
+  const total = Object.values(book).reduce((n,o)=>n + Object.keys(o).length, 0);
+  /* (the Old Town's tier counts once its gate is open — 2.88; the floors
+     under the villa once you can go down — 3.18; and a place that names when
+     it opens — 3.03, the town's rooms — once it has) */
+  const sealed = x=> (x.tier === 2 && typeof r5Tier2Open === 'function' && !r5Tier2Open()) ||
+                     (x.tier === 3 && typeof r5Tier3Open === 'function' && !r5Tier3Open()) ||   // (3.18) under the villa
+                     (typeof x.opens === 'function' && !x.opens());
+  const all = Object.values(DECKS).filter(x=> (x.region || 4) === region && !sealed(x))
+                .reduce((n, x)=> n + (x.prizes || []).length, 0);
+  /* Nothing about where it was or how it got there — a child who finds one in
+     a corridor should not be told they were rummaging in a locker. */
+  const OPENERS = [
+    `Oh, what's this?`,
+    `Hold on.`,
+    `Well now.`,
+    `Something glints.`,
+    `Lucky.`,
+    `Not everything on this ship is bolted down.`,
+    `Somebody was careless.`,
+    `Would you look at that.`,
+  ];
+  const lines = d.prizeLines || OPENERS;
+  storyModal(tokenIcon(130), 'A find',
+    `${lines[Math.floor(Math.random()*lines.length)]}<br><br>` +
+    `You found <b>${PRIZE_TOKENS} Skill Tokens</b>!<br><br>` +
+    `<i>${total} of ${all} found.</i>`,
+    ()=> go(deck), d.region ? { bg:d.bg || 'region5', subtitle:d.title } : { bg:'sea', subtitle:'The Vane Shear' });
+}
+function checkPrize(){
+  const w = walkState(), d = DECKS[w.deck];
+  if(!d || !d.prizes) return false;
+  const p = w.at[w.deck];
+  const i = d.prizes.findIndex(q=> q[0]===p.x && q[1]===p.y);
+  if(i < 0 || prizeTaken(w.deck, i)) return false;
+  takePrize(w.deck, i);
+  return true;
+}
+function cuainAboard(){
+  const g = r4();
+  if(!g.ghostAccepted) return false;
+  /* (3.84) a deck he stays out of (the jungle: Lucesco walks with you there instead) */
+  const w = ui.walk, d = w && typeof DECKS !== 'undefined' && DECKS[w.deck];
+  return !(d && d.noGhost);
+}
+/* '#' wall. The catacombs add '~' water, 'o' a pillar, '*' a brazier, 'c' a
+   stack of crates and 'G' a shut gate — all solid underfoot. The Old Town's
+   tier (2.88) adds 'b' barrels, 'r' cut stone, 'k' a bunk, 'x' a rail and
+   't' a table. The Old Town's streets (2.91) add 'B' a building, 'g' a
+   garden and 'w' a wall. The town's rooms (3.03) add their furniture: 'K' a
+   counter, 'S' shelves or a cupboard, 'F' a stove, fireplace or oven, 'D' a
+   desk, 'R' a bed or bunk, 'H' a piano, 'P' a plant, basket or stand, 'A' an
+   armchair, 'C' a chair, 'Z' a row of theatre seats, 'J' iron bars, 'N' a
+   net on its rack, 'V' a barber's chair and 'L' a bench. Everything else is
+   floor ('.', ',' bones, paving or a rug, '=' a bridge or steps, 's' sand,
+   '_' a stage). */
+const WALK_SOLID = '#~o*cGbrkxtBgwKSFDRHPACZJNVLhMQEY';   // (3.18) h: a catacomb wall with a child's chalk drawing on it; (3.19) the vault's M Q E Y
+/* (3.33) …and a deck can keep squares shut while the story says so: d.shut(x, y)
+   → true, solid for now (the Hilltop's poolside, until the villa is open) */
+const wSolid = (d,x,y)=> (y<0||y>=d.rows.length||x<0||x>=d.rows[0].length) ? true :
+  (WALK_SOLID.includes(d.rows[y][x]) || !!(d.shut && d.shut(x, y)));
+/* A catacomb guard stands on his tile like anybody else. */
+function wOccupied(d, x, y){
+  if(d.occupied && d.occupied(x, y)) return true;        // (3.79) somebody walking about the deck (Selene, in the Rift)
+  return !!(d.stealth && typeof stealthOccupied === 'function' && stealthOccupied(d, x, y));
+}
+
+/* ---------- drawing ---------- */
+/* A slow spiral for a monster (or a scientist) seeing stars. */
+/* The Discombobulate 🌀, as a drawing: a true (Archimedean) spiral in dark
+   purple, one ribbon that is thin at the centre and fuller as it winds out,
+   with a rounded tail — and nothing behind it, so it reads as a spiral turning
+   rather than an icon rotating. Built once from the maths. (The old one was a
+   chain of arcs that bent back and forth: S-bends, not a spiral.) */
+const WALK_SPIRAL_SVG = (()=>{
+  const C = 32, turns = 2.6, T = turns * Math.PI * 2, steps = 180;
+  const r0 = 1.2, r1 = 26.5;                  // from the centre to the tail, in a 64 box
+  const w0 = 1.6, w1 = 7.0;                   // ribbon width: thin inside, full outside
+  const pt = (r, th)=> `${(C + r * Math.cos(th)).toFixed(2)},${(C + r * Math.sin(th)).toFixed(2)}`;
+  const outer = [], inner = [];
+  for(let i = 0; i <= steps; i++){
+    const f = i / steps, th = f * T, r = r0 + (r1 - r0) * f, w = w0 + (w1 - w0) * f;
+    outer.push(pt(r + w / 2, th));
+    inner.push(pt(Math.max(0, r - w / 2), th));
+  }
+  const d = 'M' + outer.join(' L') + ' L' + inner.reverse().join(' L') + ' Z';
+  const tail = pt(r1, T).split(',');
+  return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path d="${d}" fill="#4a1a6b" stroke="#5e2587" stroke-width="0.8" stroke-linejoin="round"/>
+    <circle cx="${tail[0]}" cy="${tail[1]}" r="${(w1 / 2).toFixed(2)}" fill="#4a1a6b"/></svg>`;
+})();
+const WALK_SPIRAL_SIZE = 0.6;                 // of a tile: two heads side by side never overlap
+let _fxTimers = [];
+function clearWalkFx(){ _fxTimers.forEach(clearTimeout); _fxTimers = []; }
+function startDisgust(el, t){
+  const again = ()=>{
+    if(!el.isConnected) return;
+    el.classList.add('walk-shiver');
+    const cloud = document.createElement('div');
+    cloud.className = 'walk-stink';
+    const world = $('#walkWorld');
+    if(world){
+      cloud.style.left = ((t.x + 0.5) * WALK_T) + 'px';
+      cloud.style.top = ((t.y - 0.55) * WALK_T) + 'px';
+      cloud.style.width = (1.1 * WALK_T) + 'px';
+      cloud.style.height = (0.75 * WALK_T) + 'px';
+      world.appendChild(cloud);
+      _fxTimers.push(setTimeout(()=> cloud.remove(), 3400));
+    }
+    _fxTimers.push(setTimeout(()=>{ el.classList.remove('walk-shiver'); }, 2600));
+    _fxTimers.push(setTimeout(again, 4000 + Math.random() * 5000));
+  };
+  _fxTimers.push(setTimeout(again, 400 + Math.random() * 2500));
+}
+
+const WALK_MARK_SVG = `<svg viewBox="0 0 40 96" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <rect x="9" y="4" width="22" height="60" rx="11" fill="#ffd21f" stroke="#111" stroke-width="4"/>
+  <circle cx="20" cy="82" r="10" fill="#ffd21f" stroke="#111" stroke-width="4"/></svg>`;
+function walkCss(){
+  if(document.getElementById('walkCss')) return;
+  const st = document.createElement('style');
+  st.id = 'walkCss';
+  st.textContent = `
+    .walk-still .walk-world, .walk-still .walk-ent{transition:none !important;}
+    .walk-world{transform-origin:0 0;}           /* (3.51) the scene camera's zoom is from the painting's corner */
+    /* (3.20) a crowned picture (Cuain, his core home) fills its tile as a plain one does */
+    .walk-ent .crowned-wrap{width:100% !important;height:100% !important;}
+    .walk-mark{position:absolute;aspect-ratio:40/96;transform:translateX(-50%);pointer-events:none;
+      z-index:55;animation:walkMarkBob 1.1s ease-in-out infinite;}
+    .walk-mark svg{width:100%;height:100%;display:block;filter:drop-shadow(0 2px 2px rgba(0,0,0,.25));}
+    @keyframes walkMarkBob{0%,100%{translate:0 0}50%{translate:0 -14%}}
+    @keyframes walkSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+    .walk-dizzy{position:absolute;pointer-events:none;z-index:56;transform-origin:50% 50%;
+      animation:walkSpin 4.5s linear infinite;background:none;}
+    .walk-dizzy svg{width:100%;height:100%;display:block;}
+    @keyframes walkShiver{0%,100%{translate:0 0}20%{translate:-6% 2%}40%{translate:5% -2%}
+      60%{translate:-4% -3%}80%{translate:4% 3%}}
+    .walk-ent.walk-shiver{animation:walkShiver .18s linear infinite;}
+    @keyframes walkStink{0%{opacity:0;translate:0 -40%}30%{opacity:.75;translate:0 0}
+      70%{opacity:.65;translate:0 6%}100%{opacity:0;translate:0 12%}}
+    .walk-stink{position:absolute;pointer-events:none;z-index:57;transform:translateX(-50%);
+      border-radius:50%;background:radial-gradient(ellipse at center,rgba(40,32,24,.72) 0%,
+      rgba(60,50,38,.45) 55%,rgba(70,60,45,0) 78%);animation:walkStink 3.4s ease-in-out forwards;}
+    @keyframes ghostAlertJump{0%{translate:0 40%;scale:.4;opacity:0}
+      30%{translate:0 -55%;scale:1.15;opacity:1}55%{translate:0 0;scale:1}
+      70%{translate:0 -25%}100%{translate:0 0;scale:1;opacity:1}}
+    .walk-mark.ghost-alert{animation:ghostAlertJump 1.1s cubic-bezier(.2,.9,.3,1) 1 both;z-index:60;}
+    /* a deck's own button beside Party (2.91: the disguise) */
+    .walk-side-top{display:flex;gap:7px;}
+    .walk-side-top .wact{flex:1;min-width:0;}
+    .wact.party.side{flex-direction:column;gap:1px;font-size:11px;line-height:1.1;padding:3px 6px;}
+    .wact.party.side b{font-size:17px;line-height:1;}
+    .wact.party.side.on{background:#2f3346;color:#f1e9d6;border-color:#1d2130;}
+    /* (2.95) every picture is drawn facing left: face-r turns it round, on
+       top of whatever else it is doing */
+    .walk-ent.face-r > img, .walk-ent.face-r > .walk-emoji, .walk-ent.face-r > .crowned-wrap,
+    .scene-actor.face-r .sa-in > *, .walk-fish.face-r > *{scale:-1 1;}
+    /* (3.96) a find's glint: a star that flashes for a moment, now and then */
+    .walk-twinkle{position:absolute;display:block;pointer-events:none;translate:-50% -50%;opacity:0;transform:scale(.2);
+      filter:drop-shadow(0 0 3px rgba(255,236,150,.95)) drop-shadow(0 0 7px rgba(255,210,90,.55));
+      animation:walkTwinkle var(--tw, 7s) ease-in-out var(--td, 0s) infinite;}
+    .walk-twinkle svg{display:block;width:100%;height:100%;}
+    @keyframes walkTwinkle{0%,85%,100%{opacity:0;transform:scale(.2) rotate(0deg);}
+      89%{opacity:.95;transform:scale(1) rotate(28deg);} 93%{opacity:.5;transform:scale(.55) rotate(56deg);}
+      96%{opacity:.85;transform:scale(.8) rotate(78deg);}}
+    @media (prefers-reduced-motion: reduce){.walk-twinkle{animation-name:walkTwinkleSoft;}
+      @keyframes walkTwinkleSoft{0%,88%,100%{opacity:0;transform:scale(.7);} 93%{opacity:.75;transform:scale(.7);}}}
+    /* (3.31) a piece of the painting that stands up in front of a street (the
+       Old Town's church roof), laid back over whoever walks behind it — and
+       see-through while you are near it (walkOverlays) */
+    .walk-over{position:absolute;pointer-events:none;background-repeat:no-repeat;transition:opacity .3s ease;}
+    .walk-over.see{opacity:.4;}
+    .walk-still .walk-over{transition:none !important;}
+  `;
+  document.head.appendChild(st);
+}
+function renderWalkDeck(id){
+  walkCss();
+  clearWalkFx();
+  ui.sceneCam = null;                    // (3.51) a deck starts on you, and with nobody turned to by its speech
+  ui.sayHook = null;
+  /* A scene can pin you in place. Whichever deck you pick — and however you
+     leave the region and come back — you are put down where the story left
+     you, and you stay there until it is finished. The stage is in the save,
+     not in ui, so closing the app changes nothing. */
+  walkTeardown();                        // whatever the last deck left running
+  const d = DECKS[id]; if(!d) return go('explore');
+  /* Region 4's scene locks belong to the ship; a deck elsewhere ignores them. */
+  const lock = (!d.region && typeof storyLock === 'function') ? storyLock() : null;
+  if(lock && id !== lock.deck) return renderWalkDeck(lock.deck);
+  const w = walkState();
+  w.deck = id;
+  /* The action panel is rebuilt only when what you stand beside changes — so a
+     fresh render has to forget the last signature, or the buttons come back
+     empty after a scene, a fight or a shop. */
+  w.actSig = null;
+  if(lock){
+    w.at = w.at || {};
+    w.at[id] = { x:lock.x, y:lock.y };
+    if(lock.ghost){ w.ghostAt = w.ghostAt || {}; w.ghostAt[id] = { x:lock.ghost.x, y:lock.ghost.y }; }
+    if(lock.face) w.face = lock.face;
+    w.busy = true;                       // no walking until the scene is done
+  } else if(w.busy){
+    w.busy = false;                      // a scene left half-finished never freezes you
+  }
+  /* Arriving from Explore, or down a ladder, puts you on the companionway.
+     Coming BACK from a conversation, a shop or a fight puts you exactly where
+     you were standing — which is the only thing that feels right. */
+  if(!lock && (ui.walkFresh || !w.at[id])){
+    w.at[id] = { x:d.spawn[0], y:d.spawn[1] };
+    w.face = 'd';
+    if(cuainAboard()){ w.ghostAt = w.ghostAt || {}; w.ghostAt[id] = { x:d.spawn[0], y:d.spawn[1] }; }
+  }
+  ui.walkFresh = false;
+  walkNotePlace(id);                     // (4.29) for Continue
+  const W = d.rows[0].length, H = d.rows.length;
+
+  setScreenBg(d.bg || 'sea');
+  playMusicChain([d.music, 'region' + (d.region || 4), 'region']);
+  ui.walkMusic = d.music;                // (4.29) what it asked for, for walkMusicSync
+  $('#brandSub').textContent = d.title || { weather_deck:'Weather Deck', cabin_deck:'Cabin Deck',
+                                 laboratory_deck:'Laboratory' }[id];
+
+  /* A deck names its own painting's natural size, or (a catacomb floor) has
+     its painting drawn from its grid at runtime. */
+  const nat = d.nat || { weather_deck:[797,1209], cabin_deck:[832,1262], laboratory_deck:[832,1262] }[id] || [1, 1];
+  /* (3.79) …or none at all: the Rift's floor is its moving sky, drawn behind the deck (18-rift.js) */
+  const artUrl = d.paint ? d.paint(d) : d.art ? `assets/zones/${d.art}.png` : null;
+  /* fit the view across whatever the stage turns out to be — (3.19) or a
+     set-piece room's own, wide enough to hold all of it (the vault: `view`) */
+  WALK_VIEW = d.view || walkView();
+  const avail = Math.min(window.innerWidth - 24, Math.max(220, window.innerHeight - 330));
+  WALK_T = Math.max(30, Math.round(avail / WALK_VIEW));
+  screenEl.innerHTML = `
+    <button class="back-link" id="backBtn">← ${escapeHtml(d.backLabel || 'Explore')}</button>
+    ${(state.progress.currentRegion === 4 && typeof expeditionBar === 'function') ? expeditionBar(true) : ''}
+    <div class="walk-stage walk-still" id="walkStage">
+      <button class="walk-path" id="walkPath">Path</button>
+      <div class="walk-world" id="walkWorld" style="
+        --wt:${WALK_T}px;
+        width:${W*WALK_T}px;height:${H*WALK_T}px;
+        background-image:${artUrl ? `url('${artUrl}')` : 'none'};
+        background-size:${nat[0]*d.bs*WALK_T}px ${nat[1]*d.bs*WALK_T}px;
+        background-position:${d.bx*WALK_T}px ${d.by*WALK_T}px;"></div>
+    </div>
+    <div class="walk-pads">
+      <div class="walk-dpad">
+        <i></i><button class="wkey" data-d="u">${TRI('u')}</button><i></i>
+        <button class="wkey" data-d="l">${TRI('l')}</button><i></i><button class="wkey" data-d="r">${TRI('r')}</button>
+        <i></i><button class="wkey" data-d="d">${TRI('d')}</button><i></i>
+      </div>
+      <div class="walk-side">
+        <div class="walk-side-top" id="walkSideTop"><button class="wact party" id="walkParty">Party</button></div>
+        <div class="walk-acts" id="walkActs"></div>
+      </div>
+    </div>`;
+  walkSideRefresh();
+  $('#backBtn').addEventListener('click', ()=>{ walkTeardown(); go(d.backTo || 'explore'); });   // (3.79) the Rift's goes to its region
+  /* remember where to come back to, so Party does not dump you on the region
+     screen with your place on the ship lost */
+  $('#walkParty').addEventListener('click', ()=> leaveDeck('party'));
+  /* the preference sticks between decks and between visits */
+  if(ui.walkPath) $('#walkStage').classList.add('pathing');
+  $('#walkPath').addEventListener('click', ()=>{
+    ui.walkPath = !ui.walkPath;
+    $('#walkStage').classList.toggle('pathing', ui.walkPath);
+  });
+
+  const world = $('#walkWorld');
+  /* (3.31) whatever of the painting stands up over a street (d.over), laid
+     back over it — first, so that whoever stands in front of it, on its own
+     row or lower down, is drawn after it and over it */
+  walkOverlays(world, d, artUrl, nat);
+  /* people and doorways */
+  d.things.forEach(t=> { if(t.el) t.el = null; });
+  deckThings(d).forEach(t=>{
+    const e = document.createElement('div');
+    e.className = 'walk-ent' + (t.walk ? ' flat' : '');
+    /* dx/dy nudge a thing off the middle of its tile (two people shoulder to
+       shoulder, say). They may be numbers or little functions of the story. */
+    const ox = (typeof t.dx === 'function' ? t.dx() : t.dx) || 0;
+    const oy = (typeof t.dy === 'function' ? t.dy() : t.dy) || 0;
+    e.style.transform = `translate3d(${(t.x + ox)*WALK_T}px,${(t.y + oy)*WALK_T}px,0)`;
+    e.style.zIndex = 10 + t.y;          // further down the deck = nearer to you
+    if(t.w || t.h){                     // a thing that covers more than its own tile
+      e.style.width  = (t.w || 1) * WALK_T + 'px';
+      e.style.height = (t.h || 1) * WALK_T + 'px';
+    }
+    const spin = t.rot ? ` style="transform:rotate(${t.rot}deg);"` : '';
+    const fallPx = Math.round(WALK_T * 0.8 * (t.h || 1));
+    /* (3.79) `html`: a picture of its own (a monster's, from assets/mon — Lucesco); `cls`: its own look */
+    e.innerHTML = t.html ? t.html(t, fallPx)
+      : t.sprite
+      ? `<img src="assets/npc/${t.sprite}.png" alt=""${spin} onerror="walkArtMissing(this,'${(t.icon||'').replace(/'/g,'')}',${fallPx},${t.rot||0})">`
+      : `<span style="font-size:${fallPx}px;line-height:1;">${t.icon||''}</span>`;
+    if(t.cls) e.classList.add(...t.cls.split(' '));
+    world.appendChild(e); t.el = e;
+    if(t.faceR) faceRight(e, true);     // (3.07) sat facing right
+    /* A task: a yellow "!" bobbing over their head, nine tenths of a tile tall. */
+    /* Knocked silly: a slow spiral just above the head. Placed by its corner,
+       not by a centring shift — a shift underneath the spin made it orbit a
+       point instead of turning on the spot. */
+    if(t.dizzy && t.dizzy()){
+      const dz = document.createElement('div');
+      dz.className = 'walk-dizzy';
+      const cx = t.x + (typeof t.dx === 'function' ? t.dx() : t.dx || 0) + 0.5;
+      dz.style.left = ((cx - WALK_SPIRAL_SIZE / 2) * WALK_T) + 'px';
+      dz.style.top = ((t.y - WALK_SPIRAL_SIZE - 0.04) * WALK_T) + 'px';
+      dz.style.width = dz.style.height = (WALK_SPIRAL_SIZE * WALK_T) + 'px';
+      dz.innerHTML = WALK_SPIRAL_SVG;
+      world.appendChild(dz);
+    }
+    /* Disgust: every so often they shudder, and a dark little cloud settles
+       over them and clears again. */
+    if(t.fx === 'disgust') startDisgust(e, t);
+    if(t.mark && t.mark()){
+      const mk = document.createElement('div');
+      mk.className = 'walk-mark';
+      mk.style.left = ((t.x + (t.w || 1) / 2) * WALK_T) + 'px';
+      mk.style.top = (t.y * WALK_T - 0.9 * WALK_T) + 'px';
+      mk.style.height = (0.9 * WALK_T) + 'px';
+      mk.innerHTML = WALK_MARK_SVG;
+      world.appendChild(mk);
+    }
+  });
+  /* (3.96) the finds not yet found, glinting now and then (walkTwinkleEl) —
+     a deck with very many draws its own, near you (the jungle: ownTwinkles) */
+  if(d.prizes && !d.ownTwinkles) d.prizes.forEach((q, i)=>{ if(!prizeTaken(id, i)) world.appendChild(walkTwinkleEl(q[0], q[1], i)); });
+  /* Every wall tile, shaded. Drawn a pixel oversized so neighbours meet with
+     no seam, which makes the walkable deck read as one continuous path without
+     a single line being drawn on it. Off by default; the painting is the view. */
+  const shade = document.createElement('div');
+  shade.className = 'walk-shade'; shade.id = 'walkShade';
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+    if(!wSolid(d,x,y)) continue;
+    const c = document.createElement('i');
+    c.style.cssText = `left:${x*WALK_T - 1}px;top:${y*WALK_T - 1}px;` +
+                      `width:${WALK_T + 2}px;height:${WALK_T + 2}px;`;
+    shade.appendChild(c);
+  }
+  world.appendChild(shade);
+
+  /* one arrow per staircase, 70% of a tile, bobbing gently */
+  const A = Math.round(WALK_T * 0.7);
+  /* Blocky, hand-drawn arrows — the shape of ⬇︎ without the tile behind it.
+     A thick dark keyline under a solid green body so they read against both
+     pale decking and dark water. All three are green. */
+  const SHAFT = 'M14 4 h12 v17 h8 L20 36 L6 21 h8 z';
+  const ARROW = {
+    down: `<svg viewBox="0 0 40 40" width="${A}" height="${A}">
+             <path d="${SHAFT}" fill="#1f3b26" stroke="#1f3b26" stroke-width="5"
+                   stroke-linejoin="round"/>
+             <path d="${SHAFT}" fill="#5fd17c" stroke="#8ee89f" stroke-width="1.4"
+                   stroke-linejoin="round"/></svg>`,
+    up:   `<svg viewBox="0 0 40 40" width="${A}" height="${A}"
+                style="transform:rotate(180deg)">
+             <path d="${SHAFT}" fill="#1f3b26" stroke="#1f3b26" stroke-width="5"
+                   stroke-linejoin="round"/>
+             <path d="${SHAFT}" fill="#5fd17c" stroke="#8ee89f" stroke-width="1.4"
+                   stroke-linejoin="round"/></svg>`,
+    /* a doorway in a side wall (the catacombs' rooms): the same arrow, turned */
+    left: `<svg viewBox="0 0 40 40" width="${A}" height="${A}"
+                style="transform:rotate(90deg)">
+             <path d="${SHAFT}" fill="#1f3b26" stroke="#1f3b26" stroke-width="5"
+                   stroke-linejoin="round"/>
+             <path d="${SHAFT}" fill="#5fd17c" stroke="#8ee89f" stroke-width="1.4"
+                   stroke-linejoin="round"/></svg>`,
+    right:`<svg viewBox="0 0 40 40" width="${A}" height="${A}"
+                style="transform:rotate(-90deg)">
+             <path d="${SHAFT}" fill="#1f3b26" stroke="#1f3b26" stroke-width="5"
+                   stroke-linejoin="round"/>
+             <path d="${SHAFT}" fill="#5fd17c" stroke="#8ee89f" stroke-width="1.4"
+                   stroke-linejoin="round"/></svg>`,
+    /* both ways: one blocky head at each end of a shared shaft */
+    both: `<svg viewBox="0 0 40 40" width="${A}" height="${A}">
+             <path d="M14 13 h12 v14 h-12 z M14 13 h-8 L20 2 L34 13 h-8
+                      M14 27 h-8 L20 38 L34 27 h-8"
+                   fill="#1f3b26" stroke="#1f3b26" stroke-width="5" stroke-linejoin="round"/>
+             <path d="M14 13 h12 v14 h-12 z M14 13 h-8 L20 2 L34 13 h-8
+                      M14 27 h-8 L20 38 L34 27 h-8"
+                   fill="#5fd17c" stroke="#8ee89f" stroke-width="1.4" stroke-linejoin="round"/></svg>`,
+  };
+  /* only the stairs that are there right now (the sea cave opens mid-story) */
+  const stairs = deckThings(d).filter(t=>t.where);
+  const seen = new Set();
+  stairs.forEach(t=>{
+    const key = t.x+','+t.y;
+    if(seen.has(key)) return;
+    seen.add(key);
+    const both = stairs.filter(x=>x.x===t.x&&x.y===t.y).length > 1;
+    const kind = both ? 'both' : (t.arrow || (t.verb === 'Up' ? 'up' : 'down'));
+    const e = document.createElement('div');
+    e.className = 'walk-stair';
+    /* (3.31) in the middle of a doorway two squares wide (or tall), under the
+       painted door, not on its first square */
+    e.style.left = (t.x*WALK_T + ((t.w || 1)*WALK_T - A)/2) + 'px';
+    e.style.top  = (t.y*WALK_T + ((t.h || 1)*WALK_T - A)/2) + 'px';
+    e.innerHTML = ARROW[kind];
+    world.appendChild(e);
+  });
+
+  const steps = document.createElement('div'); steps.className='walk-steps'; steps.id='walkSteps';
+  world.appendChild(steps);
+  /* Cuain, once he has come aboard. He stands where you last stood, so he can
+     never occupy your tile and never has to find his own way round a corner —
+     he simply repeats what you did, one step late. */
+  if(cuainAboard()){
+    const gh = document.createElement('div');
+    gh.className = 'walk-ent walk-ghost'; gh.id = 'walkGhost';
+    gh.innerHTML = monPortrait('whalelord', 30, { view:'front', bare:true, crowned:whaleName() === 'Cuain' });   // (3.20) his core home: crowned
+    world.appendChild(gh);
+    if(!w.ghostAt) w.ghostAt = {};
+    if(!w.ghostAt[id]) w.ghostAt[id] = { x:d.spawn[0], y:d.spawn[1] };
+  }
+  const me = document.createElement('div'); me.className='walk-ent walk-you'; me.id='walkYou';
+  me.innerHTML = walkYouArt(d);
+  world.appendChild(me);
+
+  buildAquarium(world, d);
+  wireWalkKeys();
+  refreshWalk();
+  /* Everyone is put straight where they stand. Without this the sprites were
+     created at the map's corner and then slid across to their places. */
+  requestAnimationFrame(()=> requestAnimationFrame(()=>{
+    const st = $('#walkStage'); if(st) st.classList.remove('walk-still');
+  }));
+  if(id === 'weather_deck' && !lock) startRail(); else stopRail();
+  /* A pinned scene sets out its people once the deck is drawn, and a scene
+     that plays by itself starts itself. */
+  if(lock && lock.stage) lock.stage();
+  if(lock && lock.auto && !ui.sceneRunning) lock.auto();
+  /* A deck with more going on (the catacombs' guards and their light) sets it
+     up once everything else is in place. */
+  /* (4.44) Region 5's places, drawn at the screen's own sharpness on a canvas under the walk (40-r5-art.js) */
+  if(typeof deckArtStart === 'function') deckArtStart(world, d);
+  if(d.onRender) d.onRender(world, d);
+}
+/* What you look like on a deck: yourself — or, where a deck says so, someone
+   else (Cosa Nostia's disguise, 2.91: d.youArt(d) → picture HTML, or null). */
+function walkYouArt(d){
+  return (d && d.youArt && d.youArt(d)) || avatarImg(state.avatar || 'm1', WALK_T, { bare:true });
+}
+function walkYouRefresh(){
+  const me = $('#walkYou'), d = DECKS[walkState().deck];
+  if(me && d) me.innerHTML = walkYouArt(d);
+}
+/* A deck's own button beside Party (2.91: the disguise in Cosa Nostia):
+   d.sideAct(d) → { html, act, cls } or null. Redrawn whenever what it says
+   changes; Party itself is left alone. */
+function walkSideRefresh(){
+  const top = $('#walkSideTop'), d = DECKS[walkState().deck];
+  if(!top) return;
+  const old = $('#walkSide'); if(old) old.remove();
+  const side = d && d.sideAct ? d.sideAct(d) : null;
+  top.classList.toggle('two', !!side);
+  if(!side) return;
+  const b = document.createElement('button');
+  b.className = 'wact party side' + (side.cls ? ' ' + side.cls : '');
+  b.id = 'walkSide';
+  b.innerHTML = side.html;
+  b.addEventListener('click', ()=>{
+    if(walkState().busy || ui.sceneRunning || document.querySelector('.scene-say')) return;
+    side.act();
+  });
+  top.appendChild(b);
+}
+/* Everything a deck leaves running — the rail, the aquarium, the catacomb
+   guards' clocks — stopped in one place. Every way off a deck calls this. */
+function walkTeardown(){
+  releaseKeys();
+  stopRail();
+  stopAquarium();
+  if(typeof stopStealth === 'function') stopStealth();
+}
+
+/* (3.31) A painting drawn the way the town's are — fronts facing you, roofs
+   reaching up the page — has buildings that stand up over the street behind
+   them: the Old Town's church roof and bell tower reach up across rows 7–8.
+   Somebody walking along there should go BEHIND the roof, not across the top
+   of it. A deck says so with `over`:
+     over:[{ poly:[[x,y], …], foot }]
+   poly — the outline of what stands up, in tiles, traced round the painting;
+   foot — the first row of the building's own ground: anybody on a row above
+          it is behind it, anybody on it or below is in front (default: the
+          outline's lowest row).
+   Each is the painting itself, cut to that outline and laid back over the
+   painting at the same place — nothing is painted twice, and nothing has to
+   be cut out of the picture by hand. While you or the ghost stand where it
+   hides you, or a step from there, it turns see-through, so nobody loses
+   sight of themselves; the Family's men walk behind it as anybody would.
+   Only over the deck's own painting: a map drawn from its grid while it has
+   none has nothing standing up to cover anybody. */
+function walkOverlays(world, d, artUrl, nat){
+  if(!d.over || !d.art || artUrl !== `assets/zones/${d.art}.png`) return;
+  d.over.forEach((o, i)=>{
+    const xs = o.poly.map(p=> p[0]), ys = o.poly.map(p=> p[1]);
+    const x0 = Math.floor(Math.min(...xs)), y0 = Math.floor(Math.min(...ys));
+    const x1 = Math.ceil(Math.max(...xs)),  y1 = Math.ceil(Math.max(...ys));
+    const foot = o.foot != null ? o.foot : Math.floor(Math.max(...ys));
+    const pc = (v, a, b)=> ((v - a) / (b - a) * 100).toFixed(3) + '%';
+    const clip = 'polygon(' + o.poly.map(([x, y])=> pc(x, x0, x1) + ' ' + pc(y, y0, y1)).join(', ') + ')';
+    const el = document.createElement('div');
+    el.className = 'walk-over';
+    el.dataset.over = o.name || String(i);
+    el.style.left = (x0 * WALK_T) + 'px';
+    el.style.top = (y0 * WALK_T) + 'px';
+    el.style.width = ((x1 - x0) * WALK_T) + 'px';
+    el.style.height = ((y1 - y0) * WALK_T) + 'px';
+    el.style.backgroundImage = `url('${artUrl}')`;
+    el.style.backgroundSize = `${nat[0]*d.bs*WALK_T}px ${nat[1]*d.bs*WALK_T}px`;
+    el.style.backgroundPosition = `${(d.bx - x0)*WALK_T}px ${(d.by - y0)*WALK_T}px`;
+    el.style.webkitClipPath = clip;
+    el.style.clipPath = clip;
+    el.style.zIndex = 10 + foot;          // over row foot-1 (10 + y), under row foot (later in the page)
+    /* the walls it lies over keep their shading when Path is on (the same
+       cells as the deck's own, so the same switch shows and hides them) */
+    const shade = document.createElement('div');
+    shade.className = 'walk-shade';
+    for(let y = y0; y < y1; y++) for(let x = x0; x < x1; x++){
+      if(!wSolid(d, x, y)) continue;
+      const c = document.createElement('i');
+      c.style.cssText = `left:${(x - x0)*WALK_T - 1}px;top:${(y - y0)*WALK_T - 1}px;` +
+                        `width:${WALK_T + 2}px;height:${WALK_T + 2}px;`;
+      shade.appendChild(c);
+    }
+    el.appendChild(shade);
+    el._near = walkOverNear(o.poly, foot);
+    world.appendChild(el);
+  });
+}
+/* The squares where somebody standing would be hidden by the outline, and
+   every square a step from one of those: "near" it. Somebody is drawn in the
+   middle of their square, from the top of it to a little below it. */
+function walkOverNear(poly, foot){
+  const inside = (x, y)=>{
+    let c = false;
+    for(let i = 0, j = poly.length - 1; i < poly.length; j = i++){
+      const [xi, yi] = poly[i], [xj, yj] = poly[j];
+      if((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c;
+    }
+    return c;
+  };
+  const xs = poly.map(p=> p[0]), ys = poly.map(p=> p[1]);
+  const near = new Set();
+  for(let y = Math.floor(Math.min(...ys)) - 1; y < foot; y++)
+    for(let x = Math.floor(Math.min(...xs)) - 1; x <= Math.ceil(Math.max(...xs)); x++){
+      const hid = [0.25, 0.5, 0.75].some(fx=> [0.05, 0.35, 0.65, 0.95, 1.1].some(fy=> inside(x + fx, y + fy)));
+      if(hid) [[0,0],[1,0],[-1,0],[0,1],[0,-1]].forEach(([dx, dy])=> near.add((x + dx) + ',' + (y + dy)));
+    }
+  return near;
+}
+/* See-through while you (p) or the ghost (q) are near it; solid otherwise. */
+function walkOverRefresh(p, q){
+  const world = $('#walkWorld');
+  if(!world) return;
+  world.querySelectorAll('.walk-over').forEach(el=>{
+    const by = s=> !!(s && el._near && el._near.has(s.x + ',' + s.y));
+    el.classList.toggle('see', by(p) || by(q));
+  });
+}
+
+/* The camera follows you until the map runs out. At an edge the map stops and
+   YOU carry on across the stage, so there is never a black margin beyond the
+   painting; walk back inland and you slide to the middle again. A map smaller
+   than the stage — a room inside a building — simply sits in the middle, and
+   you walk about inside it. The world is anchored at the middle of the stage
+   (left:50%, top:50%), so these offsets are measured from there. */
+function walkCam(centre, mapPx, stagePx){
+  if(mapPx <= stagePx) return -mapPx / 2;
+  return Math.max(stagePx / 2 - mapPx, Math.min(-stagePx / 2, -centre));
+}
+/* ---------- THE SCENE CAMERA (3.51) ----------
+   The designer, of the vault: "keep the whole scene at original size (the
+   room won't fit in the screen), but … add panning each time to different
+   parts of the action". While a scene holds the camera (ui.sceneCam: the
+   point it looks at, in tiles, and its zoom — 1 is the deck's own size, less
+   shows more of it), the deck looks there instead of at you, as near the
+   edge as the painting allows. sceneLook pans to a person, a place or a few
+   of them at once — pulling back only as far as it must to show them all —
+   and sceneCamFree gives the camera back to you. ui.sayHook (a deck's own)
+   is told who is speaking as each line comes up, so a scene can turn to
+   them. */
+/* (4.08) A zoom that follows you about (ui.walkZoom: { deck, s }): the jungle's, as Lucesco's moves are seen close up
+   (20-jungle.js, jgZoomIn). 1 where there is none. */
+function walkZoomS(deck){ const z = ui.walkZoom; return (z && z.deck === deck && z.s > 0) ? z.s : 1; }
+function walkCamXY(){
+  const w = walkState(), d = DECKS[w.deck];
+  if(!d) return null;
+  const p = w.at[w.deck] || { x:0, y:0 };
+  const stageEl = $('#walkStage');
+  const SW = (stageEl && stageEl.clientWidth)  || WALK_VIEW * WALK_T;
+  const SH = (stageEl && stageEl.clientHeight) || WALK_VIEW * WALK_T;
+  const cols = d.rows[0].length, rows = d.rows.length, cam = ui.sceneCam, T = WALK_T;
+  const s = cam ? (cam.zoom || 1) : walkZoomS(w.deck);                // (4.08) or a zoom that follows you (Lucesco's moves)
+  const cx = cam ? cam.x * T : p.x * T + T / 2, cy = cam ? cam.y * T : p.y * T + T / 2;
+  return { s, SW, SH, cols, rows, tx:walkCam(cx * s, cols * T * s, SW), ty:walkCam(cy * s, rows * T * s, SH) };
+}
+/* What the stage shows now, in tiles. */
+function sceneCamView(){
+  const c = walkCamXY(); if(!c) return null;
+  const T = WALK_T * c.s;
+  return { x0:(-c.SW / 2 - c.tx) / T, x1:(c.SW / 2 - c.tx) / T, y0:(-c.SH / 2 - c.ty) / T, y1:(c.SH / 2 - c.ty) / T };
+}
+/* A box round something on the deck, in tiles: 'room', 'you', an actor's
+   id ('padrino' is #sa-padrino), a point {x, y}, a box {x, y, w, h} (its
+   top-left), or a list of any of these. */
+function sceneBox(t){
+  const w = walkState(), d = DECKS[w.deck];
+  if(!t || !d) return null;
+  if(Array.isArray(t)){
+    const bs = t.map(sceneBox).filter(Boolean);
+    if(!bs.length) return null;
+    return { x0:Math.min(...bs.map(b=> b.x0)), y0:Math.min(...bs.map(b=> b.y0)), x1:Math.max(...bs.map(b=> b.x1)), y1:Math.max(...bs.map(b=> b.y1)) };
+  }
+  if(t === 'room') return { x0:0, y0:0, x1:d.rows[0].length, y1:d.rows.length };
+  if(t === 'you'){ const p = w.at[w.deck]; return p ? { x0:p.x, y0:p.y, x1:p.x + 1, y1:p.y + 1 } : null; }
+  if(typeof t === 'string'){
+    const el = document.getElementById('sa-' + t), o = el && el._o;
+    return o ? { x0:o.x, y0:o.y, x1:o.x + (o.w || 1), y1:o.y + (o.h || 1) } : null;
+  }
+  if(typeof t === 'object' && Number.isFinite(t.x) && Number.isFinite(t.y)){
+    return t.w != null ? { x0:t.x, y0:t.y, x1:t.x + t.w, y1:t.y + (t.h || t.w) } : { x0:t.x - 0.5, y0:t.y - 0.5, x1:t.x + 0.5, y1:t.y + 0.5 };
+  }
+  return null;
+}
+/* Look at it. opts: ms (the pan, 700), pad (tiles round it, 0.6), lazy (only
+   if it is not well in view already), zoom (a set zoom instead of "as near as
+   fits"). Resolves when the camera is there. */
+function sceneLook(target, opts){
+  opts = opts || {};
+  const b = sceneBox(target), c = walkCamXY();
+  if(!b || !c) return Promise.resolve();
+  const pad = opts.pad != null ? opts.pad : 0.6;
+  if(opts.lazy){
+    const v = sceneCamView();
+    const m = 0.25;
+    if(v && b.x0 - m >= v.x0 && b.x1 + m <= v.x1 && b.y0 - m >= v.y0 && b.y1 + m <= v.y1) return Promise.resolve();
+  }
+  const T = WALK_T;
+  const roomFit = Math.min(1, c.SW / (c.cols * T), c.SH / (c.rows * T));
+  const fit = Math.min(1, c.SW / ((b.x1 - b.x0 + 2 * pad) * T), c.SH / ((b.y1 - b.y0 + 2 * pad) * T));
+  const zoom = Math.max(roomFit, Math.min(1, opts.zoom || fit));
+  ui.sceneCam = { x:(b.x0 + b.x1) / 2, y:(b.y0 + b.y1) / 2, zoom };
+  const ms = opts.ms != null ? opts.ms : 700;
+  const world = $('#walkWorld');
+  if(world) world.style.transition = `transform ${Math.max(1, ms * SCENE_SPEED)}ms ease-in-out`;
+  refreshWalk();
+  return sceneWait(ms);
+}
+/* The camera back to you (and the deck's own easy follow back on). */
+function sceneCamFree(ms){
+  if(!ui.sceneCam) return Promise.resolve();
+  ms = ms != null ? ms : 600;
+  ui.sceneCam = null;
+  const world = $('#walkWorld');
+  if(world) world.style.transition = `transform ${Math.max(1, ms * SCENE_SPEED)}ms ease-in-out`;
+  refreshWalk();
+  return sceneWait(ms).then(()=>{ const wd = $('#walkWorld'); if(wd && !ui.sceneCam) wd.style.transition = ''; });
+}
+function refreshWalk(){
+  const w = walkState(), d = DECKS[w.deck]; if(!d) return;
+  const p = w.at[w.deck];
+  const world = $('#walkWorld'), me = $('#walkYou'), steps = $('#walkSteps');
+  if(!world || !me) return;
+  const c = walkCamXY();
+  world.style.transform = `translate3d(${c.tx}px, ${c.ty}px, 0)` + (c.s !== 1 ? ` scale(${c.s.toFixed(4)})` : '');
+  me.style.transform = `translate3d(${p.x*WALK_T}px,${p.y*WALK_T}px,0)`;
+  me.style.zIndex = 10 + p.y;
+  faceRight(me, w.faceX === 'r');                  // (2.95) the way you last walked, or turned
+  const gh = $('#walkGhost');
+  if(gh && w.ghostAt && w.ghostAt[w.deck]){
+    const q = w.ghostAt[w.deck];
+    gh.style.transform = `translate3d(${q.x*WALK_T}px,${q.y*WALK_T}px,0)`;
+    gh.style.zIndex = 10 + q.y;
+    faceRight(gh, w.ghostFaceX === 'r');
+  }
+  walkOverRefresh(p, gh && w.ghostAt && w.ghostAt[w.deck]);   // (3.31) a roof you are behind: see-through
+
+  /* a mark on each tile you could step onto — the only question you have */
+  steps.innerHTML = '';
+  const lock = (!d.region && typeof storyLock === 'function') ? storyLock() : null;
+  if(lock){
+    /* Pinned by a scene: no steps to offer, and one button. It is the only
+       thing you can do, but it is yours to press. */
+    const acts = $('#walkActs');
+    const sig = 'lock:' + (lock.label || '');
+    if(sig !== w.actSig){
+      w.actSig = sig;
+      acts.classList.add('single');
+      acts.innerHTML = '';
+      if(lock.label){                   // while a scene is playing there is nothing to press
+        const b = document.createElement('button');
+        b.className = 'wact live';
+        b.textContent = lock.label;
+        b.addEventListener('click', ()=> lock.act());
+        acts.appendChild(b);
+      }
+    }
+    return;
+  }
+  [[-1,0],[1,0],[0,-1],[0,1]].forEach(([dx,dy])=>{
+    const nx=p.x+dx, ny=p.y+dy;
+    if(wSolid(d,nx,ny)) return;
+    if(wBlockedBy(d, nx, ny) || wOccupied(d, nx, ny)) return;
+    const i=document.createElement('i');
+    i.style.left=(nx*WALK_T+WALK_T/2)+'px'; i.style.top=(ny*WALK_T+WALK_T/2)+'px';
+    steps.appendChild(i);
+  });
+
+  /* one button per thing you are beside, or standing on */
+  const near = deckThings(d).filter(t=> thingNear(t, p));
+  /* (2.95) and a person beside you turns to look at you: flipped if you are
+     on their right, back to facing left when you walk on */
+  d.things.forEach(t=>{
+    if(!t.el) return;
+    t.el.classList.toggle('near', near.includes(t));
+    if(thingTurns(t)) thingFaceNear(t, p, near.includes(t));
+  });
+  /* …and whatever else the deck says is beside you (2.91: in Cosa Nostia, in
+     disguise, the Family's men walking past): d.nearActs(d, p) → [{ key,
+     html, act }]. */
+  const extra = d.nearActs ? d.nearActs(d, p) : [];
+  /* Rebuilding this on every single step was the choppiness: four dots and a
+     stack of buttons torn down and recreated several times a second. It now
+     only redraws when what you are standing beside actually changes. */
+  const sig = near.map(t=>t.x+','+t.y+t.verb).join('|') + '#' + (cuainAboard() ? 'g' + (whaleName() === 'Cuain' ? 'c' : '') : '') + '#' + extra.map(a=> a.key).join('|');   // (3.51) his button again when he is crowned
+  if(sig === w.actSig) return;
+  w.actSig = sig;
+  const acts = $('#walkActs');
+  acts.innerHTML = '';
+  /* Cuain can be spoken to from anywhere — he is behind you, not beside you. */
+  const withGhost = near.length + extra.length + (cuainAboard() ? 1 : 0);
+  acts.classList.toggle('single', withGhost <= 1);
+  if(cuainAboard()){
+    const b = document.createElement('button');
+    b.className = 'wact live ghost';
+    /* (3.20) once his core is home he has his name back: Cuain */
+    const named = whaleName() === 'Cuain';
+    b.innerHTML = monPortrait('whalelord', 34, { view:'front', bare:true, crowned:named }) +
+                  `<span>Talk to<br>${named ? 'Cuain' : 'Whalelord’s Ghost'}</span>`;
+    /* a deck elsewhere (Cosa Nostia) gives him its own things to say */
+    b.addEventListener('click', ()=>{
+      if(walkState().busy) return;
+      walkFaceEachOther();                         // (2.95) you turn to each other to talk
+      const here = walkState().deck, dk = DECKS[here];
+      if(dk && dk.ghostChat) dk.ghostChat(here); else ghostChat(here);
+    });
+    acts.appendChild(b);
+  }
+  extra.forEach(a=>{
+    const b = document.createElement('button');
+    b.className = 'wact live' + (a.cls ? ' ' + a.cls : '');
+    b.innerHTML = a.html;
+    /* (2.95) `at` (tiles), if it says: you turn to whoever it is */
+    b.addEventListener('click', ()=>{ if(walkState().busy) return; if(a.at) walkFaceToward(a.at.x + 0.5); a.act(); });
+    acts.appendChild(b);
+  });
+  if(!near.length && !extra.length && !cuainAboard()){
+    acts.innerHTML = '<div class="wact">—</div>';
+  } else near.forEach(t=>{
+    const b=document.createElement('button');
+    b.className='wact live';
+    /* (3.79) `sub`: a second line that is not a way out (`where` draws a green arrow) */
+    b.innerHTML = escapeHtml(t.verb) + ((t.where || t.sub) ? `<small>${escapeHtml(t.where || t.sub)}</small>` : '');
+    /* (2.95) you turn to it first — unless you are standing on it */
+    b.addEventListener('click', ()=>{
+      const ws = walkState(); if(ws.busy) return;
+      const pp = ws.at && ws.at[ws.deck];
+      if(pp && !thingCovers(t, pp.x, pp.y)) walkFaceToward(thingMidX(t));
+      t.act();
+    });
+    acts.appendChild(b);
+    /* Some people are worth a second look. Talking stays what it was; the
+       investigation is a separate, deliberate choice. */
+    const ex = t.extra && t.extra();
+    if(ex){
+      const e=document.createElement('button');
+      e.className='wact live suspect';
+      e.innerHTML = escapeHtml(ex.verb);
+      e.addEventListener('click', ()=>{ if(!walkState().busy) ex.act(); });
+      acts.appendChild(e);
+    }
+  });
+}
+
+/* You and the Whalelord turn to each other (2.95): to talk. */
+function walkFaceEachOther(){
+  const w = walkState(), p = w.at && w.at[w.deck], q = w.ghostAt && w.ghostAt[w.deck];
+  if(!p || !q) return;
+  walkFaceToward(q.x + 0.5);
+  walkGhostFaceToward(p.x + 0.5);
+}
+/* (4.29) Where you last walked in each region (state.progress.lastPlace: { region: { deck, x, y } }), kept with the
+   save — what the home page's Continue takes you back to (continueInfo, 07-screens.js). A new place is saved a moment
+   after you arrive; a step only notes it, for the next save to keep. */
+let _placeSave = null;
+function walkNotePlace(id){
+  const d = DECKS[id], w = walkState(), p = w.at && w.at[id];
+  if(!d || !p || typeof state === 'undefined' || !state || !state.progress) return;
+  const r = d.region || 4, lp = state.progress.lastPlace || (state.progress.lastPlace = {}), was = lp[r];
+  lp[r] = { deck:id, x:p.x, y:p.y };
+  if(!was || was.deck !== id){ clearTimeout(_placeSave); _placeSave = setTimeout(()=>{ _placeSave = null; if(typeof saveProfile === 'function') saveProfile(); }, 2500); }
+}
+/* (4.29) A place whose music can change as you walk in it (`musicLive`): the battle music while a village or the castle
+   is under attack (the designer: "have the battle music play during the invasion of villages and the castle even when in
+   the overworld to give a sense of tension"). Its `music` asked again after each step, and played when it is not what it
+   asked for last (never fighting your records over the same place's tune). */
+function walkMusicSync(d){
+  if(!d || !d.musicLive) return;
+  const want = d.music;
+  if(!want || want === ui.walkMusic) return;
+  ui.walkMusic = want;
+  playMusicChain([want, 'region' + (d.region || 4), 'region']);
+}
+const WALK_MIN = 150, WALK_HOLD = 110, WALK_REP = 200;   // (3.96) a step every 0.2 s while held: as long as a step takes to draw (.walk-world, .walk-ent)
+function walkMove(dir){
+  const w = walkState(); if(w.busy) return;
+  const d = DECKS[w.deck]; if(!d) return;
+  const p = w.at[w.deck];
+  const now = performance.now();
+  const turning = dir !== w.face;
+  w.face = dir;
+  if(dir === 'l' || dir === 'r') w.faceX = dir;     // (2.95) up and down keep the way you faced
+  if(!turning && now - w.last < WALK_MIN) return;
+  w.last = now;
+  const v = { l:[-1,0], r:[1,0], u:[0,-1], d:[0,1] }[dir];
+  const nx = p.x+v[0], ny = p.y+v[1];
+  const blocked = wBlockedBy(d, nx, ny) || wOccupied(d, nx, ny);
+  if(!wSolid(d,nx,ny) && !blocked){
+    /* he takes the tile you are leaving — always one behind, never on top —
+       and (2.95) faces the way he goes */
+    if(cuainAboard()){
+      w.ghostAt = w.ghostAt || {};
+      const q0 = w.ghostAt[w.deck];
+      if(q0 && q0.x !== p.x) w.ghostFaceX = p.x > q0.x ? 'r' : 'l';
+      w.ghostAt[w.deck] = { x:p.x, y:p.y };
+    }
+    p.x=nx; p.y=ny;
+    walkNotePlace(w.deck);            // (4.29) where you are, for Continue
+    if(checkPrize()){                 // stepping onto one ends the move
+      releaseKeys();
+      refreshWalk();                  // draw the step BEFORE the window opens
+      return;
+    }
+    refreshWalk();
+    if(d.onStep && d.onStep(p, d)) releaseKeys();   // a guard saw you, a ghost found you
+    walkMusicSync(d);                               // (4.29) into a village under attack, or the castle attacked
+    return;
+  }
+  else {
+    const me = $('#walkYou');
+    if(me){ me.classList.remove('bumped'); void me.offsetWidth; me.classList.add('bumped'); }
+  }
+  refreshWalk();
+}
+/* Every timer a held key has started. A modal or a deck change tears the
+   button out of the DOM, so its pointerup never arrives and the repeat used to
+   run on forever — which is why picking up a prize left you walking left. */
+let _keyTimers = [];
+function releaseKeys(){
+  _keyTimers.forEach(t=>{ clearTimeout(t); clearInterval(t); });
+  _keyTimers = [];
+  walkHoldEnd(null);                                   // (3.96) and any key still held
+}
+/* (3.96) HOLDING A KEY. The designer: "Walking feels stuttery, and holding
+   down is not smooth (jerky and slightly slow) … My sons often jam the
+   buttons somehow and the sprite goes into a locked direction that cannot
+   be turned off." Until 3.96 a press stepped, waited 110 ms, then stepped
+   every 230 ms on a timer of its own: the first two steps stopped and
+   started, the timer drifted against the 0.23 s glide, and if the finger's
+   lifting never arrived (a long press the phone took for selecting text, a
+   second finger, the page losing focus) the timer walked on for ever.
+   Now a press steps at once, and while it is held a step follows as each
+   one finishes (every WALK_REP, 0.2 s, the length of a step's glide), on
+   the screen's own clock, so it glides on without a stop. Slide the thumb
+   onto another key and it turns. And it stops however the finger leaves:
+   lifted anywhere, cancelled, the last finger off the glass, the page
+   hidden or left, the pad gone. */
+const _walkHeld = new Map();                           // pointerId → the way it is held
+let _walkRaf = 0, _walkLastStep = 0;
+function walkHoldLoop(now){
+  _walkRaf = 0;
+  if(!_walkHeld.size) return;
+  if(!document.querySelector('.walk-dpad [data-d]')){ _walkHeld.clear(); return; }   // the pad is gone: nobody can be holding it
+  const dir = [..._walkHeld.values()].pop();          // the latest press wins
+  if(now - _walkLastStep >= WALK_REP - 8){ _walkLastStep = now; walkMove(dir); }
+  _walkRaf = requestAnimationFrame(walkHoldLoop);
+}
+function walkHoldStart(id, dir){
+  _walkHeld.set(id, dir);
+  _walkLastStep = performance.now();
+  walkMove(dir);
+  if(!_walkRaf && typeof requestAnimationFrame === 'function') _walkRaf = requestAnimationFrame(walkHoldLoop);
+}
+function walkHoldEnd(id){
+  if(id == null) _walkHeld.clear(); else _walkHeld.delete(id);
+  if(!_walkHeld.size && _walkRaf){ cancelAnimationFrame(_walkRaf); _walkRaf = 0; }
+}
+function walkHolding(){ return _walkHeld.size > 0; }
+(function walkHoldGuards(){
+  if(typeof document === 'undefined') return;
+  const all = ()=> walkHoldEnd(null);
+  ['pointerup', 'pointercancel'].forEach(ev=> document.addEventListener(ev, e=>{ if(_walkHeld.has(e.pointerId)) walkHoldEnd(e.pointerId); }, true));
+  document.addEventListener('touchend', e=>{ if(!e.touches || !e.touches.length) all(); }, true);
+  document.addEventListener('touchcancel', e=>{ if(!e.touches || !e.touches.length) all(); }, true);
+  window.addEventListener('blur', all);
+  window.addEventListener('pagehide', all);
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden) all(); });
+})();
+function wireWalkKeys(){
+  releaseKeys();
+  screenEl.querySelectorAll('[data-d]').forEach(k=>{
+    k.addEventListener('pointerdown', e=>{
+      e.preventDefault();
+      try { k.setPointerCapture(e.pointerId); } catch(err){}
+      walkHoldStart(e.pointerId, k.dataset.d);
+    });
+    /* slid onto another key: that way now */
+    k.addEventListener('pointermove', e=>{
+      if(!_walkHeld.has(e.pointerId)) return;
+      const el = document.elementFromPoint(e.clientX, e.clientY), to = el && el.closest && el.closest('.walk-dpad [data-d]');
+      if(to && to.dataset.d !== _walkHeld.get(e.pointerId)){ _walkHeld.set(e.pointerId, to.dataset.d); _walkLastStep = performance.now(); walkMove(to.dataset.d); }
+    });
+    const stop = e=> walkHoldEnd(e.pointerId);
+    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev=> k.addEventListener(ev, stop));
+    k.addEventListener('contextmenu', e=> e.preventDefault());
+  });
+}
+
+/* ---------- moving between decks ---------- */
+function goDeck(id){
+  const w = walkState();
+  walkTeardown();
+  w.busy = true;
+  tileWipe(()=>{ w.busy = false; go(id); });
+}
+/* The screen fills in with black squares, then clears the same way — it hides
+   whatever is being built behind it and reads far better than a cut. */
+function tileWipe(then){
+  const stage = $('#walkStage') || screenEl;
+  const N = 10, lay = document.createElement('div');
+  lay.className = 'tile-wipe';
+  for(let i=0;i<N*N;i++){
+    const c=document.createElement('i');
+    c.style.cssText = `left:${(i%N)*100/N}%;top:${Math.floor(i/N)*100/N}%;width:${100/N}%;height:${100/N}%;`;
+    lay.appendChild(c);
+  }
+  document.body.appendChild(lay);
+  const cells=[...lay.children].sort(()=>Math.random()-0.5);
+  let k=0;
+  const t=setInterval(()=>{
+    for(let j=0;j<10 && k<cells.length;j++,k++) cells[k].style.opacity=1;
+    if(k>=cells.length){ clearInterval(t); then();
+      setTimeout(()=>{
+        const back=[...lay.children].sort(()=>Math.random()-0.5); let m=0;
+        const t2=setInterval(()=>{
+          for(let j=0;j<10 && m<back.length;j++,m++) back[m].style.opacity=0;
+          if(m>=back.length){ clearInterval(t2); setTimeout(()=>lay.remove(), 220); }
+        }, 18);
+      }, 90);
+    }
+  }, 18);
+}
+
+/* (3.34) A monster met by walking — the catacombs' "something in the dark",
+   and any wild meeting on foot to come (the designer: "please have the screen
+   flash light and dark for 1.5s and then turn black for 0.5s before quickly
+   fading in to the battle scene. it should play the same soundtrack
+   universally for all regions whenever walking the sprite encounters a
+   monster. this is different than dive or SOS in Region 4"). `begin` starts
+   the fight (with `encounter:true`, so it keeps the track); it is called once
+   the screen is black, and the fight fades in. One track for every region's
+   walking meetings, from the first flash on: battle_encounter, else the plain
+   wild theme. The flashes come two a second — under three, so they are safe
+   for eyes that flashing can hurt. Nothing can be pressed until it is over. */
+const ENCOUNTER_MUSIC = ['battle_encounter', 'battle_wild'];
+const ENCOUNTER_MS = { flash:1500, black:500, fade:300 };
+let _encounterOn = false;
+/* (3.85) `music`: a meeting's own track instead (the jungle's aliens:
+   JG_FIGHT_MUSIC), from the first flash; its fight is given the same
+   (encounterMusic), so nothing changes when the battle begins. */
+function walkEncounter(begin, music){
+  if(_encounterOn) return;
+  _encounterOn = true;
+  if(!document.getElementById('encounterCss')){
+    const st = document.createElement('style');
+    st.id = 'encounterCss';
+    st.textContent = `
+      #encounterFlash{position:fixed;inset:0;z-index:9999;pointer-events:auto;background:#000;opacity:0;}
+      #encounterFlash.flash{animation:encounterFlash 1.5s linear forwards;}
+      #encounterFlash.black{animation:none;background:#000;opacity:1;}
+      #encounterFlash.out{animation:none;background:#000;opacity:0;transition:opacity .3s ease-out;}
+      @keyframes encounterFlash{
+        0%{background:#fff;opacity:0}       8%{background:#fff;opacity:.9}    20%{background:#000;opacity:.8}
+        33.3%{background:#000;opacity:.8}   41.6%{background:#fff;opacity:.9}  53.3%{background:#000;opacity:.8}
+        66.6%{background:#000;opacity:.8}   75%{background:#fff;opacity:.9}    87%{background:#000;opacity:.9}
+        100%{background:#000;opacity:1}}`;
+    document.head.appendChild(st);
+  }
+  const S = (typeof SCENE_SPEED === 'number' && SCENE_SPEED > 0) ? SCENE_SPEED : 1;
+  const fx = document.createElement('div');
+  fx.id = 'encounterFlash';
+  fx.style.animationDuration = (ENCOUNTER_MS.flash * S) + 'ms';
+  fx.style.transitionDuration = (ENCOUNTER_MS.fade * S) + 'ms';
+  document.body.appendChild(fx);
+  playMusicChain((Array.isArray(music) && music.length) ? music : ENCOUNTER_MUSIC, { loop:true });   // the meeting's own track, from the first flash
+  void fx.offsetWidth;
+  fx.classList.add('flash');                                // light and dark…
+  setTimeout(()=>{ fx.classList.remove('flash'); fx.classList.add('black'); }, ENCOUNTER_MS.flash * S);   // …then black
+  setTimeout(()=>{
+    try { begin(); }
+    finally {
+      requestAnimationFrame(()=>{
+        fx.classList.remove('black'); fx.classList.add('out');                  // the fight fades in
+        setTimeout(()=>{ fx.remove(); _encounterOn = false; }, ENCOUNTER_MS.fade * S + 60);
+      });
+    }
+  }, (ENCOUNTER_MS.flash + ENCOUNTER_MS.black) * S);
+}
+
+/* ---------- what the things do ---------- */
+/* Somebody says something before you go over the side. It costs one tap and it
+   is the difference between a menu and a place. Repeat dives skip it, because
+   Explore again goes straight back in. */
+const DIVE_LINES = [
+  `<b>"Tank's charged. Mind the cold."</b>`,
+  `<b>"Straight down and straight back. No wandering."</b>`,
+  `<b>"If something looks at you funny, come up."</b>`,
+];
+/* He has waited a week to be this close. He is not interested in fish. */
+function whaleImpatient(what){
+  const g = r4();
+  const lines = what === 'dive'
+    ? `He puts himself between you and the ladder.<br><br>` +
+      `<b>"No. Not now. Please."</b><br><br>` +
+      `<b>"My core is on this ship. I can feel it from here. My power. Everything ` +
+      `they cut out of me."</b><br><br>` +
+      `<b>"Go back inside and find who has it. You can swim afterwards. I have ` +
+      `waited so long."</b>`
+    : `He drifts across the rail before you can reach it.<br><br>` +
+      `<b>"Birds? You want to chase birds?"</b><br><br>` +
+      `<b>"My core is below our feet. My essence. The piece of me they took."</b><br><br>` +
+      `<b>"It will not be there forever. Please. Go and look."</b>`;
+  storyModal(whaleArt(150), whaleName(),
+    lines, ()=> go('weather_deck'), { bg:'region4', subtitle:'Weather Deck' });
+}
+/* Once he is aboard and until the truth is out, nothing else happens up here. */
+function whaleHolds(){ const g = r4(); return !!g.ghostAccepted && !g.solved; }
+
+function diveFromDeck(){
+  const g = r4();
+  if(!g.diversBeaten) return diversBlock();
+  if(whaleHolds()) return whaleImpatient('dive');
+  if(g.wallFound && !g.solved) return confirmWhaleDive();
+  storyModal(npcPortrait('diver1','🤿',130,'transparent'), crewName('diver1'),
+    DIVE_LINES[Math.floor(Math.random()*DIVE_LINES.length)],
+    ()=> startDive(), { bg:'battle_diving', subtitle:'The dive platform' });
+}
+function diverChat(){
+  storyModal(npcPortrait('diver2','🤿',130,'transparent'), crewName('diver2'),
+    `She is checking a gauge and does not stop.<br><br>` +
+    `<b>"Pell handles the ladder. I handle whether you come back up."</b><br><br>` +
+    `<i>She almost smiles.</i>`,
+    ()=> go('weather_deck'), { bg:'battle_weather_deck', subtitle:'Weather Deck' });
+}
+
+const RAIL_LINES = [
+  `<b>"They're at it again!"</b> He is hauling with one arm and swatting with the other.<br><br>` +
+  `<b>"Get them off my catch!"</b>`,
+  `<b>"Every single haul!"</b> The net is boiling with something that is not fish.<br><br>` +
+  `<b>"Help me, would you?"</b>`,
+  `<b>"There — see it? Came right out of the sky."</b><br><br>` +
+  `<b>"I'm not losing another net to that thing."</b>`,
+];
+/* Nobody on the rail wants a hand unless they are shouting for one. */
+const RAIL_QUIET = [
+  `<b>"No help needed at the moment, thanks."</b> A nod at the water. <b>"If anything comes up out of it, you'll hear me shout."</b>`,
+  `<b>"All quiet. I don't need a hand just now."</b> The line hangs slack in the water. <b>"I'll holler if they come back."</b>`,
+  `<b>"No help needed at the moment, thanks."</b><br><br><i>Watch the rail for someone calling 🆘.</i>`,
+];
+function railHelp(n){
+  if(whaleHolds()) return whaleImpatient('rail');
+  const r = railState();
+  /* Only somebody calling for help (🆘) has anything for you. It used to start
+     a raid whoever you asked, so the calls meant nothing. */
+  if(r.who !== n){
+    return sceneSay([faceNpc('fisherman'+n,'🎣')], crewName('fisherman'+n),
+      RAIL_QUIET[Math.floor(Math.random()*RAIL_QUIET.length)]);
+  }
+  /* answering the call clears it; the next one comes along in its own time */
+  r.who = null; r.next = Date.now() + REST_MIN + Math.random()*REST_VAR;
+  storyModal(npcPortrait('fisherman'+n,'🎣',130,'transparent'), crewName('fisherman'+n),
+    RAIL_LINES[Math.floor(Math.random()*RAIL_LINES.length)],
+    ()=> (typeof startBirdRaid === 'function') ? startBirdRaid() : go('weather_deck'),
+    { bg:'battle_weather_deck', subtitle:'Starboard rail' });
+}
+function labScientist(n){
+  const stage = (typeof labStage === 'function') ? labStage() : 'blocked';
+  if(stage === 'investigation') return sciAlibi(n);
+  if(stage === 'after') return sciAfterChat(n);
+  puzzledChat(n);
+}
+function labSupervisor(){
+  const stage = (typeof labStage === 'function') ? labStage() : 'blocked';
+  if(stage !== 'investigation') return puzzledSup();
+  if(!allBeaten()) return supervisorNudge();
+  if(!guessesLeft()) return supervisorPatience();
+  go('accuse');
+}
+
+/* ============================================================
+   CUTSCENES
+   A scene puts extra people on a deck for a while (actors), talks in small
+   windows that leave the deck in view, and moves things about. Actors are not
+   DECKS things: nobody bumps into them or talks to them. Every pause goes
+   through sceneWait, so one number (SCENE_SPEED) runs a whole scene at speed
+   in a test.
+   ============================================================ */
+let SCENE_SPEED = 1;
+function sceneWait(ms){ return new Promise(r => setTimeout(r, ms * SCENE_SPEED)); }
+
+function sceneCss(){
+  if(document.getElementById('sceneCss')) return;
+  const st = document.createElement('style');
+  st.id = 'sceneCss';
+  st.textContent = `
+    .scene-actor{position:absolute;pointer-events:none;}
+    .scene-actor .sa-in{width:100%;height:100%;display:flex;align-items:flex-end;justify-content:center;}
+    .scene-actor img{width:100%;height:100%;object-fit:contain;object-position:bottom;}
+    @keyframes sceneBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-12%)}}
+    .scene-actor.bob .sa-in{animation:sceneBob 1.6s ease-in-out infinite;}
+    .scene-say{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);
+      width:min(94vw,480px);background:var(--paper);border-radius:18px;padding:14px 14px 12px;
+      box-shadow:0 10px 32px rgba(0,0,0,.35);z-index:85;display:flex;gap:12px;align-items:flex-start;}
+    .scene-say .ss-faces{display:flex;gap:6px;flex:0 0 auto;align-items:flex-end;}
+    .scene-say .ss-faces img{width:64px;height:64px;object-fit:contain;visibility:visible !important;}
+    .scene-say .ss-faces img, .scene-say .ss-faces .mon-portrait{
+      box-shadow:none !important;border-radius:0 !important;background:transparent !important;filter:none !important;}
+    .scene-say .ss-body{flex:1;text-align:left;font-size:14px;line-height:1.5;}
+    .scene-say .ss-name{font-weight:800;margin-bottom:4px;}
+    .scene-say .ss-go{display:flex;justify-content:flex-end;margin-top:10px;}
+    /* (4.13) an autoplaying line: a thin bar runs down along its bottom */
+    .scene-say.ss-auto{overflow:hidden;}
+    .scene-say.ss-auto::after{content:'';position:absolute;left:0;bottom:0;height:3px;width:100%;background:rgba(201,154,63,.85);
+      transform-origin:left center;animation:ssAuto var(--ssAuto,4s) linear forwards;}
+    @keyframes ssAuto{from{transform:scaleX(1);}to{transform:scaleX(0);}}
+    #sceneCurtain{position:fixed;inset:0;background:#000;opacity:0;z-index:95;pointer-events:none;
+      display:flex;align-items:center;justify-content:center;}
+    #sceneCurtain .sc-text{color:#fff;font-size:20px;line-height:1.5;text-align:center;padding:0 28px;opacity:0;}
+    #sceneFlash{position:fixed;inset:0;background:#fff;opacity:0;z-index:96;pointer-events:none;}
+    @keyframes sceneSpark{0%{transform:translateY(0) scale(.6);opacity:0}
+      25%{opacity:1}100%{transform:translateY(-140%) scale(1.1);opacity:0}}
+    .scene-spark{position:absolute;border-radius:50%;pointer-events:none;z-index:58;
+      background:radial-gradient(circle,#ffffff 0%,#dff2ff 45%,rgba(160,215,255,0) 75%);
+      box-shadow:0 0 8px 2px rgba(190,230,255,.85);animation:sceneSpark 1.2s ease-out forwards;}
+    .scene-ball{position:absolute;border-radius:50%;pointer-events:none;z-index:40;opacity:.8;
+      background:radial-gradient(circle,#ffffff 0%,#e3fffb 28%,#86f4e8 55%,rgba(64,224,208,0) 71%);
+      box-shadow:0 0 36px 10px rgba(130,255,240,.5);}
+  `;
+  document.head.appendChild(st);
+}
+
+/* (3.35) A person on the deck (`.walk-ent img`, index.html) is drawn 1.314
+   times its tile, grown from the middle. The designer: "tailor ugo is rather
+   too small when he first appears compared to his later size. he initially
+   appears even smaller than the player's sprite" — in a scene he was drawn at
+   the tile, a quarter smaller. Now a person in a scene (a picture from
+   assets/npc/) is drawn as big as they are on the deck: Ugo, Figlio, the
+   Madrina, the Ghost Master, the Family's men walking in, the ship's crew.
+   `person:false` keeps one at its tile. */
+const WALK_PERSON_SCALE = 1.314;
+/* Put someone on the deck, or change them. x/y/w/h in tiles (x/y is the top-
+   left corner, and may be fractional). src is an image path; flip faces the
+   other way; faint lays them on their side, a fifth of a tile lower. */
+function sceneActor(id, o){
+  sceneCss();
+  const world = $('#walkWorld');
+  if(!world) return null;
+  let el = document.getElementById('sa-' + id);
+  if(!el){
+    el = document.createElement('div');
+    el.className = 'scene-actor';
+    el.id = 'sa-' + id;
+    el.innerHTML = '<div class="sa-in"></div>';
+    world.appendChild(el);
+  }
+  const a = el._o = Object.assign(el._o || {}, o || {});
+  const T = WALK_T, w = a.w || 1, h = a.h || 1;
+  el.style.left = (a.x * T) + 'px';
+  el.style.top = (a.y * T) + 'px';
+  el.style.width = (w * T) + 'px';
+  el.style.height = (h * T) + 'px';
+  el.style.zIndex = (a.z != null) ? a.z : (10 + Math.floor(a.y));
+  el.classList.toggle('bob', !!a.bob);
+  faceRight(el, a.flip);                         // (2.95) the one face-r class, as everywhere
+  const inner = el.firstChild;
+  if(o && (o.src || o.icon) || !inner.firstChild){
+    inner.innerHTML = `<img src="${a.src}" alt="" ` +
+      `onerror="walkArtMissing(this,'${(a.icon||'').replace(/'/g,'')}',${Math.round(T*0.8*h)},0)">`;
+  }
+  const art = inner.firstChild;
+  if(art && art.style){
+    const t = [];
+    const person = a.person != null ? !!a.person : /^assets\/npc\//.test(a.src || '');
+    if(person) t.push(`scale(${WALK_PERSON_SCALE})`);             // (3.35) as big as on the deck
+    if(a.faint) t.push(`translateY(20%) rotate(${a.faint > 0 ? 90 : -90}deg)`);
+    art.style.transform = t.join(' ');
+  }
+  return el;
+}
+/* The screen shakes: a fresh random nudge every frame, so it is quick, as
+   strong as amp(ms) says in tiles — ms being the time into the shake at normal
+   speed. It uses the separate CSS `translate`, so the stage's own transform is
+   never touched, and it always ends exactly where it started. */
+function sceneShake(ms, amp){
+  const el = $('#walkStage');
+  if(!el) return sceneWait(ms);
+  const dur = Math.max(1, ms * SCENE_SPEED), t0 = performance.now();
+  return new Promise(done=>{
+    const frame = now=>{
+      const e = now - t0;
+      if(e >= dur){ el.style.translate = ''; return done(); }
+      const a = Math.max(0, amp(e / SCENE_SPEED)) * WALK_T;
+      el.style.translate = `${((Math.random() * 2 - 1) * a).toFixed(1)}px ${((Math.random() * 2 - 1) * a).toFixed(1)}px`;
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  });
+}
+/* A soft blue-white light around a point (tiles), fading in; z decides
+   whether it sits in front of or behind what it lights. */
+function sceneGlow(id, cx, cy, tiles, z){
+  sceneCss();
+  const world = $('#walkWorld'); if(!world) return null;
+  const T = WALK_T, d = tiles * T;
+  const g = document.createElement('div');
+  g.className = 'scene-glow'; g.id = 'sg-' + id;
+  g.style.cssText = `position:absolute;left:${cx*T - d/2}px;top:${cy*T - d/2}px;width:${d}px;height:${d}px;` +
+    `border-radius:50%;pointer-events:none;z-index:${z == null ? 59 : z};opacity:0;` +
+    `background:radial-gradient(circle,rgba(255,255,255,.95) 0%,rgba(205,235,255,.75) 35%,rgba(150,205,255,0) 70%);` +
+    `transition:opacity ${600 * SCENE_SPEED}ms ease;`;
+  world.appendChild(g);
+  void g.offsetWidth;
+  g.style.opacity = '1';
+  return g;
+}
+async function sceneGlowOut(ids, ms){
+  ids.forEach(id=>{ const g = document.getElementById('sg-' + id);
+    if(g){ g.style.transition = `opacity ${ms * SCENE_SPEED}ms ease`; g.style.opacity = '0'; } });
+  await sceneWait(ms);
+  ids.forEach(id=>{ const g = document.getElementById('sg-' + id); if(g) g.remove(); });
+}
+/* The screen shimmers white for ms: a quick flicker inside a slow swell. */
+function sceneShimmer(ms){
+  const f = document.createElement('div');
+  f.id = 'sceneShimmer';
+  f.style.cssText = 'position:fixed;inset:0;background:#fff;opacity:0;z-index:96;pointer-events:none;';
+  document.body.appendChild(f);
+  const dur = Math.max(1, ms * SCENE_SPEED), t0 = performance.now();
+  return new Promise(done=>{
+    const frame = now=>{
+      const e = now - t0, t = Math.min(1, e / dur);
+      const swell = Math.sin(Math.PI * t);
+      const flicker = 0.55 + 0.45 * Math.sin((e / SCENE_SPEED) / 1000 * Math.PI * 2 * 5);
+      f.style.opacity = (0.55 * swell * flicker).toFixed(3);
+      if(t < 1) requestAnimationFrame(frame); else { f.remove(); done(); }
+    };
+    requestAnimationFrame(frame);
+  });
+}
+/* (3.51) The Whalelord following you, drawn again as he is now: crowned once
+   his core is home. He was drawn when the deck was, so after his crowning in
+   the vault (the cores coming home) he came back uncrowned from the ring
+   until the next deck. */
+function walkGhostRedraw(){
+  const gh = document.getElementById('walkGhost');
+  if(gh) gh.innerHTML = monPortrait('whalelord', 30, { view:'front', bare:true, crowned:whaleName() === 'Cuain' });
+}
+/* One jump of the quest mark over the Whalelord: he has felt something. */
+function ghostAlert(){
+  walkCss(); sceneCss();
+  const gh = $('#walkGhost'), world = $('#walkWorld');
+  if(!gh || !world) return;
+  const mk = document.createElement('div');
+  mk.className = 'walk-mark ghost-alert';
+  const m = /translate3d\(([-\d.]+)px,\s*([-\d.]+)px/.exec(gh.style.transform || '');
+  mk.style.left = ((m ? parseFloat(m[1]) : 0) + WALK_T / 2) + 'px';
+  mk.style.top = ((m ? parseFloat(m[2]) : 0) - 0.9 * WALK_T) + 'px';
+  mk.style.height = (0.9 * WALK_T) + 'px';
+  mk.innerHTML = WALK_MARK_SVG;
+  world.appendChild(mk);
+  setTimeout(()=> mk.remove(), 1400 * Math.max(SCENE_SPEED, 0.2));
+}
+/* Sparkles rising off something, thicker as they go: the crowned shimmer, in
+   white and blue. */
+function sceneSparkles(x, y, w, h, ms){
+  sceneCss();
+  const world = $('#walkWorld');
+  if(!world) return Promise.resolve();
+  const T = WALK_T, dur = Math.max(1, ms * SCENE_SPEED), t0 = performance.now();
+  return new Promise(done=>{
+    const tick = ()=>{
+      const t = (performance.now() - t0) / dur;
+      if(t >= 1) return done();
+      const many = 1 + Math.round(t * 4);                    // more and more of them
+      for(let i = 0; i < many; i++){
+        const s = document.createElement('i');
+        s.className = 'scene-spark';
+        const px = (x + Math.random() * w) * T, py = (y + (0.3 + Math.random() * 0.7) * h) * T;
+        const size = (0.06 + Math.random() * 0.07) * T;
+        s.style.cssText = `left:${px}px;top:${py}px;width:${size}px;height:${size}px;` +
+                          `animation-duration:${(900 + Math.random() * 700) * SCENE_SPEED}ms;`;
+        world.appendChild(s);
+        setTimeout(()=> s.remove(), 1700 * SCENE_SPEED);
+      }
+      setTimeout(tick, 90 * SCENE_SPEED);
+    };
+    tick();
+  });
+}
+/* Fade a deck thing out where it stands. */
+function sceneFadeThing(sprite, ms){
+  const el = [...document.querySelectorAll('.walk-ent')]
+    .find(x=> (x.querySelector('img') || {}).src && x.querySelector('img').src.includes(sprite));
+  if(!el) return sceneWait(ms);
+  el.style.transition = `opacity ${ms * SCENE_SPEED}ms ease-in`;
+  void el.offsetWidth;
+  el.style.opacity = '0';
+  return sceneWait(ms);
+}
+function sceneActorGone(id){ const el = document.getElementById('sa-' + id); if(el) el.remove(); }
+function sceneClear(){
+  document.querySelectorAll('.scene-actor, .scene-ball, .scene-say, .scene-glow').forEach(e=> e.remove());
+  const st = $('#walkStage'); if(st) st.style.translate = '';
+}
+/* Lay the player down (or stand them back up) where they are. */
+function sceneFaintPlayer(dir){
+  const img = document.querySelector('#walkYou img');
+  if(img) img.style.transform = dir ? `translateY(20%) rotate(${dir > 0 ? 90 : -90}deg) scale(1.275)` : '';
+}
+
+/* A small window along the bottom: the deck stays in view above it. faces is
+   a list of picture HTML (one, or two side by side). */
+function sceneSay(faces, name, html, button){
+  sceneCss();
+  if(ui.sayHook){ try { ui.sayHook(name, faces); } catch(e){} }     // (3.51) a deck that turns to whoever speaks
+  return new Promise(done=>{
+    const box = document.createElement('div');
+    box.className = 'scene-say';
+    box.innerHTML = `<div class="ss-faces">${(faces || []).join('')}</div>` +
+      `<div class="ss-body"><div class="ss-name">${escapeHtml(name || '')}</div><div>${html}</div>` +
+      `<div class="ss-go"><button class="btn btn-primary">${button || 'Continue'}</button></div></div>`;
+    document.body.appendChild(box);
+    let t = null;
+    const fin = ()=>{ clearTimeout(t); if(box.isConnected) box.remove(); done(); };
+    box.querySelector('button').addEventListener('click', fin);
+    /* (4.13) The designer: "The dialogue should autoplay." While ui.sayAuto is on, a line moves on by itself after
+       its reading time (longer lines wait longer); a tap still moves on at once. A bar along the bottom runs down. */
+    if(ui.sayAuto){
+      const words = String(html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().length;
+      const ms = Math.max(2400, Math.min(9500, 1500 + words * 42)) * (typeof ui.sayAuto === 'number' ? ui.sayAuto : 1) * SCENE_SPEED;
+      box.classList.add('ss-auto');
+      box.style.setProperty('--ssAuto', Math.round(ms) + 'ms');
+      t = setTimeout(fin, ms);
+    }
+  });
+}
+/* (4.13) lines that play by themselves: sayAutoRun(async ()=> { await caLines(…); }) — off again however it ends */
+async function sayAutoRun(fn, pace){
+  const was = ui.sayAuto;
+  ui.sayAuto = pace || true;
+  try { return await fn(); } finally { ui.sayAuto = was; }
+}
+function faceNpc(id, emoji){
+  return `<img src="assets/npc/${id}.png" alt="" onerror="walkArtMissing(this,'${emoji || '🧑'}',48,0)">`;
+}
+function faceImg(src, emoji){
+  return `<img src="${src}" alt="" onerror="walkArtMissing(this,'${emoji || '❓'}',48,0)">`;
+}
+function facePlayer(){ return avatarImg(state.avatar || 'm1', 64, { bare:true }); }
+function faceMon(sp, opts){
+  const o = Object.assign({ view:'front', bare:true }, opts || {});
+  /* (3.83) Cuain, after his core came home: crowned in every window of words, unless a scene says otherwise */
+  if(sp === 'whalelord' && o.crowned === undefined && typeof whaleName === 'function' && whaleName() === 'Cuain') o.crowned = true;
+  return monPortrait(sp, 64, o);
+}
+
+/* The black curtain, and white words on it. */
+function sceneCurtainEl(){
+  sceneCss();
+  let c = document.getElementById('sceneCurtain');
+  if(!c){
+    c = document.createElement('div');
+    c.id = 'sceneCurtain';
+    c.innerHTML = '<div class="sc-text"></div>';
+    document.body.appendChild(c);
+    void c.offsetWidth;
+  }
+  return c;
+}
+async function sceneCurtain(show, ms){
+  const c = sceneCurtainEl();
+  c.style.transition = `opacity ${ms * SCENE_SPEED}ms ease`;
+  void c.offsetWidth;
+  c.style.opacity = show ? '1' : '0';
+  await sceneWait(ms);
+  if(!show) c.remove();
+}
+async function sceneCurtainText(text, ms){
+  const t = sceneCurtainEl().querySelector('.sc-text');
+  t.textContent = text || '';
+  t.style.transition = `opacity ${ms * SCENE_SPEED}ms ease`;
+  void t.offsetWidth;
+  t.style.opacity = text ? '1' : '0';
+  await sceneWait(ms);
+}
+
+/* White from translucent to solid over inMs, held for holdMs (duringWhite runs
+   behind it), then lifted. */
+async function sceneFlash(inMs, holdMs, duringWhite, outMs){
+  sceneCss();
+  const f = document.createElement('div');
+  f.id = 'sceneFlash';
+  f.style.opacity = '0.3';
+  document.body.appendChild(f);
+  void f.offsetWidth;
+  f.style.transition = `opacity ${inMs * SCENE_SPEED}ms linear`;
+  f.style.opacity = '1';
+  await sceneWait(inMs);
+  if(duringWhite) duringWhite();
+  await sceneWait(holdMs);
+  const out = outMs || 500;
+  f.style.transition = `opacity ${out * SCENE_SPEED}ms ease`;
+  f.style.opacity = '0';
+  await sceneWait(out);
+  f.remove();
+}
+
+/* A glowing ball that breathes in and out while it grows, ending exactly
+   maxTiles across, centred on (cx, cy) in tile units. */
+function sceneBall(cx, cy, maxTiles, ms){
+  sceneCss();
+  const world = $('#walkWorld');
+  const b = document.createElement('div');
+  b.className = 'scene-ball';
+  b.id = 'sceneBall';
+  if(world) world.appendChild(b);
+  const T = WALK_T, dur = Math.max(1, ms * SCENE_SPEED), t0 = performance.now();
+  return new Promise(done=>{
+    const frame = now=>{
+      const t = Math.min(1, (now - t0) / dur);
+      const grow = 0.4 + (maxTiles - 0.4) * t;
+      /* two breaths a second, however long the charge, and exactly maxTiles at the end */
+      const pulse = t < 1 ? 1 + 0.14 * Math.sin(((now - t0) / SCENE_SPEED) / 1000 * Math.PI * 4) : 1;
+      const d = grow * pulse * T;
+      b.style.width = b.style.height = d + 'px';
+      b.style.left = (cx * T - d / 2) + 'px';
+      b.style.top = (cy * T - d / 2) + 'px';
+      if(t < 1) requestAnimationFrame(frame); else done(b);
+    };
+    requestAnimationFrame(frame);
+  });
+}
+
+/* Move an actor along a jump: straight across, up and over by `lift` tiles —
+   (2.95) facing the way it jumps. */
+function sceneHop(id, x1, y1, lift, ms){
+  const el = document.getElementById('sa-' + id);
+  if(!el) return Promise.resolve();
+  const a = el._o, x0 = a.x, y0 = a.y, dur = Math.max(1, ms * SCENE_SPEED), t0 = performance.now();
+  if(Math.abs(x1 - x0) > 0.05) actorFace(el, x1 > x0);
+  return new Promise(done=>{
+    const frame = now=>{
+      const t = Math.min(1, (now - t0) / dur);
+      const x = x0 + (x1 - x0) * t;
+      const y = y0 + (y1 - y0) * t - 4 * lift * t * (1 - t);
+      el.style.left = (x * WALK_T) + 'px';
+      el.style.top = (y * WALK_T) + 'px';
+      if(t < 1) requestAnimationFrame(frame);
+      else { a.x = x1; a.y = y1; done(); }
+    };
+    requestAnimationFrame(frame);
+  });
+}
+/* Slide several actors by the same amount, together — (2.95) facing the way
+   they go. */
+function sceneGlide(ids, dx, dy, ms){
+  const els = ids.map(id=> document.getElementById('sa-' + id)).filter(Boolean);
+  const dur = ms * SCENE_SPEED;
+  els.forEach(el=>{
+    if(Math.abs(dx) > 0.05) actorFace(el, dx > 0);
+    el.style.transition = `left ${dur}ms ease-in, top ${dur}ms ease-in`;
+    void el.offsetWidth;
+    el._o.x += dx; el._o.y += dy;
+    el.style.left = (el._o.x * WALK_T) + 'px';
+    el.style.top = (el._o.y * WALK_T) + 'px';
+  });
+  return sceneWait(ms);
+}
+

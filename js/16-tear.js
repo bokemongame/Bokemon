@@ -1,0 +1,926 @@
+/* ==========================================================
+   16-tear.js — THE SPACE-TIME TEAR (2.94)
+   Part of 博刻MON. Loaded as a classic script (before 11-app.js): everything
+   shares one global scope.
+
+   Where Cyborg — the Padrino's artificial monster, the time monster itself —
+   goes at the end of Region 5's climax, taken by Nemesis, a tear in space
+   and time stays open. (3.20) The story opens it (r5().tearOpen, in the
+   vault — 15-region5.js, "AFTER THE FIGHT"); the developer profile can
+   always go there. From the Challenge page it is one step away, and it
+   hangs over Cyborg's empty cradle in the vault (its Back returns there:
+   ui.tearBack), with two ways in:
+     · Enter the space-time tear — the way into Region 6, the Time Rift
+       (3.75, 17-region6.js: Selene and Vesper the first time, then the
+       region);
+     · Challenge the past — the Padrino's battle again, as a WEEKLY challenge.
+
+   CHALLENGE THE PAST (3.00: the Padrino's fight in the villa, as the
+   designer set it — handover part 6 §12)
+   - Seven rounds. A round is his team ONE AT A TIME: the Rhino, the Fox, the
+     Shadow, the Jackal and the Raven (TEAR_TEAM), crowned, at the level of
+     your highest-levelled monster or 110, whichever is higher — no cap here
+     (anyLevel; 2.99 had held them at 100) — and last of all Cyborg, at 200.
+   - Beat Cyborg and the round is won: it rewinds the team — and itself — and
+     he starts again from the Rhino. Cyborg fights now (2.94–2.99 it stood
+     aside, never acting, never below 1 HP): Spacetime Rift Max, 1.5× its
+     attack, 1.1× more for every Spacetime Fracture, multiplying; Futuresight
+     dodges half of every attack and each dodge is a fracture. A ✦ Curse
+     quiets Futuresight; a Diamond Dust sweeps the fractures away. (3.13)
+     Organosteel Body: 3 shields as it arrives and 1 more every turn, each
+     worth its ATK (tearCyborgShield) — no dust touches them; a Dragon Dance
+     breaks 1 / 2 / 3 with each attack, and a ✦ Curse stops new ones.
+   - Each round won pays its medals ONCE A WEEK (TEAR.pay; the week starts on
+     Monday, the player's own time). Lose or leave, and what was earned stays
+     earned; a new run starts again at round 1 and pays only the rounds not
+     yet paid this week. Once all seven are paid, the past waits for Monday.
+   - XP: each round won, its six waves' worth (2 a wave, as any trainer's
+     fight), to the whole party and bonded companions, with no region cap —
+     only a monster's own Crown and ceilings stop it (levelCap, ui.xpNoCap).
+   - All seven in one run: the first time ever, the Triune Stone of Being
+     (3.58; the Mind Stone until then); every time after that, 18 fights'
+     worth more for the whole party.
+   - Every quiz in it asks for the silver and gold words (pickWords).
+   - A loss costs nothing but the fall (10% health, as any): no XP is lost —
+     the designer (3.01): "No XP penalty for losses in the rift, let the
+     player navigate it with very high skill stones of their own". The
+     challenge and the tear's page say so.
+     Each round won counts as a battle for the eye break and the day's count;
+     a break that falls due is taken between rounds.
+   - (3.58) THE RUN IS KEPT. The designer: "can we have an autosave function
+     for when a weekly tear fight is exited at any time via the exit
+     function along with autosaves after each rewind? This prevents a crash
+     or disruption from wasting effort and also allows my sons to attempt it
+     slowly across a few days." Where a run stands is saved (t.saved):
+       · as every wave begins — after each rewind too (tearRoundWon keeps
+         the next round's start the moment Cyborg falls, so a crash in the
+         rewind loses nothing);
+       · at "Save & leave", to the blow: the wave they were in, and how much
+         health it had left.
+     The team's health (and who had fallen), the stones spent and the
+     recharge meter are kept with it, and put back when the run is picked
+     up again (tearResume) — healing elsewhere in between does not carry
+     in: the past is as it was left. Statuses, stacks and Cyborg's shields
+     start afresh. A run kept goes on into a new week. Losing ends the run,
+     as before (a new one starts at round 1); so does winning all seven.
+     The tear's page offers "Carry on" (and "Start again from round 1", which
+     asks first).
+   ========================================================== */
+const TEAR = {
+  rounds: 7,
+  wavesPerRound: 6,
+  /* round by round, paid once a week */
+  pay: [ { bronze:15 }, { bronze:30 }, { silver:10 }, { silver:20 }, { gold:5 }, { gold:10 }, { gold:15 } ],
+  bonusFights: 18,      // a full clear once the Triune Stone of Being is yours
+  cyborgLevel: 200,     // the one monster of theirs past 100 (SPECIES.cyborg.noLevelCap)
+  floor: 110,           // (3.00) his five: your best monster's level, or this — no cap
+  /* How hard his monsters fight, wave by wave within a round (the Rhino, Fox
+     and Shadow with their Power2, the Jackal and Raven with their best;
+     Cyborg always its best), and how much protein they carry. The knobs to
+     turn if a round is too hard or too easy. */
+  ai: ['power2', 'power2', 'power2', 'best', 'best', 'best'],
+  supplements: 0,
+  rewindPace: 0.8,      // (3.50) the rewind between rounds (cyborgRewind) a little quicker here than in the vault — it comes six times a run
+};
+/* (3.00) The Padrino's team, one at a time, in the order of his fight in the
+   villa — and then Cyborg (tearWaves). Until 2.99 it was six pairs of the
+   Family's elites, with Cyborg standing between each pair. */
+const TEAR_TEAM = ['ground_starter', 'psychic_starter', 'ghost_starter', 'physical_starter', 'flying_starter'];
+const TEAR_MEDAL = { bronze:'🥉', silver:'🥈', gold:'🥇' };
+
+/* ---------- where it is, and who may go ---------- */
+function tearOpen(){
+  return !!(state && state.progress && (state.progress.region5 || {}).tearOpen) || (typeof isDev === 'function' && isDev());
+}
+
+/* ---------- the week ---------- */
+/* Midnight on the Monday that starts the week holding `d` (now, if not given). */
+function tearWeekStart(d){
+  const x = new Date(d == null ? Date.now() : d);
+  x.setHours(0, 0, 0, 0);
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+  return x;
+}
+function tearWeekKey(d){ const w = tearWeekStart(d); return w.getFullYear() + '-' + (w.getMonth() + 1) + '-' + w.getDate(); }
+function tearNextWeek(){ const w = tearWeekStart(); w.setDate(w.getDate() + 7); return w; }
+/* The save's record: this week's paid rounds, the Triune Stone of Being,
+   clears — and (3.58) `saved`, where a run stands (tearSnapshot). A new week
+   clears the paid rounds and nothing else. */
+function tearState(){
+  const p = state.progress;
+  if(!p.tear || typeof p.tear !== 'object') p.tear = { week:'', paid:[], xpPaid:[], stone:false, clears:0, best:0, runs:0 };
+  const t = p.tear;
+  if(!Array.isArray(t.paid)) t.paid = [];
+  if(!Array.isArray(t.xpPaid)) t.xpPaid = [];      // (3.83) the rounds whose XP is paid this week
+  const wk = tearWeekKey();
+  if(t.week !== wk){ t.week = wk; t.paid = []; t.xpPaid = []; }
+  return t;
+}
+function tearPaidCount(){ const t = tearState(); return TEAR.pay.filter((_, i)=> !!t.paid[i]).length; }
+function tearAllPaid(){ return tearPaidCount() >= TEAR.rounds; }
+const tearCap = s=> s.charAt(0).toUpperCase() + s.slice(1);
+/* a count in words, for the boys ("seven rounds"); figures past twelve */
+const tearWord = n=> ['no','one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve'][n] || String(n);
+function tearPayText(pay){ return Object.entries(pay).map(([k, n])=> `${TEAR_MEDAL[k]} ${n} ${tearCap(k)}`).join(' + '); }
+function tearDayName(d){
+  try { return d.toLocaleDateString(undefined, { weekday:'long', day:'numeric', month:'long' }); }
+  catch(e){ return 'Monday'; }
+}
+
+/* ---------- the Challenge page's card, and the tear itself ---------- */
+function tearChallengeCard(){
+  tearCss();
+  const n = tearPaidCount();
+  return `
+    <div class="challenge-card" id="cTear" style="cursor:pointer;">
+      <span class="tear-mini" aria-hidden="true">${tearGalaxy()}</span>
+      <div style="flex:1;">
+        <div class="cc-title">The space-time tear</div>
+        <div class="cc-desc">Where Nemesis went, in Cyborg's body. <b>Challenge the past</b> once a week — ${n} of ${TEAR.rounds} rounds won this week.${(()=>{ const pl = tearPlace(); return pl ? ` 💾 Your run is saved at <b>round ${pl.round}, wave ${pl.wave}</b>.` : ''; })()}</div>
+      </div>
+    </div>`;
+}
+function renderTear(){
+  if(!tearOpen()) return go('challenge');
+  tearCss();
+  setScreenBg('tear');
+  $('#brandSub').textContent = 'The space-time tear';
+  const t = tearState();
+  const all = tearAllPaid();
+  const place = tearPlace();                       // (3.58) a run kept, to carry on
+  const day = tearDayName(tearNextWeek());
+  screenEl.innerHTML = `
+    <button class="back-link" id="backBtn">← ${ui.tearBack === 'cata_vault' ? 'The vault' : ui.tearBack === 'r6_rift' ? 'The Rift' : 'Challenge'}</button>
+    <div class="tear-screen">
+      <div class="screen-title">The space-time tear</div>
+      <div class="tear-wrap" aria-hidden="true">${tearGalaxy()}</div>
+      <div class="tear-say">Nemesis went through here, in Cyborg's body. It hums like a held breath.</div>
+      <button class="btn btn-primary tear-btn" id="tearEnter">${state.progress.currentRegion === 6 ? 'Back into the Time Rift' : 'Enter the space-time tear'}</button>
+      ${place ? `<button class="btn btn-primary tear-btn" id="tearGoOn">Carry on — round ${place.round}, wave ${place.wave}</button>
+      <div class="tear-saved">💾 Your run is saved: <b>round ${place.round} of ${TEAR.rounds}, wave ${place.wave} of ${TEAR.wavesPerRound}</b>, against ${place.foe === 'Cyborg' ? '<b>Cyborg</b>' : `the <b>${escapeHtml(place.foe)}</b>`}${place.part ? ' (already hurt)' : ''}. Your team will be just as you left it.</div>
+      <button class="btn btn-ghost tear-btn tear-ghost" id="tearAnew">Start again from round 1</button>`
+      : `<button class="btn btn-primary tear-btn" id="tearPast" ${all ? 'disabled' : ''}>Challenge the past</button>`}
+      <div class="tear-week">
+        <div class="tw-title">This week's rounds</div>
+        <div class="tw-rounds">${TEAR.pay.map((p, i)=>{
+          const [k, n] = Object.entries(p)[0];
+          return `<div class="tw-round ${t.paid[i] ? 'paid' : ''}" data-round="${i + 1}"><b>${i + 1}</b><span>${TEAR_MEDAL[k]}${n}</span>${t.paid[i] ? '<i>✓</i>' : ''}</div>`;
+        }).join('')}</div>
+        <div class="tw-note">${all
+          ? `All ${tearWord(TEAR.rounds)} won this week. The past opens again on <b>${escapeHtml(day)}</b>.`
+          : `Each round pays once a week; the next week starts on <b>${escapeHtml(day)}</b>. <b>Save & leave</b> keeps your place, to carry on another day. Lose, and you keep what you won, and no XP is taken — but a new try starts again at round 1.`}</div>
+        <div class="tw-note">${t.stone
+          ? `${stonePic('mindStone')} You hold the Triune Stone of Being. All ${tearWord(TEAR.rounds)} in one run: <b>+${TEAR.bonusFights} fights' worth</b> of XP for the whole team.`
+          : `All ${tearWord(TEAR.rounds)} in one run: <b>${stonePic('mindStone')} the Triune Stone of Being</b>.`}</div>
+        <div class="tw-note">Every move here asks for your <b>silver and gold words</b>.</div>
+      </div>
+    </div>`;
+  $('#backBtn').addEventListener('click', ()=>{
+    if(ui.tearBack === 'cata_vault' && typeof r5Zone === 'function'){ ui.currentZone = r5Zone('catacombs') || ui.currentZone; return go('cata_vault'); }
+    if(ui.tearBack === 'r6_rift' && typeof DECKS !== 'undefined' && DECKS.r6_rift) return go('r6_rift');   // (3.79) from the Rift's own tear
+    go('challenge');
+  });
+  $('#tearEnter').addEventListener('click', ()=> (typeof r6Enter === 'function') ? r6Enter() : toast('Beyond the tear: coming soon.'));   // (3.75) Region 6
+  const past = $('#tearPast'); if(past) past.addEventListener('click', ()=> tearChallenge());
+  const on = $('#tearGoOn'); if(on) on.addEventListener('click', ()=> tearResume());           // (3.58)
+  const anew = $('#tearAnew'); if(anew) anew.addEventListener('click', ()=> tearStartAgain());
+}
+
+/* ---------- Challenge the past ---------- */
+/* (3.00) His five: the level of your highest-levelled monster, or 110,
+   whichever is higher — no cap here (2.99 held them at 100). */
+function tearFoeLevel(){
+  const top = Math.max(0, ...battleParty().map(m=> m.level || 1));
+  return Math.max(TEAR.floor, Math.min(LEVEL_MAX, top));
+}
+/* All seven rounds' waves: in each, his monsters one at a time (as many as
+   wavesPerRound leaves room for — six: all five) and then Cyborg, always the
+   round's last. */
+/* (3.83) The designer: "it should mimic the actual padrino fight in terms of the number of monsters -
+   there were 3 per wave". Each of his five in the middle of its wave, crowned, with the two of the
+   Family's strongest that stand beside it in the vault (R5_VAULT_SIDES), all at the tear's level;
+   then Cyborg, alone, as there. */
+function tearWaves(level){
+  const L = level || tearFoeLevel();             // (3.58) a kept run keeps the level it began at
+  const n = Math.max(1, Math.min(TEAR_TEAM.length + 1, TEAR.wavesPerRound));
+  const one = (sp, ai)=> ({ species:sp, level:L, ai, crowned:true, supplements:TEAR.supplements, nerfed:false, anyLevel:true });
+  const sides = typeof R5_VAULT_SIDES !== 'undefined' ? R5_VAULT_SIDES : {};
+  const sideAi = sp=> typeof r5VaultAi === 'function' ? r5VaultAi(sp, false) : 'best';
+  const waves = [];
+  for(let r = 0; r < TEAR.rounds; r++){
+    TEAR_TEAM.slice(0, n - 1).forEach((sp, w)=>{
+      const [l, rt] = sides[sp] || [];
+      const centre = one(sp, TEAR.ai[w] || 'best');
+      waves.push(l && rt ? [one(l, sideAi(l)), centre, one(rt, sideAi(rt))] : [centre]);
+    });
+    waves.push([{ species:'cyborg', level:TEAR.cyborgLevel, ai:'best', crowned:true, nerfed:false, boss:true }]);
+  }
+  return waves;
+}
+/* (3.11) One round of the past, for the Test Arena's Challengers: his five,
+   crowned, then Cyborg — what each of the seven rounds is ((3.83) each of the
+   five with its two beside it, as in the vault). */
+function tearRoundBattle(){
+  return { waves:tearWaves().slice(0, TEAR.wavesPerRound), isNpc:true, npcId:'padrino2', bgKey:'battle_tear',
+           name:'Don Padrino · the past' };
+}
+function tearChallenge(){
+  if(!ensurePool()) return;
+  if(tearAllPaid()) return toast(`All ${tearWord(TEAR.rounds)} rounds are won this week. The past waits for Monday.`);
+  storyModal(monPortrait('cyborg', 140, { view:'front', bare:true, crowned:true }), 'Challenge the past',
+    `The tear shows you the Padrino's villa again. He sends his monsters out as he did there — the Rhino, the Fox, the Shadow, ` +
+    `the Jackal and the Raven, crowned, at level <b>${tearFoeLevel()}</b>, each with two of the Family's strongest beside it — ` +
+    `and last of all <b>Cyborg</b>, the time monster, at <b>${TEAR.cyborgLevel}</b>.<br><br>` +
+    `<b>Beat Cyborg</b> and it rewinds them all, itself too, and he starts again from the Rhino — <b>${tearWord(TEAR.rounds)} rounds</b>.<br><br>` +
+    `Cyborg's <b>Futuresight</b> dodges half of your blows, and every dodge is a <b>Spacetime Fracture</b>: its Spacetime Rift Max ` +
+    `(<b>1.5×</b> its attack) hits <b>1.1×</b> harder for each one, multiplying. A <b>Curse ✦</b> quiets Futuresight; a <b>Diamond Dust</b> ` +
+    `sweeps the fractures away.<br><br>` +
+    `Its <b>Organosteel Body</b> arrives behind <b>3 shields</b> and raises <b>1 more every turn</b>, each soaking up to <b>${tearCyborgShield()}</b> ` +
+    `of a strike. No Diamond Dust touches them — a <b>Dragon Dance</b> breaks <b>1 / 2 / 3</b> of them with every attack, and a ` +
+    `<b>Curse ✦</b> stops new ones: bring your own <b>Very High stones</b>.<br><br>` +
+    `Lose, and nothing is taken — <b>not even XP</b>. Each round's medals and XP are paid <b>once a week</b>: try again, and only the rounds you win further pay. ` +
+    `Every move asks for your <b>silver and gold words</b>.`,
+    ()=> tearBegin(), { subtitle:'The space-time tear', bg:'tear' });
+}
+/* What one of Cyborg's shields soaks from a strike here: its ATK (3.13). */
+function tearCyborgShield(){
+  return makeEnemy('cyborg', TEAR.cyborgLevel, { crowned:true, nerfed:false, anyLevel:true }).atk;
+}
+function tearBegin(){
+  const t = tearState();
+  t.runs = (t.runs || 0) + 1;
+  delete t.saved;                                 // (3.58) a new run: a run kept from before is given up
+  const L = tearFoeLevel();
+  beginBattle({ waves:tearWaves(L), isNpc:true, npcId:'padrino2', tear:true, bgKey:'battle_tear',
+                name:`Don Padrino · Round 1 of ${TEAR.rounds}`, onWaveStart:(i)=> tearWaveStart(i) });
+  const b = ui.battle;
+  b.tearLevel = L;
+  b.tearRun = { rounds:0, medals:{}, xp:0, events:[], stone:false, bonus:0 };
+  tearKeep(b);                                    // its first wave, kept
+  saveProfile();
+}
+
+/* ---------- (3.58) the run, kept ---------- */
+/* Where a run stands: the wave (`at`, from 0), the level his five fight at,
+   how much health the wave's foes have left (`foes`, if it is left part-
+   fought), the team's health by uid (fallen at 0), the stones spent, the
+   recharge meter, Rebirth, and the run's tally so far. */
+function tearSnapshot(b, opts){
+  opts = opts || {};
+  const at = opts.at != null ? opts.at : b.waveIndex;
+  const run = b.tearRun || {};
+  const hp = {};
+  battleParty().concat(bondedCompanions()).forEach(m=>{ if(m && m.uid) hp[m.uid] = Math.max(0, Math.round(m.currentHp || 0)); });
+  const foes = (opts.foes && at === b.waveIndex && livingEnemies().length) ? b.enemies.map(e=> Math.max(0, Math.round(e.hp || 0))) : null;
+  return { at, level:b.tearLevel || tearFoeLevel(), foes, hp,
+    used:{ vh:Object.assign({}, b.usedVeryHigh), ultra:Object.assign({}, b.usedUltra), soul:Object.assign({}, b.usedSoul) },
+    recharge:b.rechargeWords || 0, rebirth:!!b.rebirthUsed,
+    run:{ rounds:run.rounds || 0, medals:Object.assign({}, run.medals || {}), xp:run.xp || 0 },
+    when:Date.now() };
+}
+/* Keep it (saved with the profile by whoever saves next — loadWave does, as
+   every wave begins). Not once the run is over. */
+function tearKeep(b, opts){
+  if(!b || !b.tear || b.tearDone || !b.tearRun) return;
+  tearState().saved = tearSnapshot(b, opts);
+}
+/* The run kept, for the page: its round, wave, foe — and whether that foe
+   is already hurt. */
+function tearPlace(){
+  const sv = state && state.progress && state.progress.tear && state.progress.tear.saved;
+  if(!sv || !Number.isFinite(sv.at)) return null;
+  const at = Math.max(0, Math.min(TEAR.rounds * TEAR.wavesPerRound - 1, sv.at | 0));
+  const w = at % TEAR.wavesPerRound;
+  const sp = w === TEAR.wavesPerRound - 1 ? 'cyborg' : TEAR_TEAM[w];
+  return { at, round:Math.floor(at / TEAR.wavesPerRound) + 1, wave:w + 1, foe:(SPECIES[sp] || {}).name || sp, part:Array.isArray(sv.foes) };
+}
+/* Carry on: the team put back as it was, the fight begun at that wave, the
+   foe as hurt as it was left, the stones and meter as they stood. */
+function tearResume(){
+  const t = tearState(), sv = t.saved;
+  if(!sv || !Number.isFinite(sv.at)) return tearChallenge();
+  if(!ensurePool()) return;
+  const all = (state.party || []).concat(state.storage || []);
+  Object.entries(sv.hp || {}).forEach(([uid, hp])=>{
+    const m = all.find(x=> x && x.uid === uid);
+    if(m && Number.isFinite(hp)) m.currentHp = Math.max(0, Math.min(monMaxHp(m), Math.round(hp)));
+  });
+  const waves = tearWaves(sv.level);
+  const at = Math.max(0, Math.min(waves.length - 1, sv.at | 0));
+  beginBattle({ waves, startWave:at, isNpc:true, npcId:'padrino2', tear:true, bgKey:'battle_tear',
+                name:`Don Padrino · Round ${Math.floor(at / TEAR.wavesPerRound) + 1} of ${TEAR.rounds}`, onWaveStart:(i)=> tearWaveStart(i) });
+  const b = ui.battle;
+  b.tearLevel = sv.level || tearFoeLevel();
+  const r = sv.run || {};
+  b.tearRun = { rounds:r.rounds || 0, medals:Object.assign({}, r.medals || {}), xp:r.xp || 0, events:[], stone:false, bonus:0, resumed:true };
+  const u = sv.used || {};
+  Object.assign(b.usedVeryHigh, u.vh || {});
+  Object.assign(b.usedUltra, u.ultra || {});
+  Object.assign(b.usedSoul, u.soul || {});
+  b.rechargeWords = sv.recharge || 0;
+  if(sv.rebirth) b.rebirthUsed = true;
+  if(Array.isArray(sv.foes)) b.enemies.forEach((e, i)=>{
+    const h = sv.foes[i];
+    if(Number.isFinite(h)) e.hp = Math.max(0, Math.min(e.maxHp, h));
+  });
+  tearKeep(b, { foes:true });
+  saveProfile();
+  renderBattle();
+}
+/* Start again from round 1 — asked first, keeping the run the easy choice:
+   a kept run can be days of work. */
+function tearStartAgain(){
+  const pl = tearPlace();
+  if(!pl) return tearChallenge();
+  const ov = document.createElement('div');
+  ov.className = 'refine-scrim tear-ask';
+  ov.innerHTML = `<div class="refine-card">
+      <div class="refine-name">Start again?</div>
+      <div class="move-info-body"><p>Your run is saved at <b>round ${pl.round}, wave ${pl.wave}</b>. If you start again from <b>round 1</b>, that saved place is gone.</p>
+        <p>Rounds already won this week keep their medals.</p></div>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px;">
+        <button class="btn btn-primary" id="taKeep">Keep my run</button>
+        <button class="btn btn-ghost" id="taAnew">Start again from round 1</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  const close = ()=>{ if(ov.parentNode) ov.parentNode.removeChild(ov); };
+  ov.addEventListener('click', e=>{ if(e.target === ov) close(); });
+  ov.querySelector('#taKeep').addEventListener('click', close);
+  ov.querySelector('#taAnew').addEventListener('click', ()=>{ close(); tearChallenge(); });
+}
+
+/* Cyborg can be struck, but never brought below 1 HP — every path that
+   lowers an enemy's health goes through this. (The tear used it until 3.00,
+   when Cyborg became the round's last wave, to be beaten; kept for the
+   climax's final phase, where it flees at 1 HP — part 6 §12.) */
+function tearMakeRewinder(e){
+  let hp = Math.max(1, e.hp);
+  e.rewinder = true;
+  Object.defineProperty(e, 'hp', { configurable:true, enumerable:true,
+    get(){ return hp; },
+    set(v){ const n = +v; if(Number.isFinite(n)) hp = Math.max(1, n); } });
+}
+function tearWaveStart(i){
+  const b = ui.battle;
+  const round = Math.floor(i / TEAR.wavesPerRound) + 1;
+  b.tearRound = round;
+  b.name = `Don Padrino · Round ${round} of ${TEAR.rounds}`;
+  tearKeep(b, { at:i });                           // (3.58) kept as every wave begins (loadWave saves it)
+}
+function tearWaveLabel(i){
+  const round = Math.floor(i / TEAR.wavesPerRound) + 1, wave = i % TEAR.wavesPerRound + 1;
+  return `Round ${round} of ${TEAR.rounds} · wave ${wave} of ${TEAR.wavesPerRound}!`;
+}
+/* A wave won (not the last of all): on to the next, or — the round's last —
+   pay the round, and Cyborg rewinds the team. */
+function tearWaveCleared(next){
+  const b = ui.battle;
+  if((b.waveIndex + 1) % TEAR.wavesPerRound !== 0) return next();
+  if(b.rwWave === b.waveIndex) return;             // (3.50) one rewind — and one round's pay — however the round was ended
+  b.rwWave = b.waveIndex;
+  /* Cyborg beaten: the round is won, and it rewinds them all (3.00) */
+  const round = Math.floor(b.waveIndex / TEAR.wavesPerRound) + 1;
+  const said = tearRoundWon(round);
+  b.phase = 'resolving';
+  renderBattle();
+  battleMsg(said);
+  /* (3.50) an eye break that fell due with the round first; then Cyborg
+     turns back time (cyborgRewind): itself, then the round's waves one by
+     one, the last first — back to its first, which stays */
+  const i = b.waveIndex;
+  const acts = Array.from({ length:TEAR.wavesPerRound }, (_, k)=> b.waves[i - k]).filter(Boolean);
+  tearAfterBreak(b, ()=> cyborgRewind(b, acts, next, { pace:TEAR.rewindPace }));
+}
+/* An eye break that fell due with the round is taken now, before the next. */
+function tearAfterBreak(b, next){
+  if(ui.battle !== b) return;
+  if(b.tearBreak){ b.tearBreak = false; showEyeBreak(); }
+  if(eyeBreakActive()) return setTimeout(()=> tearAfterBreak(b, next), 1000);
+  next();
+}
+/* A round won: its medals if not paid this week, its XP always. Returns what
+   to say. */
+function tearRoundWon(round){
+  const b = ui.battle, t = tearState();
+  const run = b.tearRun || (b.tearRun = { rounds:0, medals:{}, xp:0, events:[], stone:false, bonus:0 });
+  run.rounds = Math.max(run.rounds, round);
+  t.best = Math.max(t.best || 0, round);
+  let line;
+  if(!t.paid[round - 1]){
+    t.paid[round - 1] = true;
+    const pay = TEAR.pay[round - 1];
+    state.medals = state.medals || {};
+    Object.entries(pay).forEach(([k, n])=>{
+      state.medals[k] = (state.medals[k] || 0) + n;
+      run.medals[k] = (run.medals[k] || 0) + n;
+    });
+    line = `🏅 Round ${round} won — ${tearPayText(pay)}!`;
+  } else line = `Round ${round} won — its medals were paid earlier this week.`;
+  /* (3.83) The designer: "failed challenges that are reattempted should not double award XP … award only
+     XP that hasn't been awarded if further progress is made" — a round's XP, like its medals, once a week */
+  if(!t.xpPaid[round - 1]){
+    t.xpPaid[round - 1] = true;
+    const fights = TEAR.wavesPerRound * 2;
+    run.xp += fights;
+    run.events.push(...tearXp(fights));
+  } else line += ' Its XP was earned earlier this week too.';
+  if(tallyBattleForEyeBreak({ round:true })) b.tearBreak = true;     // a round is a battle for the day's count; a break fallen due in its waves is taken before the next (3.23)
+  if(round < TEAR.rounds) tearKeep(b, { at:round * TEAR.wavesPerRound });   // (3.58) the next round's start, kept before the rewind plays
+  saveProfile();
+  if(round < TEAR.rounds)
+    line += ` ⏳ Cyborg rewinds time — the Padrino's team stands again. Round ${round + 1} of ${TEAR.rounds}!`;
+  return line;
+}
+/* XP with no region cap: only a monster's own Crown and ceilings hold it. */
+function tearXp(fights){
+  ui.xpNoCap = true;
+  try { return awardXpToParty(fights) || []; }
+  finally { ui.xpNoCap = false; }
+}
+
+/* ---------- the end of a run: won, lost or left ---------- */
+function tearEnded(kind){
+  const b = ui.battle;
+  if(!b || !b.tear || b.tearDone) return;
+  b.tearDone = true;
+  b.phase = 'resolving';
+  const t = tearState();
+  /* (3.58) Left: the place is kept, to the blow. Won or lost: the run is over. */
+  if(kind === 'left' && b.tearRun) t.saved = tearSnapshot(b, { foes:true });
+  else delete t.saved;
+  if(kind === 'won'){
+    tearRoundWon(TEAR.rounds);                       // the seventh round's own
+    const run = b.tearRun;
+    t.clears = (t.clears || 0) + 1;
+    if(!t.stone){ t.stone = true; addStone('mindStone', 1); run.stone = true; }      // the Triune Stone of Being (3.58)
+    else {
+      run.bonus = TEAR.bonusFights;
+      run.xp += TEAR.bonusFights;
+      run.events.push(...tearXp(TEAR.bonusFights));
+    }
+  }
+  let brk = !!b.tearBreak;
+  b.tearBreak = false;
+  if(kind === 'lost'){
+    /* a fall, as any: they come round with a little health — and nothing else
+       is taken, not even a bar of XP */
+    battleParty().concat(bondedCompanions()).forEach(m=>{ m.currentHp = Math.max(1, Math.floor(monMaxHp(m) * 0.10)); });   // (3.52) companions too
+    if(tallyBattleForEyeBreak()) brk = true;
+  }
+  stopMusic();
+  if(kind === 'won') playSfx('victory');
+  else if(kind === 'lost') playSfx('defeat');
+  saveProfile();
+  tearResults(kind, b.tearRun || { rounds:0, medals:{}, xp:0, events:[] });
+  if(brk) showEyeBreak();
+}
+/* (3.58) What "Save & leave" kept, for its results. */
+function tearSavedLine(){
+  const pl = tearPlace();
+  if(!pl) return '';
+  return `<div style="color:#3b6ea1;font-weight:800;margin-bottom:6px;">💾 Your run is saved at round ${pl.round} of ${TEAR.rounds}, wave ${pl.wave} of ${TEAR.wavesPerRound}. ` +
+    `Carry on from there whenever you like — your team will be just as you left it.</div>`;
+}
+function tearResults(kind, run){
+  const all = tearAllPaid();
+  const title = kind === 'won' ? 'The past is beaten' : kind === 'lost' ? 'The past won this time' : 'You stepped out of the past';
+  const emoji = kind === 'won' ? '🌀' : kind === 'lost' ? '⏳' : '🚪';
+  const medals = Object.entries(run.medals || {}).map(([k, n])=> `${TEAR_MEDAL[k]} +${n} ${tearCap(k)}`).join(' · ');
+  /* every level gained in the run, one line a monster */
+  const grown = {};
+  (run.events || []).forEach(e=>{
+    if(!e || !e.uid) return;
+    const g = grown[e.uid] || (grown[e.uid] = { name:e.name, from:Infinity, to:-Infinity, ready:null });
+    if(Number.isFinite(e.from)) g.from = Math.min(g.from, e.from);
+    if(Number.isFinite(e.to)) g.to = Math.max(g.to, e.to);
+    if(e.ready) g.ready = e.ready;
+  });
+  const ups = Object.values(grown);
+  const lines = [
+    kind === 'left' ? tearSavedLine() : '',
+    `<div>Rounds won in this run: <b>${run.rounds} of ${TEAR.rounds}</b>.</div>`,
+    `<div>${medals ? `Medals in this run: <b>${medals}</b>`
+                   : run.rounds ? 'No new medals — those rounds were paid earlier this week.' : 'No rounds won yet in this run.'}</div>`,
+    run.xp ? `<div>XP: <b>${run.xp} fights' worth</b> for the whole team${run.bonus ? ` (with <b>+${run.bonus}</b> for winning all ${tearWord(TEAR.rounds)})` : ''}.</div>`
+           : run.rounds ? `<div>No XP this time: those rounds' XP was earned earlier this week. Win further to earn more.</div>` : '',
+    run.stone ? `<div style="color:#6a4ab0;font-weight:800;">${stonePic('mindStone', 22)} The Triune Stone of Being! The stone of mind and body — Psychic, Ghost and Physical.</div>` : '',   // (3.57) its picture; (3.58) its name
+    ...ups.filter(g=> g.to > g.from).map(g=> `<div>⬆️ ${escapeHtml(g.name)} grew to Lv ${g.to}!</div>`),
+    ...ups.filter(g=> g.ready).map(g=> `<div style="color:#6a4ab0;">⚡ ${escapeHtml(g.name)} is ready to break through to Lv ${g.ready} — see your Party.</div>`),
+    `<div style="margin-top:6px;">This week: <b>${tearPaidCount()} of ${TEAR.rounds}</b> rounds paid. ${kind === 'left' ? ''
+      : all ? 'The past opens again next Monday.' : 'Try again: a new run starts at round 1, and pays the rounds still unpaid.'}</div>`,
+    kind === 'lost' ? `<div>Your team fainted and recovered a little. Nothing else is lost.</div>` : '',
+  ];
+  challengeResult(emoji, title, lines.filter(Boolean).join(''), 'tear');
+}
+
+/* ---------- looks ---------- */
+/* The tear: a purple-black galaxy turning round a black eye — four spiral
+   arms (each a glow under a bright thread), a second, fainter set turning
+   the other way, stars, and the eye. Drawn, so it needs no art. */
+function tearGalaxy(){
+  const C = 100;
+  const arm = (k, n, turn, r0, grow)=>{
+    const pts = [];
+    for(let i = 0; i <= 48; i++){
+      const t = i / 48 * turn * Math.PI;
+      const r = Math.min(96, r0 * Math.exp(grow * t));
+      const a = t + k * 2 * Math.PI / n;
+      pts.push((C + r * Math.cos(a)).toFixed(1) + ' ' + (C + r * Math.sin(a)).toFixed(1));
+    }
+    return 'M' + pts.join(' L');
+  };
+  const set = (n, turn, r0, grow)=> Array.from({ length:n }, (_, k)=> arm(k, n, turn, r0, grow));
+  const big = set(4, 2.4, 13, 0.27), small = set(3, 1.8, 16, 0.24);
+  /* the same stars every time */
+  let seed = 7;
+  const rnd = ()=> (seed = (seed * 9301 + 49297) % 233280) / 233280;
+  const stars = Array.from({ length:26 }, ()=>{
+    const a = rnd() * Math.PI * 2, r = 22 + rnd() * 72;
+    return `<circle cx="${(C + r * Math.cos(a)).toFixed(1)}" cy="${(C + r * Math.sin(a)).toFixed(1)}" r="${(0.5 + rnd() * 1.1).toFixed(2)}" fill="#f3eaff" opacity="${(0.45 + rnd() * 0.5).toFixed(2)}"/>`;
+  }).join('');
+  return `<svg class="tear-svg" viewBox="0 0 200 200" width="100%" height="100%">
+    <defs>
+      <radialGradient id="tearHalo"><stop offset="0" stop-color="#a96cf0" stop-opacity=".85"/><stop offset=".45" stop-color="#5a2a9a" stop-opacity=".6"/><stop offset=".8" stop-color="#2a0f4a" stop-opacity=".3"/><stop offset="1" stop-color="#12061f" stop-opacity="0"/></radialGradient>
+      <radialGradient id="tearEye"><stop offset="0" stop-color="#000"/><stop offset=".62" stop-color="#05010a"/><stop offset=".86" stop-color="#2a0c4a"/><stop offset="1" stop-color="#b27cff"/></radialGradient>
+      <filter id="tearBlur" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="3.2"/></filter>
+    </defs>
+    <circle cx="100" cy="100" r="99" fill="url(#tearHalo)" class="tear-pulse"/>
+    <g class="tear-spin">
+      ${big.map(d=> `<path d="${d}" fill="none" stroke="#7b3fd0" stroke-width="19" stroke-linecap="round" opacity=".6" filter="url(#tearBlur)"/>`).join('')}
+      ${big.map(d=> `<path d="${d}" fill="none" stroke="#e2ccff" stroke-width="2.8" stroke-linecap="round" opacity=".75"/>`).join('')}
+      ${stars}
+    </g>
+    <g class="tear-spin tear-spin-back">
+      ${small.map(d=> `<path d="${d}" fill="none" stroke="#b58cf0" stroke-width="9" stroke-linecap="round" opacity=".35" filter="url(#tearBlur)"/>`).join('')}
+    </g>
+    <circle cx="100" cy="100" r="25" fill="url(#tearEye)"/>
+    <circle cx="100" cy="100" r="25" fill="none" stroke="#c9a2ff" stroke-width="1.4" opacity=".8" class="tear-pulse"/>
+  </svg>`;
+}
+/* ============================================================
+   CYBORG TURNS BACK TIME (3.50)
+   The designer: "Each time cyborg rewinds, instead of blocking the screen
+   with the purple swirl and rewind emoticon, could you first do a purple
+   circle expansion similar to the time stop that nemesis does, then shimmer
+   the screen in a wave (different rows move left and right like a VCR
+   rewinding), reverse the health bars of each wave one by one? First cyborg
+   regains its health as its bar fills up, then the previous wave with raven
+   floats up in the reverse motion of fainting and their health bar fills,
+   then each preceding wave? The shimmering wavy effect then stops after the
+   first wave is healed and purple glow recedes."
+   rwSphere      the purple circle: out of a point (Cyborg) until the whole
+                 screen is purple, with a bright rim as it goes — Nemesis's
+                 time stop in the vault is its model; recede() draws it back
+                 in to where it came from.
+   rwTape        the screen as a tape rewinding: cut into thin rows, each row
+                 a copy of the whole screen showing only its own strip, the
+                 rows sliding left and right in a wave that runs down the
+                 screen (now and then a few of them jump, as a worn tape
+                 does), a tracking line rolling up it and faint scan lines
+                 over it. The copies are changed through apply(); settle()
+                 brings the rows back into line; remove() takes the tape away,
+                 and the real screen is there again.
+   cyborgRewind  in a fight (the vault's three rounds, the tear's seven):
+                 Cyborg rises out of its faint, its bar filling back up hit by
+                 hit; then the wave before it floats back up — the faint,
+                 backwards — its bars filling the same way; then the one
+                 before that, quicker, as a tape gathers speed… back to the
+                 round's first wave, which stays: there the rows settle, the
+                 real fight takes over (`landed` — the next wave, the same
+                 monsters) and the purple draws back in.
+   (In the vault before the fight, r5RewindRoom — 15-region5.js — uses the
+   circle and the tape for the Padrino's monsters getting back up.)
+   Every pause goes by SCENE_SPEED, as a scene's do.
+   ============================================================ */
+const RW = { grow:1100, ramp:350, settle:420, recede:900 };
+function rwTween(ms, f){
+  const dur = Math.max(1, ms * SCENE_SPEED), t0 = performance.now();
+  return new Promise(done=>{
+    const frame = now=>{
+      const t = Math.min(1, (now - t0) / dur);
+      f(t);
+      if(t < 1) requestAnimationFrame(frame); else done();
+    };
+    requestAnimationFrame(frame);
+  });
+}
+const rwFrames = n=> new Promise(done=>{ const f = ()=> (--n <= 0) ? done() : requestAnimationFrame(f); requestAnimationFrame(f); });
+/* The purple circle, centred on (cx, cy) — screen pixels. A layer the size
+   of the screen, its circle a gradient: never a layer bigger than the
+   screen, as a scaled-up ball would be. */
+function rwSphere(cx, cy){
+  tearCss();
+  const W = window.innerWidth, H = window.innerHeight;
+  const far = Math.hypot(Math.max(cx, W - cx), Math.max(cy, H - cy)) + 40;
+  const el = document.createElement('div');
+  el.className = 'rw-sphere';
+  el.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(el);
+  const x = Math.round(cx), y = Math.round(cy);
+  /* inside, a purple wash; at the edge a thin bright rim (a fixed width, so
+     once the circle is past the corners the rim is off the screen) */
+  const paint = (r, a)=>{
+    el.style.opacity = String(a == null ? 1 : a);
+    if(r < 2){ el.style.background = 'transparent'; return; }
+    const rim = Math.min(r * 0.5, 30), at = q=> Math.max(0, Math.round(r - q)) + 'px';
+    el.style.background = `radial-gradient(circle at ${x}px ${y}px, rgba(150,80,235,.14) 0px, rgba(128,58,220,.24) ${at(rim)}, ` +
+      `rgba(236,206,255,.88) ${at(rim * 0.35)}, rgba(150,80,235,.45) ${at(rim * 0.12)}, rgba(150,80,235,0) ${Math.round(r)}px)`;
+  };
+  paint(0);
+  return {
+    el,
+    grow:()=> rwTween(RW.grow, t=> paint(far * (1 - Math.pow(1 - t, 3)))),
+    recede:()=> rwTween(RW.recede, t=> paint(far * (1 - t) * (1 - t), 1 - 0.5 * t)).then(()=> el.remove()),
+    gone:()=> el.remove(),
+  };
+}
+/* The tape. Nothing in the copies moves by itself (their animations are
+   off, the sparkles taken out): only what apply() changes. */
+function rwTape(){
+  tearCss();
+  const W = window.innerWidth, H = window.innerHeight;
+  const tpl = document.createElement('div');
+  tpl.className = 'rw-frame';
+  tpl.style.width = W + 'px'; tpl.style.height = H + 'px';
+  const bs = getComputedStyle(document.body);
+  tpl.style.backgroundColor = bs.backgroundColor;
+  tpl.style.backgroundImage = bs.backgroundImage;
+  /* the faded backdrop behind the screen, and its wash if it has one */
+  const sb = document.getElementById('screenBg');
+  if(sb && sb.classList.contains('on')){
+    const c = getComputedStyle(sb), d = document.createElement('div');
+    d.className = 'rw-bg';
+    ['backgroundImage', 'backgroundSize', 'backgroundPosition', 'backgroundRepeat', 'opacity'].forEach(k=>{ d.style[k] = c[k]; });
+    const wash = getComputedStyle(sb, '::after').backgroundColor;
+    if(wash && !/^(transparent|rgba\(0, 0, 0, 0\))$/.test(wash)) d.style.boxShadow = `inset 0 0 0 ${W + H}px ${wash}`;
+    tpl.appendChild(d);
+  }
+  /* the screen and the bar along the top, each where it is now */
+  [screenEl, document.querySelector('.topbar')].forEach(el=>{
+    if(!el) return;
+    const r = el.getBoundingClientRect();
+    const c = el.cloneNode(true);
+    c.removeAttribute('id');
+    c.querySelectorAll('[id]').forEach(n=>{ n.setAttribute('data-rwid', n.id); n.removeAttribute('id'); });
+    c.querySelectorAll('.crown-fizz, .fizz, .evo-particles').forEach(n=> n.remove());
+    c.querySelectorAll('.log-body').forEach(lb=>{ while(lb.children.length > 30) lb.lastChild.remove(); });   // (a Test Arena's long log, thirty times over, is a lot of page)
+    Object.assign(c.style, { position:'absolute', left:r.left + 'px', top:r.top + 'px', width:r.width + 'px', margin:'0' });
+    tpl.appendChild(c);
+  });
+  const rowPx = Math.max(18, Math.round(H / 30));
+  const n = Math.ceil(H / rowPx);
+  const tape = document.createElement('div');
+  tape.className = 'rw-tape';
+  tape.setAttribute('aria-hidden', 'true');
+  const strips = [];
+  for(let k = 0; k < n; k++){
+    const s = document.createElement('div');
+    s.className = 'rw-strip';
+    s.style.top = (k * rowPx) + 'px'; s.style.height = rowPx + 'px';
+    const f = tpl.cloneNode(true);
+    f.style.top = (-k * rowPx) + 'px';
+    s.appendChild(f);
+    tape.appendChild(s);
+    strips.push({ el:s, frame:f, top:k * rowPx, y:(k + 0.5) * rowPx });
+  }
+  const bandH = Math.round(H * 0.07);
+  const track = document.createElement('div'); track.className = 'rw-track';
+  track.style.height = bandH + 'px';
+  track.style.backgroundImage = `linear-gradient(180deg, rgba(255,255,255,0), rgba(240,230,255,.45) 30%, rgba(255,255,255,.7) 50%, rgba(240,230,255,.45) 70%, rgba(255,255,255,0)), url(${rwNoise()})`;
+  const scan = document.createElement('div'); scan.className = 'rw-scan';
+  tape.appendChild(track); tape.appendChild(scan);
+  document.body.appendChild(tape);
+  /* the wave: a long one running down the screen, a short quick one over it;
+     the rows under the tracking line torn about at random */
+  const amp = Math.max(7, Math.min(20, W * 0.024)), lam = H * 0.42, lam2 = H * 0.11;
+  const speed = Math.max(0.05, SCENE_SPEED);
+  let from = 0, to = 1, rampAt = performance.now(), rampMs = RW.ramp, level = 0;
+  let glitch = null, nextGlitch = 280, alive = true;
+  const t0 = performance.now();
+  const frame = now=>{
+    if(!alive) return;
+    const u = Math.min(1, (now - rampAt) / Math.max(1, rampMs * SCENE_SPEED));
+    level = from + (to - from) * u * u * (3 - 2 * u);
+    const t = (now - t0) / speed;                               // the scene's own time, ms
+    if(t > nextGlitch){
+      const a = Math.floor(Math.random() * n);
+      glitch = { a, b:Math.min(n - 1, a + Math.floor(Math.random() * 3)), dx:(Math.random() < 0.5 ? -1 : 1) * amp * (1.6 + Math.random()), until:t + 70 + Math.random() * 60 };
+      nextGlitch = t + 260 + Math.random() * 420;
+    }
+    if(glitch && t > glitch.until) glitch = null;
+    const ty = Math.round(H - ((t / 1100) % 1) * (H + bandH));   // the tracking line, rolling up
+    for(let k = 0; k < n; k++){
+      const s = strips[k];
+      let dx = amp * Math.sin(2 * Math.PI * (s.y / lam - t / 720)) + amp * 0.35 * Math.sin(2 * Math.PI * (s.y / lam2 + t / 230));
+      if(glitch && k >= glitch.a && k <= glitch.b) dx += glitch.dx;
+      if(s.y > ty && s.y < ty + bandH) dx += (Math.random() * 2 - 1) * amp * 1.4;
+      s.el.style.transform = `translate3d(${(dx * level).toFixed(1)}px,0,0)`;
+    }
+    track.style.transform = `translate3d(0,${ty}px,0)`;
+    track.style.backgroundPosition = `0 0, ${Math.floor(Math.random() * 96)}px ${Math.floor(Math.random() * 12)}px`;
+    track.style.opacity = (level * 0.8).toFixed(2);
+    scan.style.opacity = (level * 0.55).toFixed(2);
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+  return {
+    el:tape, rowPx,
+    frames:strips.map(s=> s.frame),
+    apply(fn){ strips.forEach(s=> fn(s.frame)); },
+    /* the copies whose rows cross the screen between top and bottom — the
+       only ones that show what is there */
+    within(top, bottom){ return strips.filter(s=> s.top < bottom && s.top + rowPx > top).map(s=> s.frame); },
+    level:()=> level,
+    settle(){ from = level; to = 0; rampAt = performance.now(); rampMs = RW.settle; return sceneWait(RW.settle); },
+    remove(){ alive = false; tape.remove(); },
+    /* dissolved into the real screen under it, and gone */
+    fade(){
+      tape.style.transition = `opacity ${300 * SCENE_SPEED}ms ease`;
+      tape.style.opacity = '0';
+      return sceneWait(300).then(()=>{ alive = false; tape.remove(); });
+    },
+  };
+}
+/* Snow for the tracking line: a little tile of grey and white specks, made
+   once. */
+let _rwNoise = null;
+function rwNoise(){
+  if(_rwNoise) return _rwNoise;
+  try {
+    const c = document.createElement('canvas');
+    c.width = 96; c.height = 12;
+    const g = c.getContext('2d'), img = g.createImageData(96, 12);
+    for(let p = 0; p < img.data.length; p += 4){
+      const v = 150 + Math.floor(Math.random() * 105), a = Math.random() < 0.55 ? Math.floor(60 + Math.random() * 150) : 0;
+      img.data[p] = v; img.data[p + 1] = v; img.data[p + 2] = Math.min(255, v + 20); img.data[p + 3] = a;
+    }
+    g.putImageData(img, 0, 0);
+    _rwNoise = c.toDataURL();
+  } catch(e){ _rwNoise = 'data:,'; }
+  return _rwNoise;
+}
+/* A bar coming back the way it went down: in 3 to 5 pieces, as the hits
+   went in. `rwHits` makes the pieces (where each ends, 0..1, the last 1);
+   `rwLevel` reads the bar at u (0..1): each piece rises in the first 60% of
+   its share of the time, and holds. */
+function rwHits(n){
+  const w = Array.from({ length:n }, ()=> 0.5 + Math.random());
+  const sum = w.reduce((a, x)=> a + x, 0);
+  let acc = 0;
+  return w.map((x, i)=> i === n - 1 ? 1 : (acc += x / sum));
+}
+function rwLevel(steps, u){
+  if(u <= 0) return 0;
+  if(u >= 1) return 1;
+  const n = steps.length, j = Math.min(n - 1, Math.floor(u * n)), v = Math.min(1, (u * n - j) / 0.6);
+  const a = j ? steps[j - 1] : 0;
+  return a + (steps[j] - a) * (1 - (1 - v) * (1 - v));
+}
+/* In a fight: `acts` are what comes back, in order — each a wave's specs,
+   Cyborg's own first; the last stays. `landed` hands back to the fight (the
+   next wave loaded under the tape, the same monsters as the last act).
+   opts.pace: under 1, quicker. Resolves once the purple has gone. */
+async function cyborgRewind(b, acts, landed, opts){
+  opts = opts || {};
+  const pace = opts.pace || 1;
+  const live = ()=> ui.battle === b && ui.screen === 'battle' && !!document.getElementById('battleStage');
+  const card = document.getElementById('enemy-0');
+  const rc = card ? card.getBoundingClientRect() : null;
+  const cx = rc ? rc.left + rc.width / 2 : window.innerWidth / 2;
+  const cy = rc ? rc.top + rc.height * 0.4 : window.innerHeight * 0.25;
+  b.hold = (b.hold || 0) + 1;                    // nothing hands the buttons back meanwhile
+  const free = ()=>{ b.hold = Math.max(0, (b.hold || 1) - 1); };
+  /* the fight was just drawn again, and a fainted one sinks again when it is:
+     it is gone already, and stays gone */
+  document.querySelectorAll('.enemy-card.fainted .avatar-layer').forEach(el=>{ el.style.animation = 'none'; el.style.opacity = '0'; });
+  playSfx('rewind');
+  if(typeof buzz === 'function') buzz('rewind');                        // (4.28) Cyborg turns back time: felt too
+  const sphere = rwSphere(cx, cy);
+  const grown = sphere.grow();
+  await sceneWait(RW.grow * 0.7);
+  if(!live()){ sphere.gone(); free(); return; }
+  let tape = null;
+  try {
+    tape = rwTape();
+    for(let k = 0; k < acts.length; k++){
+      if(!live()) break;
+      await rwAct(tape, acts[k], k, k === acts.length - 1, pace);
+    }
+    await tape.settle();
+  } catch(e){ /* a picture gone wrong must not hold up the fight */ }
+  const ok = live();
+  free();
+  if(ok) landed();
+  await rwFrames(2);                             // the real fight drawn under the tape first
+  if(tape) await tape.fade();                    // (a passive's badge can move a card a little: dissolved, not jumped)
+  await grown;
+  if(ok) await sphere.recede(); else sphere.gone();
+}
+/* One wave back, in every copy of the screen: in its faint at first (sunk
+   out of sight, its plate dim, its bars empty), it floats back up — the
+   faint, backwards — while its bars fill again; then, unless it is the last,
+   its coming-out is undone too and it is gone. */
+async function rwAct(tape, specs, k, last, pace){
+  const foes = (specs || []).map(s=> makeEnemy(s.species, s.level, { nerfed:s.nerfed, ai:s.ai, supplements:s.supplements, boss:s.boss,
+    crowned:s.crowned, forceStage:s.forceStage, anyLevel:s.anyLevel }));
+  if(!foes.length) return;
+  const slots = (foes.length === 1 && foes[0].species === 'cyborg') ? 3 : foes.length;    // as enemyFieldSlots
+  const px = enemySpriteSize(slots);
+  const html = foes.map(e=> `
+    <div class="enemy-card" style="width:${px + 16}px;">
+      <div class="enemy-status"></div>
+      <div class="bob avatar-layer" data-rw="av" style="transform:translateY(80px) rotate(14deg);opacity:0;">${monPortrait(e.species, px, { view:'front', bare:true, plain:true, crowned:!!e.crowned, stage:e.stage || 0 })}</div>
+      <div class="info-layer name-plate" data-rw="pl" style="opacity:.45;">
+        <div class="mon-title">${SPECIES[e.species].name} <span>Lv ${e.level}</span></div>
+        <div class="blk-wrap" style="display:none;"></div>
+        <div class="hpbar2" style="height:${HPBAR.h}px;"><div class="hp-red" data-rw="r" style="width:0%;"></div><div class="hp-green" data-rw="g" style="width:0%;background:var(--cinnabar);"></div></div>
+        <div class="hp-num" data-rw="n" style="font-size:${HPBAR.num}px;">0/${e.maxHp}</div>
+      </div>
+    </div>`).join('');
+  tape.apply(f=>{
+    const row = f.querySelector('.enemy-row');
+    if(!row) return;
+    row.innerHTML = html;
+    row.classList.toggle('centred', slots > foes.length);
+    row.querySelectorAll('.crown-fizz').forEach(x=> x.remove());       // still sparkles would only be dots
+  });
+  const row0 = tape.frames[0] && tape.frames[0].querySelector('.enemy-row');
+  const rr = row0 ? row0.getBoundingClientRect() : { top:0, bottom:window.innerHeight };
+  const els = tape.within(rr.top - 4, rr.bottom + 4).map(f=> ['av', 'pl', 'r', 'g', 'n'].reduce((o, key)=>{ o[key] = [...f.querySelectorAll(`[data-rw="${key}"]`)]; return o; }, {}));
+  const steps = foes.map(()=> rwHits(3 + Math.floor(Math.random() * 3)));
+  const rise = (k === 0 ? 1000 : last ? 900 : Math.max(560, 880 - 80 * (k - 1))) * pace;
+  await rwTween(rise * 1.2, t=>{
+    const s = Math.pow(1 - Math.min(1, t * 1.2), 3);           // sinkAway is an ease-in cube: backwards, an ease-out
+    const tf = `translateY(${(80 * s).toFixed(1)}px) rotate(${(14 * s).toFixed(2)}deg)`, op = (1 - s).toFixed(3), plate = (0.45 + 0.55 * (1 - s)).toFixed(3);
+    const uf = Math.max(0, Math.min(1, t * 1.2 - 0.2));
+    foes.forEach((e, i)=>{
+      const lv = rwLevel(steps[i], uf), lead = rwLevel(steps[i], Math.min(1, uf + 0.12));
+      const g = (lv * 100).toFixed(1) + '%', red = (lead * 100).toFixed(1) + '%';
+      const col = lv < 0.3 ? 'var(--cinnabar)' : 'var(--jade)', num = Math.round(e.maxHp * lv) + '/' + e.maxHp;
+      els.forEach(x=>{
+        if(x.av[i]){ x.av[i].style.transform = tf; x.av[i].style.opacity = op; }
+        if(x.pl[i]) x.pl[i].style.opacity = plate;
+        if(x.g[i]){ x.g[i].style.width = g; x.g[i].style.background = col; }
+        if(x.r[i]) x.r[i].style.width = red;
+        if(x.n[i] && x.n[i].textContent !== num) x.n[i].textContent = num;
+      });
+    });
+  });
+  await sceneWait((k === 0 ? 380 : last ? 450 : Math.max(120, 260 - 40 * k)) * pace);
+  if(last) return;
+  await rwTween(180 * pace, t=>{
+    const o = (1 - t).toFixed(3);
+    els.forEach(x=> x.av.concat(x.pl).forEach(el=>{ el.style.opacity = o; }));
+  });
+}
+let _tearCssDone = false;
+function tearCss(){
+  if(_tearCssDone || typeof document === 'undefined') return;
+  _tearCssDone = true;
+  const st = document.createElement('style');
+  st.id = 'tearCss';
+  st.textContent = `
+  .tear-screen{ background:radial-gradient(ellipse at 50% 28%, #2c1548 0%, #140a22 55%, #07040c 100%);
+    border-radius:18px; padding:14px 14px 16px; color:#efe6ff; box-shadow:0 6px 30px rgba(20,8,40,.45); }
+  .tear-screen .screen-title{ color:#f4ecff; text-align:center; }
+  .tear-wrap{ position:relative; width:min(66vw, 250px); aspect-ratio:1/1; margin:8px auto 12px; }
+  .tear-svg{ display:block; overflow:visible; }
+  .tear-svg .tear-spin{ transform-box:view-box; transform-origin:100px 100px; animation:tearSpin 16s linear infinite; }
+  .tear-svg .tear-spin-back{ animation:tearSpinBack 10s linear infinite; }
+  .tear-svg .tear-pulse{ transform-box:view-box; transform-origin:100px 100px; animation:tearPulse 4s ease-in-out infinite; }
+  @keyframes tearSpin{ to{ transform:rotate(360deg); } }
+  @keyframes tearSpinBack{ to{ transform:rotate(-360deg); } }
+  @keyframes tearPulse{ 0%,100%{ transform:scale(1); opacity:.8; } 50%{ transform:scale(1.07); opacity:1; } }
+  .tear-say{ text-align:center; font-size:13px; font-weight:700; color:#cdb8f0; margin:0 0 12px; }
+  .tear-btn{ margin-bottom:10px; background:linear-gradient(180deg, #7a45c8, #4f2690); border-color:#3a1b6c; color:#fff; }
+  .tear-btn:disabled{ opacity:.5; }
+  .tear-btn.tear-ghost{ background:transparent; border:1.5px solid rgba(200,170,255,.45); color:#e6d8ff; box-shadow:none; }   /* (3.58) Start again */
+  .tear-saved{ text-align:center; font-size:13px; font-weight:700; color:#e9dcff; line-height:1.45; margin:-2px 6px 12px; }
+  .tear-saved b{ color:#fff; }
+  .tear-week{ margin-top:6px; background:rgba(255,255,255,.06); border:1px solid rgba(200,170,255,.25); border-radius:14px; padding:10px 10px 8px; }
+  .tw-title{ font-weight:800; font-size:13px; color:#e6d8ff; margin-bottom:8px; }
+  .tw-rounds{ display:grid; grid-template-columns:repeat(7, 1fr); gap:5px; margin-bottom:8px; }
+  .tw-round{ position:relative; text-align:center; border-radius:10px; padding:5px 0 4px; background:rgba(255,255,255,.08);
+    border:1px solid rgba(200,170,255,.22); font-size:11px; font-weight:800; color:#efe6ff; }
+  .tw-round b{ display:block; font-size:13px; }
+  .tw-round span{ display:block; white-space:nowrap; font-size:10px; }
+  .tw-round.paid{ background:rgba(140,220,160,.18); border-color:rgba(140,220,160,.55); }
+  .tw-round i{ position:absolute; top:-6px; right:-4px; font-style:normal; font-size:11px; background:#3fa55b; color:#fff;
+    border-radius:50%; width:16px; height:16px; line-height:16px; }
+  .tw-note{ font-size:12px; font-weight:600; color:#d8c8f4; line-height:1.45; margin-top:4px; }
+  .tear-mini{ position:relative; width:54px; height:54px; flex:0 0 auto; display:inline-block; }
+  /* (3.50) Cyborg turning back time: the purple circle, and the tape (rwTape) */
+  .rw-sphere{ position:fixed; inset:0; pointer-events:none; z-index:27; }
+  .rw-tape{ position:fixed; inset:0; z-index:26; overflow:hidden; touch-action:none; }
+  .rw-strip{ position:absolute; left:0; right:0; overflow:hidden; will-change:transform; }
+  .rw-frame{ position:absolute; left:0; overflow:hidden; pointer-events:none; }
+  .rw-frame *{ animation:none !important; transition:none !important; will-change:auto !important; -webkit-backdrop-filter:none !important; backdrop-filter:none !important; }
+  .rw-bg{ position:absolute; inset:0; }
+  .rw-scan{ position:absolute; inset:0; pointer-events:none; opacity:0;
+    background:repeating-linear-gradient(0deg, rgba(30,0,60,.16) 0 1px, rgba(255,255,255,0) 1px 3px); }
+  .rw-track{ position:absolute; left:0; right:0; top:0; pointer-events:none; opacity:0;
+    background-repeat:no-repeat, repeat; background-size:100% 100%, 192px 24px; image-rendering:pixelated; }
+  `;
+  document.head.appendChild(st);
+}

@@ -1,0 +1,3575 @@
+/* ==========================================================
+   07-screens.js
+   Profile, starter, home, region, party screens.
+   Part of 博刻MON. Loaded as a classic script: everything shares
+   one global scope, exactly as when this was a single file.
+   ========================================================== */
+/* ---------- SCREEN: profile select / create / import ---------- */
+function renderProfileSelect(){
+  setScreenBg('home');
+  $('#brandSub').textContent = 'Choose a trainer';
+  const list = ui.profileList || [];
+  screenEl.innerHTML = `
+    <div style="text-align:center;margin:10px 0 24px;">
+      <div style="font-family:'Noto Serif SC',serif;font-weight:900;font-size:38px;letter-spacing:0.04em;line-height:1;">
+        博刻<span style="font-family:'Baloo 2',cursive;font-size:28px;color:var(--cinnabar);margin-left:5px;">MON</span>
+      </div>
+      <div style="font-size:11px;color:var(--ink-soft);font-weight:700;letter-spacing:0.14em;text-transform:uppercase;margin-top:6px;">BoKeMON</div>
+    </div>
+    <div class="screen-title">Who's playing?</div>
+    <div class="screen-sub">${list.length ? 'Tap your name to continue.' : 'Create your first trainer to begin.'}</div>
+
+    <div id="profileList" style="display:flex;flex-direction:column;gap:10px;"></div>
+
+    <button class="btn btn-primary" id="newBtn" style="margin-top:${list.length?'16px':'4px'};">+ New trainer</button>
+    <button class="btn btn-ghost" id="importBtn" style="margin-top:10px;">Restore from a backup file</button>
+    <input type="file" id="importFile" accept=".json" style="display:none;">
+    <div class="phase-flag">One shared word list for the family · each trainer carves their own progress.</div>
+  `;
+
+  const box = $('#profileList');
+  box.innerHTML = list.map(pr=>`
+    <div class="region-card" data-pid="${pr.id}">
+      ${pr.avatar ? avatarImg(pr.avatar, 48) : monPortrait(pr.starterSpecies || 'fire_starter', 48)}
+      <div class="region-info" style="flex:1;">
+        <h3>${escapeHtml(pr.name)}${pr.isDev?' <span class="dev-tag">DEV</span>':''}</h3>
+        <p>Lv ${pr.level||5} · last played ${timeAgo(pr.updatedAt)}</p>
+      </div>
+      <button class="tagbtn del" data-delp="${pr.id}" title="Delete">✕</button>
+    </div>
+  `).join('');
+
+  box.querySelectorAll('[data-pid]').forEach(card=>card.addEventListener('click', async e=>{
+    if(e.target.closest('[data-delp]')) return;   // the delete button handles itself
+    const p = await loadProfileById(card.dataset.pid);
+    if(!p){ toast("Couldn't open that trainer."); return; }
+    state = p;
+    await runProfileMigrations();     // back-payments apply here too, not just at boot
+    await saveProfile();
+    go('home');
+  }));
+
+  box.querySelectorAll('[data-delp]').forEach(b=>b.addEventListener('click', e=>{
+    e.stopPropagation();
+    const id = b.dataset.delp;
+    const entry = list.find(x=>x.id===id);
+    confirmDialog(`Delete ${entry ? entry.name : 'this trainer'}? Their monsters and progress are lost for good. (The shared word list is not affected.)`, async ()=>{
+      const idx = (await loadProfileIndex()).filter(x=>x.id!==id);
+      await saveProfileIndex(idx);
+      try{ localStorage.removeItem(profileStorageKey(id)); }catch(err){}
+      if(state && state.id===id) state = null;
+      ui.profileList = idx;
+      renderProfileSelect();
+      toast('Trainer deleted.');
+    });
+  }));
+
+  $('#newBtn').addEventListener('click', ()=>{
+    ui.pendingName = null;
+    promptNewTrainerName();
+  });
+  $('#importBtn').addEventListener('click', ()=> $('#importFile').click());
+  $('#importFile').addEventListener('change', handleProfileImport);
+}
+
+function promptNewTrainerName(){
+  $('#brandSub').textContent = 'New trainer';
+  ui.pendingAvatar = ui.pendingAvatar || null;
+  screenEl.innerHTML = `
+    <button class="back-link" id="backBtn">← Back</button>
+    <div class="screen-title">What's your name?</div>
+    <div class="screen-sub">This is how the game will greet you.</div>
+    <input type="text" id="nameInput" placeholder="Enter a name" maxlength="20" value="${escapeHtml(ui.pendingName||'')}">
+
+    <div class="screen-sub" style="margin:18px 0 8px;">Pick your look</div>
+    ${avatarPickerHtml(ui.pendingAvatar)}
+
+    <button class="btn btn-primary" id="createBtn" style="margin-top:16px;">Continue</button>
+  `;
+  $('#backBtn').addEventListener('click', ()=>go('profileSelect'));
+  wireAvatarPicker(id=>{ ui.pendingAvatar = id; });
+  const submit = ()=>{
+    const name = $('#nameInput').value.trim();
+    if(!name){ toast('Please enter a name first.'); return; }
+    if(!ui.pendingAvatar){ toast('Pick an avatar to continue.'); return; }
+    ui.pendingName = name;
+    go('starterSelect');
+  };
+  $('#createBtn').addEventListener('click', submit);
+  $('#nameInput').addEventListener('keydown', e=>{ if(e.key==='Enter') submit(); });
+}
+
+/* Shared avatar grid, used at creation and for changing later in Settings. */
+function avatarPickerHtml(selected){
+  const row = (label, ids)=>`
+    <div class="av-group">
+      <div class="av-label">${label}</div>
+      <div class="av-row">
+        ${ids.map(id=>`
+          <button class="av-opt ${selected===id?'sel':''}" data-avatar="${id}">
+            ${avatarImg(id, 72)}
+          </button>`).join('')}
+      </div>
+    </div>`;
+  return `<div class="av-picker">${row('Boy', AVATARS.male)}${row('Girl', AVATARS.female)}</div>`;
+}
+function wireAvatarPicker(onPick){
+  screenEl.querySelectorAll('[data-avatar]').forEach(b=>b.addEventListener('click', ()=>{
+    screenEl.querySelectorAll('[data-avatar]').forEach(x=>x.classList.remove('sel'));
+    b.classList.add('sel');
+    onPick(b.dataset.avatar);
+  }));
+}
+
+/* Avatar chooser for existing profiles (and for changing later). */
+function renderAvatarPick(){
+  $('#brandSub').textContent = 'Your look';
+  let chosen = playerAvatar();
+  screenEl.innerHTML = `
+    <button class="back-link" id="backBtn">← Back</button>
+    <div class="screen-title">Choose your look</div>
+    <div class="screen-sub">You can change this any time in Settings.</div>
+    ${avatarPickerHtml(chosen)}
+    <button class="btn btn-primary" id="avSave" style="margin-top:18px;" ${chosen?'':'disabled'}>Save</button>
+  `;
+  $('#backBtn').addEventListener('click', ()=> goBack());   // (3.65)
+  wireAvatarPicker(id=>{ chosen = id; $('#avSave').disabled = false; });
+  $('#avSave').addEventListener('click', async ()=>{
+    if(!chosen) return;
+    state.avatar = chosen;
+    await saveProfile();
+    toast('Looking good!');
+    goBack();
+  });
+}
+
+function timeAgo(ts){
+  if(!ts) return 'never';
+  const d = Date.now()-ts;
+  const mins = Math.floor(d/60000);
+  if(mins < 1) return 'just now';
+  if(mins < 60) return mins+'m ago';
+  const hrs = Math.floor(mins/60);
+  if(hrs < 24) return hrs+'h ago';
+  const days = Math.floor(hrs/24);
+  return days===1 ? 'yesterday' : days+'d ago';
+}
+
+async function handleProfileImport(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  try{
+    const text = await file.text();
+    const data = JSON.parse(text);
+
+    // New bundle format holds { profile, wordlist }; older files were a bare profile.
+    const isBundle = data && (data.format === 'bokemon-backup' || data.format === 'word-catcher-backup') && data.profile;
+    const prof = isBundle ? data.profile : data;
+
+    if(!prof || !prof.name || !prof.party || !prof.starterSpecies){
+      toast("That doesn't look like a 博刻MON backup.");
+      e.target.value='';
+      return;
+    }
+
+    state = normalizeProfile(prof);
+    await saveProfile();
+
+    let wordMsg = '';
+    if(isBundle){
+      if(Array.isArray(data.localWords))  localWords  = data.localWords.slice();
+      if(Array.isArray(data.hiddenWords)) hiddenWords = data.hiddenWords.slice();
+      if(Array.isArray(data.wordlist)){
+        // v1 backups stored {text,priority,regular} objects; v2 stores strings.
+        const texts = phraseKeys(data.wordlist.map(w => typeof w==='string' ? w : w && w.text));
+        // anything not already coming from words.txt is kept as a local word
+        texts.forEach(t=>{ if(!remoteWords.includes(t) && !localWords.includes(t)) localWords.push(t); });
+        // v1 carried the checkmarks on the list itself — migrate them onto the profile
+        data.wordlist.forEach(w=>{
+          if(w && typeof w==='object' && w.text && phraseKey(w.text)){
+            state.wordFlags = state.wordFlags || {};
+            state.wordFlags[phraseKey(w.text)] = { priority:!!w.priority, regular:w.regular!==false };
+          }
+        });
+      }
+      await saveWordlist();
+      await saveProfile();
+      wordMsg = ` and ${masterWords.length} words`;
+    }
+
+    toast(`Restored ${state.name}${wordMsg}!`);
+    go('home');
+  }catch(err){
+    toast("Couldn't read that file.");
+  }
+  e.target.value='';
+}
+
+/* ---------- SCREEN: starter select ---------- */
+function renderStarterSelect(){
+  const blurbs = {
+    water_starter:'Steady and sturdy. Strong against Fire.',
+    fire_starter:'Fierce and fiery. Strong against Grass.',
+    grass_starter:'Nimble and green. Strong against Water.',
+  };
+  screenEl.innerHTML = `
+    <button class="back-link" id="backBtn">← Back</button>
+    <div class="screen-title">Choose your first partner</div>
+    <div class="screen-sub">This monster starts at level 5 and grows with you.</div>
+    <div class="starter-grid" id="starterGrid">
+      ${STARTER_CHOICES.map(sp=>`
+        <div class="starter-card" data-sp="${sp}">
+          ${monPortrait(sp,76)}
+          <div class="starter-info">
+            <h3>${SPECIES[sp].name}</h3>
+            <div class="type-badge" style="background:${TYPE_COLORS[SPECIES[sp].types[0]]}">${SPECIES[sp].types[0]}</div>
+            <p>${blurbs[sp]}</p>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+    <button class="btn btn-primary" id="confirmBtn" style="margin-top:18px;" disabled>Choose this partner</button>
+  `;
+
+  let picked = null;
+  screenEl.querySelectorAll('.starter-card').forEach(card=>{
+    card.addEventListener('click', ()=>{
+      screenEl.querySelectorAll('.starter-card').forEach(c=>c.classList.remove('selected'));
+      card.classList.add('selected');
+      picked = card.dataset.sp;
+      $('#confirmBtn').disabled = false;
+    });
+  });
+  $('#backBtn').addEventListener('click', ()=>go('profileSelect'));
+  $('#confirmBtn').addEventListener('click', async ()=>{
+    if(!picked) return;
+    await createAndSaveProfile(ui.pendingName, picked);
+    if(ui.pendingAvatar){ state.avatar = ui.pendingAvatar; await saveProfile(); }
+    ui.pendingAvatar = null;
+    ui.profileList = await loadProfileIndex();
+    toast('Your adventure begins!');
+    go('home');
+  });
+}
+
+/* ---------- SCREEN: home ----------
+   (4.29) The designer: "I want to beautify and simplify the home screen at the start. There should be a continue button
+   to go straight back to the latest region's storyline progress. The dailies should be expandable to see the full
+   rewards per day, and the monster display is rather cluttered. Please remove the party UI and instead have a cycling
+   banner for team sprites that can be scrolled (without monster names and details) or pressed to go to the party page.
+   The continue button should be prominent. Region next, then index and monster list."
+   From the top: your team going by (you at its head; swipe along it, or tap it for the party page), Continue, Regions,
+   the Spelling Index and the Monster Index, and the day's phrases (open it for what each day of the cycle pays). */
+
+/* The daily: the day's phrases so far; opened, the six days of the cycle with everything each pays — the days done
+   ticked, the one being written glowing, the last golden. The cycle never resets for a missed day: it waits. */
+function dailyPanel(){
+  const d = dailyState();
+  const step = d.step % DAILY_CYCLE.length;          // the day being worked on
+  const pct = Math.min(100, d.count/DAILY_TARGET*100);
+  const allDone = d.done && step === 0;              // a full cycle just closed
+  const open = !!ui.dailyOpen;
+  const pays = (r, s)=> (r.tokens ? `<span class="dz-pay">${tokenIcon(s || 16)}<b>${r.tokens}</b></span>` : '') +
+                   (r.silver ? `<span class="dz-pay"><i>🥈</i><b>${r.silver}</b></span>` : '') +
+                   (r.gold ? `<span class="dz-pay"><i>🥇</i><b>${r.gold}</b></span>` : '');
+  const square = (i)=>{
+    /* `step` ALREADY points at tomorrow once today is claimed, so `i < step` covers every completed day on its own. */
+    const done = allDone || i < step;
+    const current = !done && i === step && !d.done;
+    return `<div class="daily-sq ${done?'done':''} ${current?'current':''} ${i===5?'finale':''}">
+      <div class="dq-day">Day ${i+1}</div>
+      <div class="dz-pays">${pays(DAILY_CYCLE[i])}</div>
+      ${done ? `<svg class="dq-tick" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 12.5 L9.5 18 L20 6" fill="none" stroke="currentColor"
+              stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></svg>` : ''}
+    </div>`;
+  };
+  /* (4.29) folded, still the day's own: which day it is and all it pays, big (the designer: "the daily rewards can be a
+     little more prominent since you've compacted the UI") — once today is claimed (`step` is tomorrow then), tomorrow's */
+  const day = d.done ? 'Tomorrow' : `Day ${step + 1} of ${DAILY_CYCLE.length}`;
+  return `<div class="daily-card dz${open ? ' open' : ''}${d.done ? ' dz-done' : ''}" id="dailyCard">
+    <button class="dz-head" id="dailyToggle" aria-expanded="${open}" aria-controls="dailyBody">
+      <span class="dz-icon" aria-hidden="true">🗓️</span>
+      <span class="dz-main">
+        <span class="dz-top"><span class="dz-title">Daily</span><span class="dz-day">${day}</span><span class="dz-today">${pays(DAILY_CYCLE[step], 20)}</span></span>
+        <span class="dz-line"><span class="dz-bar" aria-hidden="true"><span style="width:${pct}%"></span></span><span class="dz-count">${d.done ? 'Done today' : `${d.count} / ${DAILY_TARGET}`}</span></span>
+      </span>
+      <svg class="dz-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9.5 L12 15.5 L18 9.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <div class="dz-body" id="dailyBody"${open ? '' : ' hidden'}>
+      <div class="daily-grid">${DAILY_CYCLE.map((_,i)=>square(i)).join('')}</div>
+      <div class="daily-sub">${d.done
+        ? 'Today is done. Tomorrow carries on from here — a missed day costs nothing.'
+        : `${DAILY_TARGET} phrases a day. Write ${DAILY_TARGET - d.count} more to claim day ${step+1}.`}</div>
+    </div>
+  </div>`;
+}
+
+/* CONTINUE — the furthest region you have reached, and in it the place you last walked (state.progress.lastPlace, kept
+   as you walk: walkNotePlace, 13-walkmap.js), stepped back into the way its own Explore would; else that region's page. */
+function latestRegion(){
+  const open = REGIONS.filter(r=>{ try { return r.unlocked(); } catch(e){ return false; } });
+  return (open[open.length - 1] || REGIONS[0]).id;
+}
+function deckTitle(k){
+  const d = typeof DECKS !== 'undefined' && DECKS[k];
+  return (d && d.title) || { weather_deck:'The Weather Deck', cabin_deck:'The Cabin Deck', laboratory_deck:'The Laboratory' }[k] || '';
+}
+/* how to step back into a place: as its region's Explore takes you there (a catacomb floor from where you left it, a
+   street through its zone, the jungle where Lucesco remembers, a castle place where you stood) — or null */
+function continueRoute(r, lp){
+  const k = lp.deck, d = DECKS[k], w = walkState();
+  const put = ()=>{ w.at = w.at || {}; w.at[k] = { x:lp.x, y:lp.y }; ui.walkFresh = false; };
+  if(r === 6){
+    if(typeof JG_KEY !== 'undefined' && k === JG_KEY) return (typeof jgPortalAwake === 'function' && jgPortalAwake()) ? ()=>{ if(!jgEnter('last')) go('region'); } : null;
+    if(typeof CA_PLACES !== 'undefined' && CA_PLACES[k] && typeof caGo === 'function') return ()=> caGo(k, [lp.x, lp.y]);
+    if(k === 'r6_rift' && typeof riftGo === 'function') return ()=> riftGo();
+    if(typeof PAST_KEY !== 'undefined' && k === PAST_KEY) return (typeof pastOpen === 'function' && pastOpen()) ? ()=>{ put(); ui.pastLion = null; goDeck(k); } : null;
+    return null;
+  }
+  if(r === 5 && typeof r5Zone === 'function'){
+    if(typeof r5IsCata === 'function' && r5IsCata(d)) return ()=> r5Resume();
+    /* a street, or a room off one: its street's own way in */
+    let street = k;
+    for(let n = 0; n < 4 && street && !['harbour', 'old_town', 'church', 'hilltop'].includes(street); n++) street = DECKS[street] && DECKS[street].backTo;
+    const zone = street === 'church' ? 'old_town' : street;
+    if(!zone || !r5Zone(zone)) return null;
+    return ()=>{ if(street === k) put(); ui.currentZone = r5Zone(zone); go('zone'); };
+  }
+  if(r === 4 && ['weather_deck', 'cabin_deck', 'laboratory_deck'].includes(k)) return ()=>{ put(); go(k); };
+  return null;
+}
+function continueInfo(){
+  const r = latestRegion(), meta = REGIONS.find(x=> x.id === r) || REGIONS[0];
+  const lp = state.progress.lastPlace && state.progress.lastPlace[r];
+  const route = lp && typeof DECKS !== 'undefined' && DECKS[lp.deck] ? continueRoute(r, lp) : null;
+  return { r, where:(route && deckTitle(lp.deck)) || meta.name, go:route || (()=> go('region')) };
+}
+function continueGame(){
+  const c = continueInfo();
+  if(state.progress.currentRegion !== c.r){ state.progress.currentRegion = c.r; saveProfile(); }
+  c.go();
+}
+
+/* Your team going by: you at its head, then each of them (a companion beside its leader), round and round when they are
+   more than the banner holds. Swipe (or drag) along it; tap it for the party page. No names: only who they are.
+   (4.30) Only the sprites, no box round them: you stand over the left of it, and they go by behind you (index.html). */
+function teamBannerHtml(){
+  const team = [];
+  state.party.forEach(m=>{
+    const c = (companionsUnlocked() && !isPassenger(m)) ? companionOf(m) : null;
+    pairOrder(m, c).forEach(x=> team.push([x, x === c]));
+  });
+  if(!team.length && !playerAvatar()) return '';
+  /* the room the page has: big where there is room — (4.32) "reduce the size of the sprite and monsters by about 33%. This
+     will allow for more monsters to scroll at once" (78–150 until 4.32) */
+  const S = Math.round(Math.max(52, Math.min(100, window.innerHeight * 0.114)));
+  /* (4.38) a portrait put up (38-portraits.js: the Painter's) instead of its picture; your photo instead of your look */
+  const pic = (m, px)=> (typeof ptMonPic === 'function' && ptMonPic(m, Math.round(px * 0.86))) || monPortrait(m.species, px, { view:'front', bare:true, stage:monStage(m), crowned:isCrowned(m) });
+  const mon = ([m, comp])=> `<span class="ht-mon${comp ? ' ht-comp' : ''}">${pic(m, Math.round(S * (comp ? 0.8 : 1)))}</span>`;
+  const me = px=> (typeof ptMyPic === 'function' && ptMyPic(Math.round(px * 0.86))) || avatarImg(playerAvatar(), px, { bare:true });
+  return `<div class="home-team${playerAvatar() ? '' : ' ht-alone'}" id="homeTeam" role="button" tabindex="0" aria-label="Your team: open the party page" style="--ht-s:${S}px">
+    ${playerAvatar() ? `<span class="ht-me">${me(Math.round(S * 1.08))}</span>` : ''}
+    <div class="ht-view" id="htView"><div class="ht-track" id="htTrack">${team.map(mon).join('')}</div></div>
+  </div>`;
+}
+function teamBannerWire(){
+  const box = $('#homeTeam'), view = $('#htView'), track = $('#htTrack');
+  if(!box || !view || !track) return;
+  let dragged = false;
+  const openParty = ()=>{ ui.walkBack = 'home'; go('party'); };
+  box.addEventListener('click', ()=>{ if(dragged){ dragged = false; return; } openParty(); });
+  box.addEventListener('keydown', e=>{ if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openParty(); } });
+  let hold = 0;
+  const touched = ()=>{ hold = performance.now() + 2500; };
+  ['pointerdown', 'wheel', 'touchstart'].forEach(ev=> view.addEventListener(ev, touched, { passive:true }));
+  /* a mouse drags it along (a finger scrolls it as it is) */
+  let down = null;
+  view.addEventListener('pointerdown', e=>{ if(e.pointerType !== 'mouse') return; down = { x:e.clientX, s:view.scrollLeft, moved:false }; try { view.setPointerCapture(e.pointerId); } catch(err){} });
+  view.addEventListener('pointermove', e=>{ if(!down) return; const dx = e.clientX - down.x; if(Math.abs(dx) > 5) down.moved = true; view.scrollLeft = down.s - dx; touched(); });
+  view.addEventListener('pointerup', ()=>{ if(down && down.moved) dragged = true; down = null; });
+  requestAnimationFrame(()=>{
+    if(!track.isConnected) return;
+    const kids = track.children.length;
+    /* (4.32) "If a party does not have enough to fill up the scrolling bar, keep it static with the monsters next to the
+       sprite": all of them in view stood beside you — they stand there, none going by behind */
+    box.classList.add('ht-static');
+    if(!kids || track.scrollWidth <= view.clientWidth + 4){ track.classList.add('ht-still'); return; }
+    box.classList.remove('ht-static');
+    track.insertAdjacentHTML('beforeend', track.innerHTML);                                          // round and round
+    [...track.children].slice(kids).forEach(el=> el.setAttribute('aria-hidden', 'true'));
+    const period = track.children[kids].offsetLeft - track.children[0].offsetLeft;
+    const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let pos = 0, last = 0;
+    const step = now=>{
+      if(!view.isConnected) return;
+      const dt = last ? Math.min(0.05, (now - last) / 1000) : 0; last = now;
+      if(!still && now >= hold){ pos += 20 * dt; if(pos >= period) pos -= period; view.scrollLeft = pos; }
+      else { pos = view.scrollLeft; if(pos >= period){ pos -= period; view.scrollLeft = pos; } }
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  });
+}
+
+function renderHome(){
+  const cont = continueInfo();
+  /* (4.32) "Can you have transparent buttons and the continue region's art at the back? I want the art to come through":
+     the art of the region Continue goes to, behind see-through buttons (index.html; Region 6's sky, violet glass) */
+  setScreenBg('region' + cont.r);
+  playMusic('main_menu');
+  $('#brandSub').textContent = state.name;
+  screenEl.innerHTML = `
+    <div class="version-tag">v${GAME_VERSION}</div>
+    ${playerAvatar() ? '' : `<div class="avatar-nudge" id="avatarNudge">
+        <span>👤 Choose a look for ${escapeHtml(state.name)}</span>
+        <button class="btn btn-primary" id="pickAvatarBtn" style="width:auto;padding:9px 16px;font-size:13px;">Pick</button>
+      </div>`}
+    ${teamBannerHtml()}
+    <button class="home-go" id="homeGo">
+      <span class="hg-play" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 6.2v11.6L18.4 12z" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span>
+      <span class="hg-words"><span class="hg-title">Continue</span><span class="hg-where">${escapeHtml(cont.where)}</span></span>
+    </button>
+    ${dailyPanel()}
+    <div class="home-menu">
+      <button class="home-card wide" data-nav="regionSelect"><span class="hc-icon">🗺️</span><span class="hc-title">Regions</span></button>
+      <button class="home-card" data-nav="spellingIndex"><span class="hc-icon">🀄</span><span class="hc-title">Spelling Index</span></button>
+      <button class="home-card" data-nav="monsterIndex"><span class="hc-icon">📖</span><span class="hc-title">Monster Index</span></button>
+    </div>
+  `;
+  const pab = $('#pickAvatarBtn');
+  if(pab) pab.addEventListener('click', ()=>go('avatarPick'));
+  $('#homeGo').addEventListener('click', ()=> continueGame());
+  screenEl.querySelectorAll('.home-card[data-nav]').forEach(c=> c.addEventListener('click', ()=> go(c.dataset.nav)));
+  const dt = $('#dailyToggle');
+  if(dt) dt.addEventListener('click', ()=>{
+    ui.dailyOpen = !ui.dailyOpen;
+    const card = $('#dailyCard'), body = $('#dailyBody');
+    card.classList.toggle('open', ui.dailyOpen); body.hidden = !ui.dailyOpen; dt.setAttribute('aria-expanded', String(ui.dailyOpen));
+  });
+  teamBannerWire();
+}
+
+/* ---------- SCREEN: region list + region hub ---------- */
+function region2Locked(){
+  const r2 = state.progress.region2 || {};
+  return state.progress.currentRegion===2 && !r2.trialDone;
+}
+
+function renderRegion(){
+  /* The first time into Cosa Nostia you do not see a menu: you step off the ship. */
+  if(state.progress.currentRegion === 5 && typeof r5ArrivalDue === 'function' && r5ArrivalDue()) return r5Arrive();
+  setScreenBg('region'+(state.progress.currentRegion||1));
+  playMusicChain(['region'+(state.progress.currentRegion||1), 'region']);
+  const rid = state.progress.currentRegion || 1;
+  const meta = REGIONS.find(r=>r.id===rid) || REGIONS[0];
+  $('#brandSub').textContent = 'Region '+rid;
+
+  // Sacred Grove bars the way until the Trial of Courage is passed
+  const gated = region2Locked();
+  const challengeLabel = rid===6 ? 'The future, and the past'      // (3.75) the Time Rift
+    : rid===5 ? 'The Family'
+    : rid===4 ? 'Aboard the Vane Shear'
+    : rid===3 ? 'Electric Dojo (closed)'
+    : rid===2 ? 'Water Dojo' : 'Dojo, Jax & Thugs';
+
+  screenEl.innerHTML = `
+    <button class="back-link" id="backBtn">← Regions</button>
+    <div class="screen-title">Region ${rid} · ${escapeHtml(meta.name)}</div>
+    <div class="screen-sub">${escapeHtml(meta.desc)}</div>
+    ${(rid === 4 && typeof expeditionBar === 'function') ? expeditionBar() : ''}
+    ${gated ? `<div class="trial-banner" style="margin-bottom:14px;">
+      <b>The Grove bars the way</b>
+      <div>Prove your courage in the Sacred Grove before the city will receive you.</div>
+    </div>` : ''}
+    <div class="menu-grid">
+      <div class="menu-card" data-nav="explore"><span class="mc-emoji">${rid === 6 ? '🌌' : '🌿'}</span><div class="mc-title">Explore</div><div class="mc-desc">${rid === 6 ? 'Walk the Rift' : 'Find wild monsters'}</div></div>
+      <div class="menu-card ${gated?'locked':''}" data-nav="challenge"><span class="mc-emoji">⚔️</span><div class="mc-title">Challenge</div><div class="mc-desc">${escapeHtml(challengeLabel)}</div></div>
+      <div class="menu-card" data-nav="party"><span class="mc-emoji">🎒</span><div class="mc-title">Party</div><div class="mc-desc">Manage your team</div></div>
+      <div class="menu-card" data-nav="recover"><span class="mc-emoji">💧</span><div class="mc-title">Recover</div><div class="mc-desc">Heal &amp; revise</div></div>
+      <div class="menu-card full ${gated?'locked':''}" data-nav="shop"><span class="mc-emoji">🏪</span><div class="mc-title">Shop</div><div class="mc-desc">Spend medals earned from spelling</div></div>
+    </div>
+    <div class="screen-sub" style="margin-top:18px;font-size:12px;">Level cap here: <b>${levelCap()}</b>${levelCap() > CROWN_GATE
+      ? ` · past ${CROWN_GATE}, a monster needs its Crown, then a breakthrough every ${CEILING_STEP} levels` : ''}${(rid === 6 && typeof starlight === 'function') ? ` · ✨ <b>${starlight()}</b> Starlight` : ''}</div>
+    ${devPanel()}
+  `;
+  $('#backBtn').addEventListener('click', ()=>go('regionSelect'));
+  wireDevPanel();
+  screenEl.querySelectorAll('.menu-card[data-nav]').forEach(c=>{
+    c.addEventListener('click', ()=>{
+      if(gated && c.dataset.nav!=='explore' && c.dataset.nav!=='party' && c.dataset.nav!=='recover'){
+        toast('Prove your courage in the Sacred Grove first.');
+        return;
+      }
+      go(c.dataset.nav);
+    });
+  });
+}
+
+
+/* ---------- SCREEN: party (full management) ---------- */
+function renderPartyStub(){
+  setScreenBg('home');
+  $('#brandSub').textContent = 'Party';
+  const talentsOn = typeof talentsUnlocked === 'function' && talentsUnlocked();   // (3.75) the Talents page, once Selene is met
+  screenEl.innerHTML = `
+    <button class="back-link" id="backBtn">← ${ui.walkBack ? 'Back' : 'Region'}</button>
+    <div class="party-head-row">
+      <div>
+        <div class="screen-title" style="margin:0;">Your Party</div>
+        <div class="screen-sub" style="margin:0;">${battleParty().length} / 6${companionsUnlocked() && bondedCompanions().length ? ` · 🤝 ${bondedCompanions().length} companion${bondedCompanions().length === 1 ? '' : 's'}` : ''} · tap one for options</div>
+      </div>
+      <button class="btn btn-ghost storage-corner" id="storageBtn">📦 ${storedMonsters().length}</button>
+    </div>
+    ${(companionsUnlocked() || talentsOn) ? `<div class="btn-row" style="margin-top:10px;">
+      ${companionsUnlocked() ? `<button class="btn btn-ghost" id="compBtn">🤝 Companions</button>` : ''}
+      ${talentsOn ? `<button class="btn btn-ghost" id="talentBtn">✨ Talents</button>` : ''}</div>` : ''}
+    <div id="partyList" style="display:flex;flex-direction:column;gap:10px;margin-top:12px;"></div>
+  `;
+  $('#backBtn').addEventListener('click', ()=> go(backFromMenu()));
+  $('#storageBtn').addEventListener('click', ()=>{ ui.storageFrom='party'; ui.storageTab='mons'; go('storage'); });   // (3.65) its Monsters page
+  const cpb = $('#compBtn');
+  if(cpb) cpb.addEventListener('click', ()=> go('companions'));
+  const tlb = $('#talentBtn');                       // (3.75) "a talents page accessible from a button next to the companions button"
+  if(tlb) tlb.addEventListener('click', ()=> go('talents'));
+  renderPartyList();
+}
+
+/* (3.52) The party, with each companion beside its leader: the designer —
+   "The monster avatars and stats appear side by side when paired as
+   companions … An attached monster can be shifted left or right to take
+   priority as needed." The ⇄ between them swaps their sides
+   (leader.companionLeft); the one on the left goes first in battle when
+   they are just as quick. */
+function partyHeadHtml(m, opts){
+  opts = opts || {};
+  const maxHp = monMaxHp(m);
+  const ready = breakthroughReady(m);          // its breakthrough waits for a tap (2.82)
+  const px = opts.pair ? 44 : 52;
+  const portrait = (typeof ptMonPic === 'function' && ptMonPic(m, px)) || monPortrait(m.species, px, { stage:monStage(m), crowned:isCrowned(m) });   // (4.38) its portrait, if put up
+  return `<div class="party-head${opts.pair ? ' pair-head' : ''}${ui.partyOpen === m.uid ? ' open' : ''}" ${isSeed(m) ? '' : `data-tap="${m.uid}"`}>
+        ${ready ? `<span class="bt-ready" title="Ready to break through">${portrait}</span>` : portrait}
+        <div style="flex:1;min-width:0;">
+          <div class="ph-name">${opts.comp ? '<span class="ph-comp" title="Companion">🤝</span> ' : ''}${escapeHtml(displayName(m))}${crownMark(m)} <span>Lv ${m.level}</span></div>
+          <div>${typeIcons(m.species, 20)}</div>
+          ${isSeed(m)
+            ? `<div style="font-size:11px;color:var(--ink-soft);font-weight:700;margin-top:5px;font-style:italic;">In your care — cannot battle.</div>`
+            : `<div class="hpbar" style="margin-top:5px;"><div class="hpfill" style="width:${Math.max(0,m.currentHp/maxHp*100)}%;background:${m.currentHp/maxHp<0.3?'var(--cinnabar)':'var(--jade)'};"></div></div>
+               <div style="font-size:11px;color:var(--ink-soft);font-weight:700;margin-top:2px;">${Math.max(0,m.currentHp)}/${maxHp} HP · ATK ${monAtk(m)}</div>
+               ${opts.pair ? '' : partyCompanionLine(m)}`}
+        </div>
+      </div>`;
+}
+function partyPairCss(){
+  if(document.getElementById('partyPairCss')) return;
+  const st = document.createElement('style');
+  st.id = 'partyPairCss';
+  st.textContent = `
+  .ph-name{ font-family:'Baloo 2',cursive; font-weight:700; font-size:16px; line-height:1.2; }
+  .ph-name > span:last-child{ font-size:12px; color:var(--ink-soft); }
+  .pair-heads{ display:flex; align-items:stretch; gap:6px; }
+  .pair-heads .pair-head{ flex:1; min-width:0; gap:8px; padding:4px; border-radius:12px; }
+  .pair-heads .pair-head.open{ background:rgba(201,154,63,.12); }
+  .pair-heads .ph-name{ font-size:14px; }
+  .pair-swap{ flex:0 0 auto; align-self:center; width:34px; height:34px; border-radius:50%; border:2px solid var(--line);
+    background:var(--paper); font-size:17px; font-weight:900; color:var(--ink); cursor:pointer; padding:0; box-shadow:0 2px 0 var(--paper-3); }
+  .pair-swap:active{ transform:translateY(1px); box-shadow:none; }
+  .pair-foot{ margin-top:6px; font-size:11px; font-weight:700; color:var(--ink-soft); text-align:center; }
+  @media (max-width:420px){ .pair-heads{ flex-direction:column; } .pair-swap{ transform:rotate(90deg); } }`;
+  document.head.appendChild(st);
+}
+function renderPartyList(){
+  const list = $('#partyList');
+  if(!list) return;
+  breakthroughCss();
+  companionsCss();
+  partyPairCss();
+  const actionsFor = (m, idx, comp)=>{
+    const ready = breakthroughReady(m);
+    return `
+        <div class="party-actions">
+          ${ready ? `<button class="mini-btn bt-btn" data-break="${m.uid}">⚡ Break through to Lv ${Math.min(LEVEL_MAX, monCeiling(m) + CEILING_STEP)}</button>` : ''}
+          <button class="mini-btn" data-stats="${m.uid}">📊 Stats &amp; Moves</button>
+          ${typeof ptTalkBtn === 'function' ? ptTalkBtn(m) : ''}
+          ${comp ? `<button class="mini-btn" data-comps="1">🤝 Companions</button>` : `
+          <button class="mini-btn" data-up="${idx}" ${idx===0?'disabled':''}>▲ Up</button>
+          <button class="mini-btn" data-down="${idx}" ${idx===state.party.length-1?'disabled':''}>▼ Down</button>
+          ${isFixedMember(m) ? '' : `<button class="mini-btn" data-store="${m.uid}" ${battleParty().length<=1?'disabled':''}>📦 To storage</button>`}`}
+        </div>`;
+  };
+  list.innerHTML = state.party.map((m,idx)=>{
+    const c = (companionsUnlocked() && !isPassenger(m)) ? companionOf(m) : null;
+    if(!c){
+      return `
+    <div class="party-card ${isSeed(m)?'seed-card':''}" data-uid="${m.uid}">
+      ${partyHeadHtml(m)}
+      ${ui.partyOpen===m.uid ? actionsFor(m, idx, false) : ''}
+    </div>`;
+    }
+    const [L, R] = pairOrder(m, c);
+    const head = x=> partyHeadHtml(x, { pair:true, comp:x === c });
+    const open = ui.partyOpen === m.uid ? actionsFor(m, idx, false) : ui.partyOpen === c.uid ? actionsFor(c, idx, true) : '';
+    return `
+    <div class="party-card pair-card" data-uid="${m.uid}">
+      <div class="pair-heads">${head(L)}<button class="pair-swap" data-swap="${m.uid}" title="Swap sides" aria-label="Swap sides">⇄</button>${head(R)}</div>
+      <div class="pair-foot">🤝 ${escapeHtml(displayName(c))} fights beside ${escapeHtml(displayName(m))} · on a tie, ${escapeHtml(displayName(L))} (left) goes first</div>
+      ${open}
+    </div>`;
+  }).join('') + ((typeof questPassengersHtml === 'function') ? questPassengersHtml() : '');   // (3.99) the sealed blades you carry for the Fairy King: passengers
+
+  list.querySelectorAll('[data-tap]').forEach(el=>el.addEventListener('click', ()=>{
+    const uid = el.dataset.tap;
+    ui.partyOpen = (ui.partyOpen===uid) ? null : uid;
+    renderPartyList();
+  }));
+  list.querySelectorAll('[data-swap]').forEach(b=>b.addEventListener('click', async e=>{
+    e.stopPropagation();
+    const L = state.party.find(x=> x.uid === b.dataset.swap);
+    if(!L) return;
+    L.companionLeft = !L.companionLeft;
+    if(!L.companionLeft) delete L.companionLeft;
+    playSfx('ui_click');
+    await saveProfile();
+    renderPartyList();
+  }));
+  list.querySelectorAll('[data-comps]').forEach(b=>b.addEventListener('click', e=>{ e.stopPropagation(); go('companions'); }));
+  if(typeof ptTalkWire === 'function') ptTalkWire(list);                   // (4.38) Cuain and the Monkey King: Talk
+  list.querySelectorAll('[data-stats]').forEach(b=>b.addEventListener('click', e=>{ e.stopPropagation(); ui.statsUid=b.dataset.stats; go('stats'); }));
+  list.querySelectorAll('[data-break]').forEach(b=>b.addEventListener('click', e=>{
+    e.stopPropagation();
+    const m = state.party.concat(bondedCompanions()).find(x=> x.uid === b.dataset.break);
+    if(m) doBreakthrough(m, renderPartyList);
+  }));
+  list.querySelectorAll('[data-up]').forEach(b=>b.addEventListener('click', async e=>{ e.stopPropagation(); const i=+b.dataset.up; [state.party[i-1],state.party[i]]=[state.party[i],state.party[i-1]]; await saveProfile(); renderPartyList(); }));
+  list.querySelectorAll('[data-down]').forEach(b=>b.addEventListener('click', async e=>{ e.stopPropagation(); const i=+b.dataset.down; [state.party[i+1],state.party[i]]=[state.party[i],state.party[i+1]]; await saveProfile(); renderPartyList(); }));
+  list.querySelectorAll('[data-store]').forEach(b=>b.addEventListener('click', async e=>{
+    const pm = state.party.find(x=>x.uid===b.dataset.store);
+    if(isFixedMember(pm)){ toast('This one stays with you.'); return; }
+    e.stopPropagation();
+    const uid=b.dataset.store;
+    if(battleParty().length<=1){ toast('You need at least one monster in your party.'); return; }
+    const idx=state.party.findIndex(m=>m.uid===uid);
+    if(isFixedMember(state.party[idx])){
+      toast(`${displayName(state.party[idx])} is not going anywhere.`);
+      return;
+    }
+    const [m]=state.party.splice(idx,1);
+    state.storage.push(m);
+    ui.partyOpen=null;
+    await saveProfile();
+    const c = companionsUnlocked() ? companionOf(m) : null;   // (3.52) its companion goes with it
+    toast(c ? `${displayName(m)} moved to storage — ${displayName(c)} goes with it.` : `${displayName(m)} moved to storage.`);
+    renderPartyStub();
+  }));
+}
+
+/* ---------- SCREEN: stats & moves ---------- */
+/* The Crown panel on a monster's Stats page. */
+/* Refining lives here, on the monster that actually knows the skill — a stone
+   sitting in storage isn't a move yet, so it can't be refined. */
+/* Void Stone extraction costs medals scaled to the tier AND how refined the
+   skill is — pulling out a ✦ Ultra is a serious undertaking. */
+const VOID_COSTS = {
+  low:      { cur:'bronze', n:[1,3,5]  },
+  mid:      { cur:'bronze', n:[3,6,10] },
+  high:     { cur:'silver', n:[1,3,5]  },
+  veryhigh: { cur:'silver', n:[3,6,10] },
+  ultra:    { cur:'gold',   n:[3,6,10] },
+};
+function voidCost(st){
+  const c = VOID_COSTS[st.tier];
+  return c ? { cur:c.cur, n:c.n[stonePlus(st)] } : null;
+}
+function canVoid(st){
+  if((state.inventory.voidStones||0) < 1) return { ok:false, why:'You have no Void Stones.' };
+  const c = voidCost(st);
+  if(!c) return { ok:false, why:'This skill cannot be drawn out.' };
+  if(medalCount(c.cur) < c.n) return { ok:false, why:`Needs ${c.n} ${curName(c.cur)}.` };
+  return { ok:true, cost:c };
+}
+/* Removing a stone restores whatever natural move belongs in that slot. */
+async function doVoidExtract(st, mon, closeFn){
+  const check = canVoid(st);
+  if(!check.ok) return toast(check.why);
+  const snapshot = { medals:Object.assign({},state.medals), voids:state.inventory.voidStones,
+                     eq:mon.equippedStone, p1:mon.power1Stone, ult:mon.ultraStone,
+                     stones:state.moveStones.slice() };
+  state.inventory.voidStones--;
+  state.medals[check.cost.cur] -= check.cost.n;
+  if(mon.equippedStone && mon.equippedStone.uid===st.uid) mon.equippedStone = null;
+  else if(mon.power1Stone && mon.power1Stone.uid===st.uid) mon.power1Stone = null;
+  else if(mon.ultraStone && mon.ultraStone.uid===st.uid)   mon.ultraStone = null;
+  else if(mon.equippedStone && mon.equippedStone.name===st.name) mon.equippedStone = null;
+  else if(mon.power1Stone && mon.power1Stone.name===st.name) mon.power1Stone = null;
+  else if(mon.ultraStone && mon.ultraStone.name===st.name) mon.ultraStone = null;
+  // the stone returns to storage with its refinement intact
+  state.moveStones.push({ uid:'s'+Date.now()+Math.floor(Math.random()*1000),
+    tier:st.tier, type:st.type, name:st.name, plus:stonePlus(st) });
+
+  const sv = showSyncingOverlay('Extracting…');
+  const ok = await saveProfile({ awaitCloud:true });
+  hideSyncingOverlay(sv);
+  if(!ok){
+    state.medals = snapshot.medals; state.inventory.voidStones = snapshot.voids;
+    mon.equippedStone = snapshot.eq; mon.power1Stone = snapshot.p1; mon.ultraStone = snapshot.ult;
+    state.moveStones = snapshot.stones;
+    showSyncFailure(); return;
+  }
+  playSfx('stone_roll');
+  toast(`${stoneDisplayName(st)} drawn back out — its natural move returns.`);
+  if(closeFn) closeFn();
+  renderStats();
+}
+
+function openRefineSheet(st, mon){
+  const t = stoneTierDef(st.tier);
+  const maxed = stonePlus(st) >= 2;
+  const notYet = false;                // every tier can now be refined
+  const check = (maxed || notYet) ? { ok:false } : canUpgradeStone(st);
+  const cost = (maxed || notYet) ? null : upgradeCost(st);
+  const nextSt = Object.assign({}, st, { plus: stonePlus(st)+1 });
+  const cur = stoneMult(st), nxt = maxed||notYet ? null : stoneMult(nextSt);
+  const preview = maxed ? '' : (st.tier==='ultra'
+    ? (()=>{ const a=ultraHitRange(st), b=ultraHitRange(nextSt);
+             return `${cur}× · ${a.min}–${a.max} hits  →  <b>${nxt}× · ${b.min}–${b.max} hits</b>`; })()
+    : st.tier==='veryhigh'
+      ? `<div style="text-align:left;font-size:12px;line-height:1.5;">${veryHighDef(st.type, stonePlus(st)+1).text}</div>`
+      : `${cur}× ATK  →  <b>${nxt}× ATK</b>`);
+
+  const ov = document.createElement('div');
+  ov.className = 'refine-scrim';
+  ov.innerHTML = `
+    <div class="refine-card">
+      <div class="stone-tier-big tier-${st.tier}">${t.label}</div>
+      <div class="refine-name">${escapeHtml(st.name)}${stonePlus(st)?`<span class="plus-mark big">${UPGRADE_MARKS[stonePlus(st)].trim()}</span>`:''}</div>
+      <div class="refine-sub">Known by ${escapeHtml(displayName(mon))}</div>
+      ${notYet ? `<div class="upg-panel muted">Very High skills cannot be refined yet.</div>`
+        : maxed ? `<div class="upg-panel done">✦ Fully refined</div>`
+        : `<div class="upg-panel">
+             <div class="upg-head">Refine to <b>${UPGRADE_MARKS[stonePlus(st)+1].trim()}</b></div>
+             <div class="upg-preview">${preview}</div>
+             <div class="upg-cost">A spare ${escapeHtml(st.type)} ${t.label} stone
+               + ${curIcon(cost.cur)} ${cost.n} ${curName(cost.cur)}</div>
+             ${check.ok ? '' : `<div class="upg-why">${escapeHtml(check.why||'')}</div>`}
+           </div>`}
+      ${(()=>{ const v = canVoid(st); const c = voidCost(st);
+        return `<div class="upg-panel" style="margin-top:10px;">
+          <div class="upg-head">${voidIcon(16)} Draw it back out</div>
+          <div class="upg-cost">Returns the stone (keeping ${UPGRADE_MARKS[stonePlus(st)].trim()||'its tier'})
+            and restores the natural move.<br>Costs a Void Stone${c?` + ${curIcon(c.cur)} ${c.n}`:''}.</div>
+          ${v.ok ? '' : `<div class="upg-why">${escapeHtml(v.why)}</div>`}
+          <button class="btn btn-ghost" id="rfVoid" style="margin-top:8px;" ${v.ok?'':'disabled'}>Extract</button>
+        </div>`; })()}
+      <div style="display:flex;gap:10px;margin-top:14px;">
+        <button class="btn btn-ghost" id="rfBack" style="flex:1;">Back</button>
+        <button class="btn btn-primary" id="rfGo" style="flex:1;" ${check.ok?'':'disabled'}>Upgrade</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  const close = ()=>{ if(ov.parentNode) document.body.removeChild(ov); };
+  ov.addEventListener('click', e=>{ if(e.target===ov) close(); });
+  ov.querySelector('#rfBack').addEventListener('click', close);
+  const vb = ov.querySelector('#rfVoid');
+  if(vb && canVoid(st).ok) vb.addEventListener('click', ()=>{
+    const c = voidCost(st);
+    confirmDialogHtml(
+      `Draw <b>${escapeHtml(stoneDisplayName(st))}</b> back out of ${escapeHtml(displayName(mon))}?<br><br>` +
+      `The stone returns to storage with its refinement intact, and the natural move comes back.<br><br>` +
+      `Costs a Void Stone and ${curIcon(c.cur)} ${c.n}.`,
+      ()=> doVoidExtract(st, mon, close));
+  });
+  const go = ov.querySelector('#rfGo');
+  if(check.ok) go.addEventListener('click', ()=>{
+    confirmDialogHtml(
+      `Refine <b>${escapeHtml(st.name)}</b> to <b>${UPGRADE_MARKS[stonePlus(st)+1].trim()}</b>?<br><br>` +
+      `${preview}<br><br>` +
+      `This consumes a spare ${escapeHtml(st.type)} ${t.label} stone and ${curIcon(cost.cur)} ${cost.n}.<br><br>` +
+      `<i>The spare stone is used up for good.</i>`,
+      async ()=>{ await doUpgradeStone(st, close); renderStats(); });
+  });
+}
+
+/* The Element Stone panel on a Stats page: the stone it carries (with its
+   charge), or the stones you hold that fit it. One stone per monster. */
+function stoneOwnerName(id){
+  const uid = stoneHolder(id);
+  const who = uid && state.party.concat(state.storage || []).find(x=> x.uid === uid);
+  return who ? displayName(who) : null;
+}
+function stonePanel(m){
+  const fits = stonesFor(m).filter(st=> ownsStone(st.id));
+  if(!fits.length || (isPassenger(m) && !isCuain(m))) return '';
+  const st = stoneCarriedBy(m);
+  const others = fits.filter(x=> !st || x.id !== st.id);
+  const charge = st ? stoneCharge(st.id) : 0;
+  const atCeiling = chargesStone(m);             // at a ceiling, or at the region's cap on one (2.82)
+  const storing = !atCeiling && storesAtHundred(m);   // stopped at 100, its bar full (3.01)
+  return `<div class="crown-panel wide" style="border-color:rgba(59,126,161,.55);background:rgba(59,126,161,.14);">
+    <div class="cp-art">${st ? stoneIcon(st, 62) : '<span style="font-size:44px;">💠</span>'}</div>
+    <div class="cp-text">
+      <div class="crown-title">${st ? escapeHtml(st.name) : 'Element Stones'}${st && charge ? ` <span>⚡ ${charge} charge</span>` : ''}</div>
+      <div class="crown-sub">${st
+        ? (atCeiling ? `Carried — every fight charges it for the breakthrough.`
+           : storing ? `Carried — this monster can't grow for now, so every fight is stored on the stone for a breakthrough later.`
+                     : `Carried — this monster gains <b>${st.xp}×</b> experience.`)
+        : `${fits.map(x=> escapeHtml(x.name)).join(', ')} ${fits.length > 1 ? 'fit' : 'fits'} this monster. ` +
+          `Carried, a stone gives <b>1.5×</b> experience${canPassLimit(m) ? ', and charges its breakthroughs' : ''}.`}</div>
+      <div style="display:flex;gap:8px;margin-top:9px;">
+        ${st ? `<button class="btn btn-ghost" id="stoneOff" data-stone="${st.id}" style="margin:0;">Detach</button>` : ''}
+        ${others.length ? `<button class="btn btn-primary" id="stoneOn" style="margin:0;">${st ? 'Swap…' : 'Attach…'}</button>` : ''}
+      </div>
+    </div>
+  </div>`;
+}
+/* Pick a stone for a monster: who carries each now, and its charge. */
+function stoneChooser(title, stones, onPick){
+  const scrim = document.createElement('div');
+  scrim.style.cssText = 'position:fixed;inset:0;background:rgba(35,32,25,0.55);z-index:70;display:flex;align-items:flex-end;justify-content:center;';
+  scrim.innerHTML = `<div style="background:var(--paper);border-radius:18px 18px 0 0;padding:20px;max-width:480px;width:100%;">
+    <div style="font-family:'Baloo 2',cursive;font-weight:700;font-size:17px;margin-bottom:12px;">${escapeHtml(title)}</div>
+    ${stones.map(st=>{
+      const who = stoneOwnerName(st.id), ch = stoneCharge(st.id);
+      return `<button class="btn btn-ghost st-opt" data-id="${st.id}" style="margin-bottom:8px;display:flex;align-items:center;gap:10px;justify-content:flex-start;text-align:left;">
+        ${stoneIcon(st, 30)}<span><b>${escapeHtml(st.name)}</b>${ch ? ` · ⚡ ${ch}` : ''}<br>
+        <span style="font-size:11px;color:var(--ink-soft);">${who ? `carried by ${escapeHtml(who)}` : 'free'}</span></span></button>`;
+    }).join('')}
+    <button class="btn btn-ghost" id="stCancel" style="margin-top:4px;">Cancel</button>
+  </div>`;
+  document.body.appendChild(scrim);
+  const close = ()=>{ if(scrim.parentNode) document.body.removeChild(scrim); };
+  scrim.querySelector('#stCancel').addEventListener('click', close);
+  scrim.addEventListener('click', e=>{ if(e.target === scrim) close(); });
+  scrim.querySelectorAll('.st-opt').forEach(b=> b.addEventListener('click', ()=>{ close(); onPick(b.dataset.id); }));
+}
+/* Put a stone on a monster, save, and say what happened — including that it
+   is ready to break through, if the stone arrives charged enough. (It used to
+   break through there and then; the breakthrough is the player's now, 2.82.) */
+async function giveStoneTo(id, m, after){
+  const st = stoneDef(id);
+  const was = stoneOwnerName(id);
+  attachStone(id, m);
+  await saveProfile();
+  toast(`${st.name} ${was && was !== displayName(m) ? `moved from ${was} to` : 'attached to'} ${displayName(m)}.` +
+        (breakthroughReady(m) ? ` ⚡ It is ready to break through!` : ''));
+  if(after) after();
+}
+/* The player's breakthrough (2.82): from a monster's card on the Party page,
+   or its Stats page, once it is ready. */
+async function doBreakthrough(m, after){
+  const bt = tryBreakthrough(m);
+  if(!bt){ toast('Not ready to break through yet.'); return; }
+  await saveProfile();
+  playSfx('power_up');                                  // (3.51) a power-up — not half a minute of the evolution's music under a toast
+  toast(`⚡ ${displayName(m)} broke through! It can grow to Lv ${bt.breakthrough} now.` +
+        (bt.to > bt.from ? ` It grew to Lv ${bt.to}!` : ''));
+  if(after) after();
+}
+/* A monster ready to break through pulses, gently, on the Party page. */
+function breakthroughCss(){
+  if(document.getElementById('breakthroughCss')) return;
+  const st = document.createElement('style');
+  st.id = 'breakthroughCss';
+  st.textContent = `
+    .bt-ready{display:inline-block;flex:none;border-radius:50%;animation:btPulse 2.6s ease-in-out infinite;}
+    @keyframes btPulse{
+      0%,100%{transform:scale(1);filter:drop-shadow(0 0 0 rgba(138,106,208,0));}
+      50%{transform:scale(1.045);filter:drop-shadow(0 0 8px rgba(138,106,208,.9));}
+    }
+    .mini-btn.bt-btn{background:#efe8fb;border-color:#b9a4e6;color:#4a2f8a;}
+    @media (prefers-reduced-motion: reduce){
+      .bt-ready{animation:none;filter:drop-shadow(0 0 6px rgba(138,106,208,.85));}
+    }`;
+  document.head.appendChild(st);
+}
+
+/* Every move explains itself: what it hits, for how much, and — for anything
+   with an effect — exactly what that effect does. */
+/* The one-line summary under a move's name. Mirrors the battle button so the
+   two never disagree — the old line claimed "0.1× ATK · Single" for a move that
+   actually strikes three times. */
+function statsMoveLine(mv, mon){
+  if(mv.target === 'Passive') return 'Passive · always on';   // nothing to write, nothing to choose (2.97)
+  const bits = [`${mv.words} words`];
+  const dmg = estimateHit(mv, mon);
+  if(dmg != null) bits.unshift(`${dmg} dmg`);
+  else bits.unshift('Support');
+  const shape = moveShape(mv);
+  if(shape) bits.splice(1, 0, shape);
+  return bits.join(' · ');
+}
+
+function openMoveInfo(mv, mon){
+  const atk = monAtk(mon);
+  const st = mv.stone;
+  const ov = document.createElement('div');
+  ov.className = 'refine-scrim';
+  ov.innerHTML = `
+    <div class="refine-card">
+      <div class="refine-name">${escapeHtml(mv.name)}${st&&stonePlus(st)?`<span class="plus-mark big">${UPGRADE_MARKS[stonePlus(st)].trim()}</span>`:''}</div>
+      <div class="refine-sub">${mv.target === 'Passive' ? `${mv.slot === 'Passive' ? '' : mv.slot + ' · '}Passive · always on` : `${mv.slot} · ${mv.words} words`}</div>
+      <div class="move-info-body">${moveDescription(mv, mon, atk)}</div>
+      <div style="display:flex;gap:10px;margin-top:14px;">
+        <button class="btn btn-ghost" id="miBack" style="flex:1;">Back</button>
+        ${st ? `<button class="btn btn-primary" id="miRefine" style="flex:1;">Refine…</button>` : ''}
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  const close = ()=>{ if(ov.parentNode) document.body.removeChild(ov); };
+  ov.addEventListener('click', e=>{ if(e.target===ov) close(); });
+  ov.querySelector('#miBack').addEventListener('click', close);
+  const rf = ov.querySelector('#miRefine');
+  if(rf) rf.addEventListener('click', ()=>{ close(); openRefineSheet(st, mon); });
+}
+
+function crownBlock(m){
+  if(isPassenger(m)) return '';
+  const owned = state.inventory.crowns||0;
+  /* Only where it matters: the road past 100 is Region 5's. */
+  const past100 = levelCap() > CROWN_GATE;
+  if(isCrowned(m)){
+    return `<div class="crown-panel crowned">
+      <div class="crown-title">${crownIcon(18)} Crowned</div>
+      <div class="crown-sub">${baseTier(m.species)==='legendary'
+        ? 'Carries three extra evolutions\' worth of strength.'
+        : 'Raised to legendary growth, with the legendary protein cap.'}${past100
+        ? ` It can grow past level ${CROWN_GATE}.` : ''}</div>
+    </div>`;
+  }
+  const ok = crownEligible(m);
+  const why = ok ? '' : crownBlockReason(m);
+  /* A wild monster can't wear one: say so plainly, and nothing more. */
+  if(!CROWN_TIERS.includes(baseTier(m.species))){
+    return past100 ? `<div class="crown-panel">
+      <div class="crown-title">${crownIcon(18)} No Crown</div>
+      <div class="crown-sub">Only starters, elites and legendaries can wear a Crown, so a wild monster's road ends at level ${CROWN_GATE}.</div>
+    </div>` : '';
+  }
+  return `<div class="crown-panel wide">
+    <div class="cp-art">${crownIcon(62)}</div>
+    <div class="cp-text">
+    <div class="crown-title">Crown <span>${owned} held</span></div>
+    <div class="crown-sub">${baseTier(m.species)==='legendary'
+      ? 'Would grant three more evolutions\' worth of strength.'
+      : 'Would raise this monster to legendary growth and unlock the legendary protein cap.'}${past100
+      ? ` Only a crowned monster grows past level ${CROWN_GATE}.` : ''}</div>
+    ${ok && owned>0
+      ? `<button class="btn btn-primary" id="useCrown" style="margin-top:10px;">Use a Crown</button>`
+      : `<div class="crown-why">${owned>0 ? escapeHtml(why) : 'You have no Crowns.'}</div>`}
+    </div>
+  </div>`;
+}
+
+function confirmCrown(m){
+  const legendary = baseTier(m.species)==='legendary';
+  const before = monAtk(m);
+  const after = computeAtk(m.species, m.level, m.supplements, Object.assign({}, m, {crowned:true}));
+  confirmDialogHtml(
+    `Crown <b>${escapeHtml(displayName(m))}</b>?<br><br>` +
+    (legendary
+      ? `It gains three more evolutions' worth of strength.`
+      : `It rises to <b>legendary growth</b>, and its protein cap goes from ${proteinCap(m.species,m)} to 10 — ` +
+        `so it will need more Supplements to fill again.`) +
+    `<br><br>ATK <b>${before} → ${after}</b><br><br>` +
+    `<i>Crowns are rare. This cannot be undone.</i>`,
+    async ()=>{
+      if((state.inventory.crowns||0) < 1){ toast('You have no Crowns.'); return; }
+      const snapshot = state.inventory.crowns;
+      const stageFrom = monStage(m);                 // (3.51) the form it shows now — a held-back one too (evoFloor)
+      state.inventory.crowns--;
+      m.crowned = true;
+      m.currentHp = Math.min(monMaxHp(m), m.currentHp + (monMaxHp(m) - Math.ceil(monMaxHp(m)/1.2)));
+      const sv = showSyncingOverlay('Syncing…');
+      const okc = await saveProfile({ awaitCloud:true });
+      hideSyncingOverlay(sv);
+      if(!okc){ state.inventory.crowns = snapshot; m.crowned = false; showSyncFailure(); return; }
+      // Crowning deserves the full transformation, not just a sound.
+      /* (3.51) from the form it showed to its last one, crowned */
+      playEvolutions([{ uid:m.uid, species:m.species, name:displayName(m), crowned:true,
+                        from:m.level, to:m.level, evos:[m.level], newMoves:[], stageFrom, stageTo:monStage(m) }], ()=>{
+        toast(`✦ ${displayName(m)} is crowned!`);
+        renderStats();
+      });
+    }, 'Crown');
+}
+
+/* Developer only (companion pairs, phase 2 — 2.84): give a party monster the
+   core of one in storage, skipping the Crown and the core slot that bonding
+   for real asks for (2.86, below), so any pair can be tried in battle. A
+   storage monster another leader already holds is not offered. */
+function devCompanionRow(m){
+  const held = new Set(state.party.filter(p=> p !== m && p.companionUid).map(p=> p.companionUid));
+  const pool = (state.storage || []).filter(s=> !isPassenger(s) && !held.has(s.uid));
+  return `<div class="dev-btns" style="margin-top:6px;align-items:center;flex-wrap:wrap;">
+    <span style="font-size:12px;font-weight:800;">🤝 Any core (dev)</span>
+    <select id="devComp" style="flex:1;min-width:150px;padding:7px;border-radius:9px;border:2px solid var(--line);background:#fff9ec;font-weight:700;">
+      <option value="">— none —</option>
+      ${pool.map(s=>`<option value="${s.uid}" ${m.companionUid === s.uid ? 'selected' : ''}>${escapeHtml(displayName(s))} · Lv ${s.level}</option>`).join('')}
+    </select>
+  </div>`;
+}
+/* ============================================================
+   COMPANION CORES — bonding for real (2.86; handover/07, phase 3)
+   A CROWNED party monster can learn to hold the core of one monster from
+   storage: its companion. What it can hold is set by its CORE SLOT
+   (m.coreSlot), a tiered upgrade trained with the Monkey King:
+   wild → starter → elite → legendary. A slot holds a core of its own tier or
+   lower, by the companion's SPECIES tier (the Mouse, 'special', holds as a
+   starter; seeds, eggs and babies are never companions, nor is a legendary
+   whose own core is still stolen). Each tier is learned by sparring with the
+   Monkey King, and only that way (2.87): five spars, the monster alone with a
+   borrowed companion, all five to win — its medals are paid only then:
+   failing costs practice, not medals, and leaves the monster as it was. One
+   leader per companion; changing companions is free; a companion
+   brought into the party lets go of its bond. Until the Region 5 ending sets
+   state.companionsUnlocked, all of it is the developer profile's alone.
+   ============================================================ */
+const CORE_SLOTS = ['wild', 'starter', 'elite', 'legendary'];
+/* mkStone: what the Monkey King carries into the spars for that slot — none at
+   Wild, then Counter +, Diamond Dust +, Diamond Dust ✦ (whose "one of your
+   choosing" he chooses at random, with the random one beside it). */
+const CORE_SLOT_DEF = {
+  wild:      { label:'Wild',      holds:'wild monsters',                      price:{ silver:10 } },
+  starter:   { label:'Starter',   holds:'wild monsters and starters',         price:{ silver:25 },          mkStone:{ type:'Physical', plus:1 } },
+  elite:     { label:'Elite',     holds:'wild monsters, starters and elites', price:{ silver:25, gold:25 }, mkStone:{ type:'Fairy', plus:1 } },
+  legendary: { label:'Legendary', holds:'any monster at all',                 price:{ silver:40, gold:50 }, mkStone:{ type:'Fairy', plus:2 } },
+};
+/* The tier a monster's core counts as: its species', the Mouse a starter. */
+function coreTierOf(m){ const t = baseTier(m.species); return t === 'special' ? 'starter' : t; }
+function coreRank(m){ return CORE_SLOTS.indexOf(coreTierOf(m)); }
+function slotRank(m){ return (m && m.coreSlot) ? CORE_SLOTS.indexOf(m.coreSlot) : -1; }
+function nextCoreSlot(m){ return CORE_SLOTS[slotRank(m) + 1] || null; }
+/* Who may hold a core: a crowned monster of the party (the Whalelord too,
+   once the story crowns him). */
+function canLead(m){ return !!m && !isPassenger(m) && isCrowned(m); }
+function canHoldCore(leader, c){ return !!leader && !!c && coreRank(c) >= 0 && slotRank(leader) >= coreRank(c); }
+function leaderOf(c){
+  if(!c) return null;
+  return (state.party || []).concat(state.storage || []).find(m=> m.companionUid === c.uid) || null;
+}
+function coreFind(uid){ return (state.party || []).concat(state.storage || []).find(m=> m.uid === uid) || null; }
+function priceHtml(price){
+  return Object.entries(price).map(([cur, n])=> `${curIcon(cur)} ${n}`).join(' · ');
+}
+function canAffordPrice(price){ return Object.entries(price).every(([cur, n])=> medalCount(cur) >= n); }
+
+/* ---------- the screen: every leader, its slot, its companion ---------- */
+let _compCssDone = false;
+function companionsCss(){
+  if(_compCssDone || typeof document === 'undefined') return;
+  _compCssDone = true;
+  const st = document.createElement('style');
+  st.id = 'companionsCss';
+  st.textContent = `
+  .comp-card{ margin-bottom:10px; }
+  .comp-card.dim{ opacity:.72; }
+  .core-line{ display:flex;align-items:center;gap:8px;margin-top:6px;font-size:12px;font-weight:800;color:var(--ink-soft); }
+  .core-pips{ display:inline-flex;gap:3px; }
+  .core-pips i{ width:9px;height:9px;border-radius:50%;background:var(--paper-3);border:1px solid rgba(35,32,25,.25);display:inline-block; }
+  .core-pips i.on{ background:var(--gold);border-color:#9a7424; }
+  .comp-holds{ font-size:11px;color:var(--ink-soft);font-weight:600;margin-top:2px;line-height:1.35; }
+  .comp-with{ display:flex;align-items:center;gap:10px;margin-top:10px;padding:8px 10px;border-radius:12px;
+    background:rgba(90,150,110,.12);border:1px dashed rgba(60,120,80,.45); }
+  .comp-with.empty{ background:transparent;border-color:rgba(35,32,25,.25); }
+  .comp-with .cw-name{ flex:1;min-width:0;font-family:'Baloo 2',cursive;font-weight:800;font-size:14px; }
+  .comp-with .cw-name small{ display:block;font-family:inherit;font-size:11px;color:var(--ink-soft);font-weight:700; }
+  .core-train{ display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;margin-top:8px; }
+  .core-train b{ white-space:nowrap; }
+  .comp-note{ font-size:11px;font-weight:700;color:var(--ink-soft);margin-top:8px;line-height:1.4; }
+  .comp-tag{ display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:800;color:#3c7a50;margin-top:3px; }
+  .cc-opt{ margin-bottom:8px;display:flex;align-items:center;gap:10px;justify-content:flex-start;text-align:left; }
+  .cc-opt .cc-txt{ flex:1;min-width:0; }
+  .cc-opt small{ display:block;font-size:11px;font-weight:700;color:var(--ink-soft); }
+  .cc-opt:disabled{ opacity:.5; }
+  .cc-opt .cc-types{ white-space:nowrap; }
+  .cc-opt .cc-types .type-badge{ font-size:9px; padding:1px 6px; vertical-align:1px; }   /* (3.65) what the filter goes by */
+  .core-price{ margin-top:12px;font-weight:800;font-size:14px; }
+  .core-short{ margin-top:6px;font-size:12px;font-weight:800;color:var(--cinnabar-dark); }
+  .core-choice{ display:flex;flex-direction:column;gap:8px;margin-top:14px; }
+  .core-choice .btn small{ display:block;font-size:11px;font-weight:700;opacity:.85;margin-top:2px; }
+  .spar-head{ display:flex;align-items:center;gap:12px;margin:8px 0 6px; }
+  .spar-pips{ display:flex;gap:5px;margin-top:4px; }
+  .spar-pips i{ width:12px;height:12px;border-radius:50%;background:var(--paper-3);border:1px solid rgba(35,32,25,.3);display:inline-block; }
+  .spar-pips i.won{ background:var(--jade);border-color:var(--jade-dark); }
+  .spar-pips i.now{ background:#fff;border:2px solid var(--gold); }
+  .spar-cards{ display:flex;flex-direction:column;gap:10px;margin-top:10px; }
+  .spar-card{ display:flex;gap:12px;align-items:flex-start;text-align:left;width:100%;padding:12px;border-radius:16px;cursor:pointer;
+    background:var(--paper-2);border:2px solid var(--line);box-shadow:0 3px 0 var(--paper-3);font:inherit;color:inherit; }
+  .spar-card:disabled{ cursor:default; }
+  .spar-card.mine{ border-color:var(--jade);background:rgba(90,150,110,.14); }
+  .spar-card.his{ border-color:#b07a3a;background:rgba(176,122,58,.12); }
+  .spar-card.out{ opacity:.45; }
+  .spar-card .sc-art{ flex:0 0 auto; }
+  .spar-card .sc-text{ flex:1;min-width:0; }
+  .spar-card .sc-name{ font-family:'Baloo 2',cursive;font-weight:800;font-size:16px;line-height:1.2; }
+  .spar-card .sc-name small{ display:inline-block;vertical-align:1px; }
+  .spar-card .sc-line{ font-size:12px;font-weight:700;color:var(--ink-soft);line-height:1.4;margin-top:4px; }
+  .spar-card .sc-vs{ font-size:11px;font-weight:800;color:#6a4ab0;margin-top:5px; }
+  .spar-card .sc-tag{ display:inline-block;margin-top:6px;font-size:11px;font-weight:800;color:#fff;background:var(--jade);border-radius:20px;padding:2px 9px; }
+  .spar-card .sc-tag.his{ background:#b07a3a; }
+  .spar-stone{ margin-top:8px;padding:9px 12px;border-radius:12px;background:rgba(176,122,58,.10);border:1px dashed rgba(176,122,58,.55);
+               font-size:12px;font-weight:700;line-height:1.45;color:var(--ink-soft); }
+  .spar-stone b{ color:var(--ink); }`;
+  document.head.appendChild(st);
+}
+function corePips(m){
+  const r = slotRank(m);
+  return `<span class="core-pips" title="Core slot">${CORE_SLOTS.map((t, i)=> `<i class="${i <= r ? 'on' : ''}"></i>`).join('')}</span>`;
+}
+function renderCompanions(){
+  if(!companionsUnlocked()) return go('party');
+  setScreenBg('home');
+  $('#brandSub').textContent = 'Companions';
+  companionsCss();
+  const med = state.medals || {};
+  const leaders = battleParty();
+  screenEl.innerHTML = `
+    <button class="back-link" id="backBtn">← Party</button>
+    <div class="screen-title">Companions</div>
+    <div class="screen-sub">A crowned monster can hold the core of one monster from your storage. They fight side by side in every battle, and the companion travels with its leader — into storage too. The Monkey King trains the core slot.</div>
+    <div class="medal-bar" style="margin-bottom:12px;"><span>🥈 ${med.silver || 0}</span><span>🥇 ${med.gold || 0}</span><span>${crownIcon(16)} ${state.inventory.crowns || 0}</span></div>
+    <div id="compList">${leaders.map(companionCardHtml).join('')}</div>`;
+  $('#backBtn').addEventListener('click', ()=> go('party'));
+  const list = $('#compList');
+  list.querySelectorAll('[data-choose]').forEach(b=> b.addEventListener('click', ()=>{
+    const L = coreFind(b.dataset.choose); if(L) chooseCompanionFor(L); }));
+  list.querySelectorAll('[data-letgo]').forEach(b=> b.addEventListener('click', ()=>{
+    const L = coreFind(b.dataset.letgo); if(L) letGoCompanion(L); }));
+  list.querySelectorAll('[data-train]').forEach(b=> b.addEventListener('click', ()=>{
+    const L = coreFind(b.dataset.train); if(L) openCoreTraining(L); }));
+}
+function companionCardHtml(L){
+  const head = `<div class="party-head" style="cursor:default;">
+      ${monPortrait(L.species, 48, { stage:monStage(L), crowned:isCrowned(L) })}
+      <div style="flex:1;min-width:0;">
+        <div style="font-family:'Baloo 2',cursive;font-weight:700;font-size:16px;">${escapeHtml(displayName(L))}${crownMark(L)} <span style="font-size:12px;color:var(--ink-soft);">Lv ${L.level}</span></div>
+        ${L.coreSlot ? `<div class="core-line">${corePips(L)} ${CORE_SLOT_DEF[L.coreSlot].label} core slot</div>
+          <div class="comp-holds">Holds ${CORE_SLOT_DEF[L.coreSlot].holds}.</div>`
+          : isCrowned(L) ? `<div class="core-line">${corePips(L)} No core slot yet</div>` : ''}
+      </div>
+    </div>`;
+  if(!isCrowned(L)){
+    const note = !CROWN_TIERS.includes(baseTier(L.species))
+      ? 'A wild monster can\'t wear a Crown, so it can\'t hold a core.'
+      : (SPECIES[L.species] || {}).storyCrownOnly ? 'Its own core must come home, and the Crown with it, before it can hold another\'s.'
+      : 'Needs a Crown before it can hold another monster\'s core.';
+    return `<div class="party-card comp-card dim">${head}<div class="comp-note">${crownIcon(14)} ${note}</div></div>`;
+  }
+  const c = companionOf(L);
+  const next = nextCoreSlot(L);
+  const withRow = !L.coreSlot ? ''
+    : c ? `<div class="comp-with">
+        ${monPortrait(c.species, 36, { stage:monStage(c), crowned:isCrowned(c) })}
+        <div class="cw-name">🤝 ${escapeHtml(displayName(c))}<small>Lv ${c.level} · its companion</small></div>
+        <button class="mini-btn" style="flex:0 0 auto;min-width:0;" data-choose="${L.uid}">Change</button>
+        <button class="mini-btn" style="flex:0 0 auto;min-width:0;" data-letgo="${L.uid}">Let go</button>
+      </div>`
+    : `<div class="comp-with empty">
+        <div class="cw-name" style="color:var(--ink-soft);font-size:13px;">No companion yet</div>
+        <button class="mini-btn" style="flex:0 0 auto;min-width:0;" data-choose="${L.uid}">🤝 Choose one</button>
+      </div>`;
+  const train = next
+    ? `<button class="mini-btn core-train" data-train="${L.uid}">
+        <span>🐒 Train ${/^[AEIOU]/.test(CORE_SLOT_DEF[next].label) ? 'an' : 'a'} ${CORE_SLOT_DEF[next].label} slot</span><b>${priceHtml(CORE_SLOT_DEF[next].price)}</b></button>`
+    : `<div class="comp-note">The highest slot there is: it can hold any monster's core.</div>`;
+  return `<div class="party-card comp-card">${head}${withRow}${train}</div>`;
+}
+
+/* ---------- choosing a companion ---------- */
+function companionOptions(L){
+  return (state.storage || []).filter(c=> c !== L && !isPassenger(c)).map(c=>{
+    const lead = leaderOf(c);
+    let why = '';
+    if(c.companionUid && companionOf(c)) why = `holds ${displayName(companionOf(c))}'s core itself`;
+    else if(coreStolen(c)) why = 'its own core was stolen — it has none to share yet';
+    else if(!canHoldCore(L, c)) why = `needs ${/^[AEIOU]/.test(CORE_SLOT_DEF[coreTierOf(c)].label) ? 'an' : 'a'} ${CORE_SLOT_DEF[coreTierOf(c)].label} slot`;
+    return { c, lead:(lead && lead !== L) ? lead : null, mine:lead === L, why };
+  }).sort((a, b)=> (!!a.why - !!b.why) || (b.c.level - a.c.level));
+}
+/* (3.65) with filters, as storage has: by element type and by rarity (the
+   designer: "The companion selection menu does not have filters yet").
+   ui.compFilter keeps the choice while the game is open. */
+function chooseCompanionFor(L){
+  if(!canLead(L) || !L.coreSlot) return;
+  companionsCss();
+  storFilterCss();
+  const opts = companionOptions(L);
+  const any = opts.some(o=> !o.why && !o.mine);
+  const f = ui.compFilter || (ui.compFilter = { type:'', tier:'' });
+  const scrim = document.createElement('div');
+  scrim.className = 'comp-chooser';
+  scrim.style.cssText = 'position:fixed;inset:0;background:rgba(35,32,25,0.55);z-index:70;display:flex;align-items:flex-end;justify-content:center;';
+  scrim.innerHTML = `<div style="background:var(--paper);border-radius:18px 18px 0 0;padding:20px;max-width:480px;width:100%;max-height:82vh;overflow-y:auto;">
+    <div style="font-family:'Baloo 2',cursive;font-weight:700;font-size:17px;">A companion for ${escapeHtml(displayName(L))}</div>
+    <div style="font-size:12px;color:var(--ink-soft);font-weight:700;margin:2px 0 12px;">${CORE_SLOT_DEF[L.coreSlot].label} slot · holds ${CORE_SLOT_DEF[L.coreSlot].holds}</div>
+    <div id="ccFilter"></div>
+    <div id="ccList"></div>
+    ${opts.length && !any ? `<div class="comp-note" style="margin-bottom:10px;">Nobody in storage can join yet.</div>` : ''}
+    <button class="btn btn-ghost" id="ccCancel" style="margin-top:4px;">Cancel</button>
+  </div>`;
+  document.body.appendChild(scrim);
+  const close = ()=>{ if(scrim.parentNode) document.body.removeChild(scrim); };
+  scrim.querySelector('#ccCancel').addEventListener('click', close);
+  scrim.addEventListener('click', e=>{ if(e.target === scrim) close(); });
+  const pick = o=>{
+    close();
+    if(o.lead) return confirmDialogHtml(
+      `<b>${escapeHtml(displayName(o.c))}</b> is <b>${escapeHtml(displayName(o.lead))}</b>'s companion. ` +
+      `Move it to <b>${escapeHtml(displayName(L))}</b>?`, ()=> bondCompanion(L, o.c), 'Move it');
+    bondCompanion(L, o.c);
+  };
+  const draw = ()=>{
+    const shown = opts.filter(o=> storageMatches(o.c, f));
+    const fb = scrim.querySelector('#ccFilter'), lb = scrim.querySelector('#ccList');
+    fb.innerHTML = opts.length > 1 || f.type || f.tier
+      ? `<div class="sm-filter-row">${storageFilterHtml(opts.map(o=> o.c), f, 'cf')}${shown.length !== opts.length ? `<div class="stor-count">${shown.length} of ${opts.length}</div>` : ''}</div>` : '';
+    lb.innerHTML = !opts.length
+      ? `<div class="comp-note" style="margin-bottom:10px;">Nobody is in storage. A companion comes from your storage, never the party.</div>`
+      : !shown.length ? `<div class="comp-note" style="margin-bottom:10px;">Nobody in storage like that.</div>`
+      : shown.map(o=>{ const i = opts.indexOf(o); return `<button class="btn btn-ghost cc-opt" data-i="${i}" ${(o.why || o.mine) ? 'disabled' : ''}>
+        ${monPortrait(o.c.species, 36, { stage:monStage(o.c), crowned:isCrowned(o.c) })}
+        <span class="cc-txt">${escapeHtml(displayName(o.c))} · Lv ${o.c.level} <span class="cc-types">${typeIcons(o.c.species, 17)}</span>
+          <small>${o.mine ? 'its companion now' : o.why ? escapeHtml(o.why) : o.lead ? `with ${escapeHtml(displayName(o.lead))} now — it would move` : `${CORE_SLOT_DEF[coreTierOf(o.c)].label} core`}</small></span>
+      </button>`; }).join('');
+    wireMonFilter(f, 'cf', draw, scrim);
+    lb.querySelectorAll('.cc-opt:not([disabled])').forEach(b=> b.addEventListener('click', ()=> pick(opts[+b.dataset.i])));
+  };
+  draw();
+}
+/* Bonding costs nothing and can be changed any time, so it saves as ordinary
+   play does; only the slot's medals wait on the cloud. */
+function bondCompanion(L, c){
+  if(!canLead(L) || !canHoldCore(L, c) || !state.storage.includes(c) || coreStolen(c)) return;
+  (state.party || []).concat(state.storage || []).forEach(m=>{ if(m !== L && m.companionUid === c.uid) delete m.companionUid; });
+  L.companionUid = c.uid;
+  saveProfile();
+  playSfx('power_up');                                  // (3.51) a power-up, not the fanfare
+  toast(`🤝 ${displayName(L)} now holds ${displayName(c)}'s core.`);
+  if(ui.screen === 'companions') renderCompanions(); else render();
+}
+function letGoCompanion(L){
+  const c = companionOf(L);
+  if(!c) return;
+  confirmDialogHtml(`<b>${escapeHtml(displayName(L))}</b> lets go of <b>${escapeHtml(displayName(c))}</b>'s core? ` +
+    `You can choose it again any time.`, ()=>{
+      delete L.companionUid;
+      saveProfile();
+      toast(`${displayName(c)} rests in storage.`);
+      renderCompanions();
+    }, 'Let go');
+}
+
+/* ---------- training a slot: five spars with the Monkey King (2.87) ----------
+   The monster being trained fights ALONE — the rest of the party is set aside
+   for the spar (ui.realParty; savedProfile keeps writing the real one) — with
+   a companion it borrows for that spar. Before each spar three monsters are
+   drawn from the pool of the slot's tier; you choose one, and the Monkey King
+   takes his favourite of the other two (never the same monster). He fights
+   5 levels above the monster being trained, carrying his stone for the tier;
+   both companions are at the trained monster's level, protein full, and both
+   are on the field from the start (3.52; THEIR COMPANION, 04). Win all five and
+   the medals are paid and the slot is yours; lose one, or give up, and the
+   training ends — nothing paid, the monster's health as it was before. No
+   experience changes hands: sparring is practice. */
+const SPAR_COUNT = 5;
+/* The pools, the Monkey King's favourites first. One line each, what it does. */
+const SPAR_POOLS = {
+  wild: [
+    ['cyclops',    'Bog Lurker: starts unseen, and slows the other side one step while it stands. Grave Quake: winds up, then 2× on both of theirs.'],
+    ['crow',       'Dodges 20%. Ill Omen: a turn of 66% dodges, then its next blow +66%. Murder of Crows: 5 strikes, 10 on a foe under 30%.'],
+    ['mantaray',   'Shadowed Wings: dodges 35% of attacks, and no Diamond Dust can sweep that away.'],
+    ['ghost',      'Peekaboo: 50% chance to vanish after each attack. Wail: 0.9× on both, and weakens.'],
+    ['strongman',  'Unshakeable: starts with 2 block, and it cannot be put to sleep, stunned or muddled. Bearhug: 1× with a 50% stun.'],
+    ['boxer',      'Quick Hands: a free 0.25× jab at the start of every round. Knockout Flurry: 1× on both.'],
+    ['weasel',     'Silk Reeling: a Counter stack — takes one whole attack at 80% less. Four Ounces: throws the last blow back.'],
+    ['yoga',       'Stillness: dodges the first attack. Asana Flow: 6 strikes, doubled while at full health.'],
+    ['whale',      'Bulk: starts with 2 block. Depth Charge: 1.5×.'],
+    ['sea_turtle', 'Iron Shell: starts with 3 block. Maelstrom: 0.8× on both.'],
+  ],
+  starter: [
+    ['ghost_starter',    'Shadow Sneak: starts unseen, and its first blow from hiding hits 1.5×. Umbral Rend Max: 1.5×.'],
+    ['physical_starter', 'Savage Strike Max: 1.5×. Rend: 0.6× on both.'],
+    ['psychic_starter',  'Mind Shatter Max: 1.5×. Psywave: 0.5× on both. Focus: 1.2× when nothing has hit it this round.'],
+    ['flying_starter',   'Storm Dive Max: 1.5×. Gale Force: 0.6× on both.'],
+    ['ground_starter',   'Horn Drill Max: 1.5×. Earthquake: 0.6× on both.'],
+    ['fire_starter',     'Fire Blast Max: 1.5×. Flamethrower: 0.6× on both.'],
+    ['water_starter',    'Waterfall Max: 1.5×. Surf: 0.6× on both.'],
+    ['grass_starter',    'Solar Beam Max: 1.5×. Razor Leaf: 0.6× on both.'],
+    ['electric_starter', 'Thunder Max: 1.5×. Thunderbolt: 0.6× on both.'],
+  ],
+  elite: [
+    ['goblin',        "Goblin's Greed: every blow steals one of their buffs — even a Diamond Dust."],
+    ['horned_lynx',   'Stalk: starts unseen, and can slip back into hiding. Pounce Max: 1.5×, and 1.5× again from hiding.'],
+    ['thundercat',    'Lightning Cat: always acts first; on your side, a 20% chance to strike twice. Omnislash Max: 1.1× with a 65% splash.'],
+    ['goblin_knight', 'Riposte: an attack that deals it nothing is answered at 0.4×. Grave Charge Max: 1.5×, and it strikes first.'],
+    ['firehound',     'Terrorize: the other side hits 20% softer while it stands — no sweep lifts it. Fiery Jaws Max: 1.5×, holding its target fast.'],
+    ['puppet',        'Marionette: vanishes after its first blow (33% after that), and heals a third of what it deals.'],
+    ['ninja',         'Onkei-jutsu: starts unseen (80% dodge). Ansatsu Max spends it: 1.7×, +0.4× per Prep.'],
+    ['loong',         'Soar: starts airborne (70% dodge). Dragon Dive Max spends it: 2× on both of theirs.'],
+    ['moon_swan',     'Nocturne: each time it is driven below 75%, 50% and 25% health, it sings its attacker to sleep — and each turn nothing touches it, it hits 15% harder (up to 60%). Lunacy Max: 1.5×, and 25% of the time the other side is muddled for a swing.'],
+    ['thunderhound',  "Hunter's Instinct: each time it is driven below 75%, 50% and 25% health, it stuns its attacker. Throat Take Max: 1.5×, doubled on a stunned foe."],
+    ['otter',         'Guard: on guard, +1 block every round. Iaijutsu Max spends it: 1.8×, +0.25× per block.'],
+    ['eagle',         'Keen Eye: acts first. Piercing Stoop: climbs up to 3 turns (dodging up to 75%), then drops straight through block.'],
+    ['lizardape',     'Scaled Stance: starts with 1 block and a Counter stack. Primal Rend Max: 4 strikes, doubled at full health.'],
+  ],
+  legendary: [
+    ['newt',          'It never misses, and each turn nothing touches it, it hits 15% harder (up to 60%). Volt Concussion: 3 strikes of 0.5, 15% paralysis each. Volt Wave: 0.6× on both.'],   // (3.63) what it does in a spar: it never casts its Tachypsychia
+    ['water_dragon',  'Cataclysm: gathers charges, then spends them all in one huge blow. Tsunami: 0.8× on both.'],
+    ['ankylosaurus',  'Steel Soul: it always takes 20% less. Once a fight, a quick cast before it swings: that turn it hits 1.2× — more for every other shield its side has up — and +0.1× a blow. Rampage Max: 5 strikes on both, then an Aftershock.'],
+    ['phoenix',       'Incinerate Max: 1.5×, growing to 2.75× with up to 7 more words (15 in all). Nova: 1× on both — and it sweeps away one of your buffs and burns one of your marks off its side.'],
+    ['caladrius',     'Pacificus: a quarter of the attack, 1.75 times the health. Ice Barrier (quick): their attacks 30% weaker for 5 turns, and one of their marks off your side every turn. Vita: a healing light for your side. Conversio: brings the fallen back.'],
+    ['forest_fairy',  'Verdant Wrath Max: 1.8× over 3 strikes. Giga Drain: 0.8×, and it heals. Overgrowth: 0.7× on both.'],
+  ],
+};
+/* How the Monkey King's companion fights: at random, as he does — or by its
+   own story AI where it has one (the Water Dragon charges, the Ankylosaurus
+   opens with Steel Soul, the Eagle climbs). */
+const SPAR_FOE_AI = { water_dragon:'cataclysm', ankylosaurus:'ankylo', eagle:'stoop' };
+function sparLine(tier, sp){ const r = (SPAR_POOLS[tier] || []).find(x=> x[0] === sp); return r ? r[1] : ''; }
+/* How a monster and the Monkey King meet, by type: what its blows do to him,
+   and what his do to it (only what is not even). */
+function sparMatchup(sp){
+  const mk = SPECIES.monkey_king.types, t = SPECIES[sp].types;
+  const out = [];
+  const give = typeMultiplier(t, mk), take = typeMultiplier(mk, t);
+  if(give > 1) out.push('💥 hits the Monkey King 1.5×');
+  if(give < 1) out.push('his Fairy side shrugs off its blows (⅔)');
+  if(take > 1) out.push('⚠️ takes 1.5× from his blows');
+  if(take < 1) out.push('🛡 takes only ⅔ from his blows');
+  return out.join(' · ');
+}
+function drawSparTrio(tier){ return shuffle((SPAR_POOLS[tier] || []).map(r=> r[0])).slice(0, 3); }
+/* (3.51) The Monkey King as he looks now: crowned once the story has given
+   his crown back (r5MKCrowned, 15-region5.js). */
+function mkCrownedLook(){ return typeof r5MKCrowned === 'function' && r5MKCrowned(); }
+/* His favourite of what is left: the first in his pool's order. */
+function monkeyKingPick(tier, left){
+  const order = (SPAR_POOLS[tier] || []).map(r=> r[0]);
+  return left.slice().sort((a, b)=> order.indexOf(a) - order.indexOf(b))[0] || left[0];
+}
+const MK_STONE_NAME = { starter:'Counter +', elite:'Diamond Dust +', legendary:'Diamond Dust ✦' };
+/* What he carries at each tier, and what it asks of a pick (2.88) — shown on
+   the draft, so the choosing is about something. Mechanics first. */
+const MK_STONE_LESSON = {
+  wild:      `<b>No stone yet</b> — but he fights 5 levels up. Types matter: a Ghost takes only ⅔ of his blows, and Steel hits his Fairy side 1.5×.`,
+  starter:   `<b>Counter +</b>, raised on his first move, with a 15% chance each round of another. A stack takes one whole attack on him or his companion — every strike of it — at 80% less; then their next blow lands 25% harder, and the one that took it hits 20% harder for good. Feed it a cheap blow before a big one.`,
+  elite:     `<b>Diamond Dust +</b>: up as he arrives, and cast again on his first move (5 rounds from then) with one random Very High at + strength. While it is up nothing of yours takes hold — no hiding, flying or guard, no stone, no stun or sleep on him — but shields still stand and still form (block stacks are beyond the dust). Terrorize still works, and so does moving first. A Goblin's Greed can steal the dust — and keep it.`,
+  legendary: `<b>Diamond Dust ✦</b>: up as he arrives, and cast again on his first move (5 rounds from then) with two Very Highs at ✦ strength. While it is up nothing of yours takes hold — no Tachypsychia, no Steel Soul, no stone, no stun on him — but heals and Conversio still work, shields still stand and form, and Steel still hits him 1.5×.`,
+};
+
+function openCoreTraining(L){
+  const tier = nextCoreSlot(L);
+  if(!tier || !canLead(L)) return;
+  const def = CORE_SLOT_DEF[tier];
+  const afford = canAffordPrice(def.price);
+  const med = state.medals || {};
+  const nm = escapeHtml(displayName(L));
+  document.body.classList.remove('writing');
+  document.body.classList.add('in-scene');
+  window.scrollTo(0, 0);
+  $('#brandSub').textContent = 'Core training';
+  const first = !L.coreSlot;
+  screenEl.innerHTML = `
+    <div class="scene">
+      <div class="scene-emblem">${monPortrait('monkey_king', 140, { view:'front', bare:true, stage:1, crowned:mkCrownedLook() })}</div>
+      <div class="scene-title">The Monkey King</div>
+      <div class="scene-body">
+        <p>${first
+          ? `"To hold another's core is not strength, small one. It is <b>focus</b> — carrying what is not yours, and not letting it fall. Two can fight as one. It took me a long time to learn that."`
+          : `"Heavier, this time. Show me the focus holds."`}</p>
+        <p><b>Five spars.</b> ${nm} fights alone, with a companion you choose before each one; the Monkey King takes his favourite of the other two. <b>Win all five</b> and ${nm} can hold ${/^[AEIOU]/.test(def.label) ? 'an' : 'a'} <b>${def.label}</b> core: ${def.holds}.</p>
+        <p style="font-size:13px;color:var(--ink-soft);">He fights at Lv ${Math.min(LEVEL_MAX, L.level + 5)} (5 above ${nm})${MK_STONE_NAME[tier] ? `, carrying <b>${MK_STONE_NAME[tier]}</b>` : ', with no stone yet'}. Both companions are Lv ${L.level}. Lose a spar and the training ends — nothing paid, ${nm} as it was.</p>
+        <p style="font-size:13px;color:var(--ink-soft);">${revisionWords().length
+          ? `Every word in the spars is one you have learned to 🥈 silver or 🥇 gold, from any list — <b>${revisionWords().length}</b> of them.`
+          : `Once a word reaches 🥈 silver, the spars test the words you have learned, from every list.`}</p>
+        <div class="core-price">${priceHtml(def.price)} <span style="font-size:12px;color:var(--ink-soft);">— paid when all five are won</span></div>
+        ${afford ? '' : `<div class="core-short">You have 🥈 ${med.silver || 0} · 🥇 ${med.gold || 0}. Come back with more medals.</div>`}
+      </div>
+      <div class="core-choice">
+        <button class="btn btn-primary" id="ctBegin" ${afford ? '' : 'disabled'}>⚔️ Begin — spar 1 of ${SPAR_COUNT}</button>
+        <button class="btn btn-ghost" id="ctBack">Not now</button>
+      </div>
+    </div>`;
+  const leave = ()=> document.body.classList.remove('in-scene');
+  $('#ctBack').addEventListener('click', ()=>{ leave(); go('companions'); });
+  const bg = $('#ctBegin');
+  if(bg) bg.addEventListener('click', ()=>{ if(!canAffordPrice(def.price)) return; leave(); beginCoreSession(L, tier); });
+}
+function beginCoreSession(L, tier){
+  if(revisionPool().length === 0){ toast('No words selected, please select to proceed.'); goForward('spelling', 'companions'); return; }
+  ui.coreSession = { uid:L.uid, tier, n:1, wins:0, hp:L.currentHp, draw:null, mine:null, his:null };
+  go('coreSpar');
+}
+/* The session is over, however it ended: the monster's health as it was. */
+function endCoreSession(){
+  const s = ui.coreSession;
+  ui.coreSession = null;
+  if(!s) return;
+  const L = coreFind(s.uid);
+  if(L && s.hp != null) L.currentHp = Math.max(0, Math.min(monMaxHp(L), s.hp));
+  saveProfile();
+}
+/* Before each spar: the draw, your pick, his. */
+function renderCoreSpar(){
+  const s = ui.coreSession;
+  if(!s) return go('companions');
+  const L = coreFind(s.uid);
+  if(!L || !state.party.includes(L)){ endCoreSession(); return go('companions'); }
+  setScreenBg('challenge');
+  $('#brandSub').textContent = 'Core training';
+  companionsCss();
+  if(!s.draw) s.draw = drawSparTrio(s.tier);
+  const nm = escapeHtml(displayName(L));
+  const pips = Array.from({ length:SPAR_COUNT }, (_, i)=> `<i class="${i < s.wins ? 'won' : i === s.wins ? 'now' : ''}"></i>`).join('');
+  const card = (sp)=>{
+    const who = sp === s.mine ? 'mine' : sp === s.his ? 'his' : (s.mine ? 'out' : '');
+    const stage = evolutionStage(sp, L.level);
+    return `<button class="spar-card ${who}" data-sp="${sp}" ${s.mine ? 'disabled' : ''}>
+      <div class="sc-art">${monPortrait(sp, 56, { view:'front', bare:true, stage })}</div>
+      <div class="sc-text">
+        <div class="sc-name">${escapeHtml(SPECIES[sp].name)} <small>${typeBadges(sp)}</small></div>
+        <div class="sc-line">${escapeHtml(sparLine(s.tier, sp))}</div>
+        ${sparMatchup(sp) ? `<div class="sc-vs">${sparMatchup(sp)}</div>` : ''}
+        ${who === 'mine' ? `<div class="sc-tag">✓ ${nm}'s companion</div>` : who === 'his' ? `<div class="sc-tag his">🐒 The Monkey King's</div>` : ''}
+      </div>
+    </button>`;
+  };
+  screenEl.innerHTML = `
+    <button class="back-link" id="backBtn">← Leave the training</button>
+    <div class="spar-head">
+      ${monPortrait('monkey_king', 52, { view:'front', bare:true, stage:1, crowned:mkCrownedLook() })}
+      <div style="flex:1;min-width:0;">
+        <div class="screen-title" style="margin:0;">Spar ${s.n} of ${SPAR_COUNT}</div>
+        <div class="spar-pips" title="${s.wins} won">${pips}</div>
+      </div>
+    </div>
+    <div class="screen-sub">${s.mine
+      ? `The Monkey King takes the <b>${escapeHtml(SPECIES[s.his].name)}</b>. ${nm} fights with the <b>${escapeHtml(SPECIES[s.mine].name)}</b> beside it, from the start — and his fights beside him.`
+      : `Choose ${nm}'s companion for this spar. The Monkey King then takes his favourite of the other two.`}</div>
+    <div class="spar-cards">${s.draw.map(card).join('')}</div>
+    ${MK_STONE_LESSON[s.tier] ? `<div class="spar-stone">🐒 ${MK_STONE_LESSON[s.tier]}</div>` : ''}
+    ${s.mine ? `<button class="btn btn-primary" id="sparFight" style="margin-top:12px;">⚔️ Fight — spar ${s.n} of ${SPAR_COUNT}</button>` : ''}`;
+  $('#backBtn').addEventListener('click', ()=>{
+    confirmDialogHtml(`Leave the training? ${s.wins ? `The ${s.wins} spar${s.wins === 1 ? '' : 's'} won so far won't count, and` : ''} nothing is paid.`,
+      ()=>{ endCoreSession(); go('companions'); }, 'Leave');
+  });
+  screenEl.querySelectorAll('.spar-card:not([disabled])').forEach(b=> b.addEventListener('click', ()=>{
+    if(s.mine) return;
+    s.mine = b.dataset.sp;
+    s.his = monkeyKingPick(s.tier, s.draw.filter(x=> x !== s.mine));
+    playSfx('ui_click');
+    renderCoreSpar();
+  }));
+  const fb = $('#sparFight');
+  if(fb) fb.addEventListener('click', coreSparFight);
+}
+function coreSparFight(){
+  const s = ui.coreSession;
+  if(!s || !s.mine || !s.his) return;
+  const L = coreFind(s.uid);
+  if(!L || !state.party.includes(L)){ endCoreSession(); return go('companions'); }
+  if(revisionPool().length === 0){ toast('No words selected, please select to proceed.'); goForward('spelling', 'coreSpar'); return; }
+  const lv = L.level;
+  const comp = newMonster(s.mine, lv);
+  comp.uid = 'spar_' + s.mine + '_' + Date.now();
+  comp.supplements = proteinCap(s.mine, comp);
+  comp.currentHp = monMaxHp(comp);
+  L.currentHp = monMaxHp(L);                                 // every spar starts fresh
+  const def = CORE_SLOT_DEF[s.tier];
+  /* pitched at your monster, past 100 too: a spar is not held to the cap on
+     theirs (ENEMY_LEVEL_CAP, 2.99) — he is your teacher, not the Family */
+  const mk = { species:'monkey_king', level:Math.min(LEVEL_MAX, lv + 5), ai:'random', nerfed:false, anyLevel:true };
+  if(def.mkStone) mk.veryHigh = { type:def.mkStone.type, plus:def.mkStone.plus, cast:true };
+  if(!ui.realParty) ui.realParty = state.party;              // only the monster in training fights
+  state.party = [L];
+  /* (3.52) his companion is on the field beside him from the start, as
+     yours is beside yours: two of their wave. Protein full, as your borrowed
+     one is: makeEnemy counts the last at the cap triple, as yours are
+     counted (2.97; it was handed the +2 itself). */
+  const foeSpec = { species:s.his, level:lv, nerfed:false, ai:SPAR_FOE_AI[s.his] || 'random', supplements:proteinCap(s.his), anyLevel:true };
+  beginBattle({ isNpc:true, name:'The Monkey King', coreSpar:{ uid:L.uid, tier:s.tier, companion:comp },
+    waves:[[mk, foeSpec]] });
+  const b = ui.battle;
+  b.foePair = { leader:b.enemies[0], mon:b.enemies[1] };
+  /* (3.51) crowned to look at, once his crown is his again — his picture only:
+     he spars as he always did (a crowned one's strength is not in the lesson) */
+  if(mkCrownedLook() && b.enemies[0]) b.enemies[0].crowned = true;
+  renderBattle();
+}
+/* The battle is over (won, lost or given up): the party back as it was. */
+function sparCleanup(){
+  const b = ui.battle;
+  restoreRealParty();
+  if(b){ b.coreSpar = null; b.foePair = null; }
+  stopMusic();
+}
+function coreSparWon(){
+  const s = ui.coreSession;
+  sparCleanup();
+  const brk = tallyBattleForEyeBreak();
+  if(!s){ go('companions'); if(brk) showEyeBreak(); return; }
+  s.wins++;
+  if(s.wins >= SPAR_COUNT){ coreTrainingPassed(s.uid, s.tier); if(brk) showEyeBreak(); return; }
+  const n = s.n;
+  s.n++; s.draw = null; s.mine = null; s.his = null;
+  go('coreSpar');
+  challengeResult('⚔️', `Spar ${n} won!`,
+    `The Monkey King grins and shakes out his arms. "${['Again.', 'Good. Again.', 'Better. Again.', 'One more.'][Math.min(3, s.wins - 1)]}"` +
+    `<br><br><b>${s.wins} of ${SPAR_COUNT}</b> won — ${SPAR_COUNT - s.wins} to go. New companions to choose from next time.`, 'coreSpar');
+  if(brk) showEyeBreak();
+}
+/* A spar lost, or given up: the training ends, nothing paid. */
+function coreSparEnded(how){
+  const s = ui.coreSession;
+  const won = s ? s.wins : 0;
+  const L = s ? coreFind(s.uid) : null;
+  sparCleanup();
+  const brk = how === 'lost' ? tallyBattleForEyeBreak() : false;
+  endCoreSession();
+  go('companions');                              // off the battle screen for good
+  challengeResult('🐒', how === 'lost' ? 'Not yet' : 'You step back',
+    `${how === 'lost' ? 'The Monkey King helps you up.' : 'The Monkey King lowers his staff.'} "Again, when you are ready."` +
+    `<br><br>You won <b>${won} of ${SPAR_COUNT}</b>. Nothing was paid${L ? `, and ${escapeHtml(displayName(L))} is just as it was` : ''}.`, 'companions');
+  if(brk) showEyeBreak();
+}
+/* All five won: the medals, and the slot. */
+async function coreTrainingPassed(uid, tier){
+  endCoreSession();
+  go('companions');                              // off the battle screen for good
+  const L = coreFind(uid);
+  const def = CORE_SLOT_DEF[tier];
+  if(!L || slotRank(L) >= CORE_SLOTS.indexOf(tier)) return;
+  if(!canAffordPrice(def.price)){
+    return challengeResult('🐒', 'So close',
+      `"You have the focus. Now bring the medals." It costs ${priceHtml(def.price)}.`, 'companions');
+  }
+  const medals = Object.assign({}, state.medals);
+  const was = L.coreSlot;
+  Object.entries(def.price).forEach(([cur, n])=>{ state.medals[cur] -= n; });
+  L.coreSlot = tier;
+  const sv = showSyncingOverlay('Syncing…');
+  const ok = await saveProfile({ awaitCloud:true });
+  hideSyncingOverlay(sv);
+  if(!ok){
+    state.medals = medals;
+    if(was) L.coreSlot = was; else delete L.coreSlot;
+    showSyncFailure(); return;
+  }
+  playSfx('power_up');                                  // (3.51) a power-up, not the fanfare
+  const nm = escapeHtml(displayName(L));
+  challengeResult('🐒', `${def.label} core slot!`,
+    `Five of five. The Monkey King nods. "${tier === 'legendary' ? 'Any core at all, now. I could not have taught this once. I thought I needed no one.' : 'Good. It holds.'}"` +
+    `<br><br><b>${nm}</b> can hold ${def.holds === 'any monster at all' ? 'any monster\'s core' : `the core of ${def.holds}`}. ` +
+    `Paid ${priceHtml(def.price)}.` + (companionOf(L) ? '' : `<br><br>Choose its companion on the Companions page.`), 'companions');
+}
+
+/* ---------- elsewhere: the party, storage and Stats pages ---------- */
+/* One line on a party card: who it holds (a pair is drawn side by side, so
+   this is for a slot still empty). */
+function partyCompanionLine(m){
+  if(!companionsUnlocked() || isPassenger(m)) return '';
+  const c = companionOf(m);
+  if(c) return `<div class="comp-tag">🤝 ${escapeHtml(displayName(c))} <span style="color:var(--ink-soft);">· Lv ${c.level}</span></div>`;
+  return m.coreSlot ? `<div class="comp-tag" style="color:var(--ink-soft);">🤝 ${CORE_SLOT_DEF[m.coreSlot].label} slot · no companion yet</div>` : '';
+}
+/* On a storage card: whose companion it is — or (3.52) a stored leader's,
+   who goes with it. */
+function storageCompanionLine(m){
+  if(!companionsUnlocked()) return '';
+  const L = leaderOf(m);
+  if(L) return `<div class="comp-tag">🤝 with ${escapeHtml(displayName(L))}</div>`;
+  const c = companionOf(m);
+  return c ? `<div class="comp-tag">🤝 ${escapeHtml(displayName(c))} goes with it</div>` : '';
+}
+/* The panel on a Stats page. */
+function companionPanel(m){
+  if(!companionsUnlocked() || isPassenger(m)) return '';
+  const L = leaderOf(m);
+  if(L) return `<div class="crown-panel" style="background:rgba(90,150,110,.12);border-color:rgba(60,120,80,.45);">
+      <div class="crown-title">🤝 Companion</div>
+      <div class="crown-sub">${escapeHtml(displayName(L))} holds its core: they fight side by side in every battle.</div></div>`;
+  if(!isCrowned(m)) return '';
+  const c = companionOf(m);
+  const inParty = state.party.includes(m);
+  return `<div class="crown-panel" style="background:rgba(90,150,110,.12);border-color:rgba(60,120,80,.45);">
+      <div class="crown-title">🤝 Core slot ${corePips(m)}</div>
+      <div class="crown-sub">${m.coreSlot ? `${CORE_SLOT_DEF[m.coreSlot].label}: holds ${CORE_SLOT_DEF[m.coreSlot].holds}.` : 'None yet — the Monkey King trains one.'}
+        ${c ? `<br>It holds <b>${escapeHtml(displayName(c))}</b>'s core: they fight side by side, and go where it goes.` : ''}${inParty ? '' : '<br>A leader fights from the party.'}</div>
+      ${inParty ? `<button class="btn btn-ghost" id="toCompanions" style="margin-top:10px;">🤝 Companions…</button>` : ''}
+    </div>`;
+}
+function renderStats(){
+  const m = state.party.find(x=>x.uid===ui.statsUid) || state.storage.find(x=>x.uid===ui.statsUid);
+  if(!m){ return go('party'); }
+  $('#brandSub').textContent = 'Stats';
+  const sp = SPECIES[m.species];
+  const maxHp = monMaxHp(m);
+  const need = fightsNeeded(m.level);
+  /* A region's cap (or 200, or a wild monster's 100) hides the bar; a gate of
+     the monster's own — its Crown, its core — shows it filling, then waiting
+     full. At a ceiling the fights charge the stone it carries instead. */
+  const gate = monGate(m);
+  /* At the region's cap on its own ceiling (Region 5: 110), it charges its
+     stone as at any ceiling, and breaks through where a region lets it grow. */
+  const capCeil = gate === 'region' && capAtCeiling(m);
+  const charging = gate === 'ceiling' || capCeil;
+  const capped = gate === 'region' || gate === 'max' || gate === 'kind';
+  const barFull = !capped && (m.xpFights||0) >= need;
+  const carried = stoneCarriedBy(m);
+  const levelNote = gate === 'max' ? ' (max)'
+    : capCeil ? ' · at its ceiling (region cap)'
+    : gate === 'region' ? ' (region cap)'
+    : gate === 'kind' ? ' (a wild monster stops here)'
+    : gate === 'crown' ? ' · needs a Crown'
+    : gate === 'core' ? ' · waits for his core'
+    : gate === 'ceiling' ? ' · at its ceiling'
+    : (canPassLimit(m) && m.level >= CROWN_GATE && monCeiling(m) < LEVEL_MAX ? ` · ceiling ${monCeiling(m)}` : '');
+  const waitNote = !barFull || !gate ? ''
+    : gate === 'crown' ? 'Bar full — a Crown lets it grow on.'
+    : gate === 'core' ? 'Bar full — it grows on once his core is back and he is crowned.'
+    : (gate === 'ceiling' && !carried) ? 'Bar full — carry a stone to charge its breakthrough.'
+    : '';
+  /* At a ceiling: the breakthrough's charge, on the stone it carries. */
+  const bNeed = charging ? breakthroughNeed(monCeiling(m)) : 0;
+  const fitsHeld = stonesFor(m).filter(st=> ownsStone(st.id));
+  const waits = capCeil ? ` It breaks through in a region that lets it grow past ${m.level}.` : '';
+  /* The charge keeps building past the need until the player breaks through
+     (2.82), so all of it is shown. */
+  const shownCharge = carried ? stoneCharge(carried.id) : 0;
+  const ready = breakthroughReady(m);
+  const nextCeil = Math.min(LEVEL_MAX, monCeiling(m) + CEILING_STEP);
+  const chargeCard = !charging ? '' : carried
+    ? `<div style="margin-top:10px;font-weight:800;font-size:13px;display:flex;justify-content:space-between;">
+         <span>⚡ Breakthrough to Lv ${nextCeil}</span>
+         <span style="color:var(--ink-soft);white-space:nowrap;padding-left:8px;">${shownCharge}/${bNeed} charge</span></div>
+       <div class="hpbar" style="margin-top:6px;height:9px;"><div class="hpfill" style="width:${Math.min(100, stoneCharge(carried.id)/bNeed*100)}%;background:#8a6ad0;"></div></div>
+       <div style="font-size:11px;font-weight:700;color:var(--ink-soft);margin-top:4px;">Every fight charges the ${escapeHtml(carried.name)}.${waits} The charge stays on the stone if it moves.</div>
+       ${ready ? `<div style="font-size:12px;font-weight:800;color:#4a2f8a;margin-top:8px;">Ready! Until you break through, every fight adds to the charge — and what the breakthrough doesn't use stays on the stone.</div>
+         <button class="btn btn-primary" id="breakBtn" style="margin-top:8px;">⚡ Break through to Lv ${nextCeil}</button>` : ''}`
+    : `<div style="margin-top:10px;font-size:12px;font-weight:800;color:#6a4ab0;">⚡ Its breakthrough to Lv ${Math.min(LEVEL_MAX, monCeiling(m) + CEILING_STEP)} needs ${bNeed} charge.
+         ${fitsHeld.length ? `Carry ${fitsHeld.map(st=> 'the ' + escapeHtml(st.name)).join(' or ')} to charge it.`
+                           : `Carry a stone that fits it — ${stonesFor(m).map(st=> escapeHtml(st.name)).join(', ')} — once you find one.`}${waits}</div>`;
+  /* (3.01) Stopped at 100 where the region reaches 100 or more: once its bar
+     is full (a wild one has none to fill), every fight is stored on the stone
+     it carries, for a breakthrough later (06-progress.js storesAtHundred). */
+  const storeAt100 = storeGateAtHundred(m);
+  const storingNow = storeAt100 && storesAtHundred(m);
+  const firstCeil = CROWN_GATE + CEILING_STEP, firstNeed = breakthroughNeed(firstCeil);
+  const its = gate === 'core' ? 'his' : 'its', Its = gate === 'core' ? 'His' : 'Its';
+  const storeWhy = gate === 'kind' ? `A wild monster's road ends at ${CROWN_GATE}, so every fight is stored on the stone it carries — for whichever monster carries it to a breakthrough.`
+    : gate === 'region' ? `Every fight here is stored on the stone — for a breakthrough later.`
+    : storingNow ? `${Its} bar is full, so every fight is stored on the stone — for ${its} first breakthrough, at ${firstCeil} (it takes ${firstNeed}).`
+    : `Once ${its} bar is full, every fight is stored on the stone — for ${its} first breakthrough, at ${firstCeil} (it takes ${firstNeed}).`;
+  const storeCard = !storeAt100 ? '' : carried
+    ? `<div style="margin-top:10px;font-weight:800;font-size:13px;display:flex;justify-content:space-between;">
+         <span>⚡ Stored on the ${escapeHtml(carried.name)}</span>
+         <span style="color:var(--ink-soft);white-space:nowrap;padding-left:8px;">${shownCharge} charge</span></div>
+       <div style="font-size:11px;font-weight:700;color:var(--ink-soft);margin-top:4px;">${storeWhy} The charge stays on the stone if it moves.</div>`
+    : fitsHeld.length
+      ? `<div style="margin-top:10px;font-size:12px;font-weight:800;color:#6a4ab0;">⚡ Carry ${fitsHeld.map(st=> 'the ' + escapeHtml(st.name)).join(' or ')}, and the fights ${gate === 'core' ? 'he' : 'it'} can't use are stored on it for a breakthrough later.</div>`
+      : '';
+  const suppCap = isPassenger(m) ? 0 : proteinCap(m.species, m);   // crowning raises this
+  const atCap = (m.supplements||0) >= suppCap;
+  const nextIsFinal = (m.supplements||0) === suppCap-1;
+  const moves = MOVES[m.species].map(mv=>{
+    const [slot,name,mult,target,words,unlock,extras]=mv;
+    const unlocked = name!=null && moveUnlockedFor(m, mv);
+    /* Spread the extras — `soul`, `tachy`, `hits`, `spend`, `bonus` and the
+       rest live in mv[6], and discarding them left every effect move with
+       nothing to describe but "a support move". Same trap as the old
+       allow-list in unlockedMoves(). */
+    const out = { slot,name,mult,target,words,unlock,unlocked, ...(extras||{}) };   // (3.26: no tail counts — a move's hits are its own)
+    return out;
+  });
+  moves.forEach(mv=>{ const sf = sacredFlameBonus(m, mv); if(sf) mv.bonus = sf; });   // the ghost phoenix's gift
+  moves.forEach((mv, i)=>{ moves[i] = forestGiftMove(m, mv); });                      // (3.19) the Forest Guardian's (3.56: her heal in Overgrowth)
+  [[m.equippedStone,'Basic'], [m.power1Stone,'Power1']].forEach(([st, slot])=>{
+    if(!st) return;
+    const t = stoneTierDef(st.tier);
+    const bi = moves.findIndex(x=>x.slot===slot);
+    if(bi<0) return;
+    /* isStone / stoneTier / stoneType are what let moveDescription() reach the
+       Very High text. Without them a Steel Aegis read as "a support move that
+       deals no damage" and explained nothing. */
+    moves[bi] = { slot, name:stoneDisplayName(st)+' 💎', mult:stoneMult(st), stone:st,
+      isStone:true, stoneTier:st.tier, stoneType:st.type, stonePlus:stonePlus(st),
+      target:t.kind==='status'?'Status':(t.kind==='multi2'?'Multi2':'Single'),
+      words:t.words, unlock:0, unlocked:true };
+  });
+  if(m.ultraStone){
+    const t = stoneTierDef('ultra');
+    const ur = ultraHitRange(m.ultraStone);
+    moves.push({ slot:'UltraStone', name:stoneDisplayName(m.ultraStone)+' 💎', mult:stoneMult(m.ultraStone),
+      stone:m.ultraStone, ultraStone:m.ultraStone, isStone:true, stoneTier:'ultra',
+      stoneType:m.ultraStone.type, stonePlus:stonePlus(m.ultraStone),
+      target:'MultiHit', words:t.words, unlock:0, unlocked:true });
+  }
+  screenEl.innerHTML = `
+    <button class="back-link" id="backBtn">← Party</button>
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;">
+      ${monPortrait(m.species,72,{stage:monStage(m),crowned:isCrowned(m)})}
+      <div style="flex:1;">
+        <div style="font-family:'Baloo 2',cursive;font-weight:800;font-size:20px;">${escapeHtml(displayName(m))}</div>
+        <div style="font-size:12px;color:var(--ink-soft);font-weight:700;margin-bottom:4px;">${sp.name}${m.nickname?'':' '}</div>
+        <div>${typeIcons(m.species, 22)} ${typeBadges(m.species)}</div>
+      </div>
+    </div>
+    <div id="nameArea" style="margin-bottom:12px;"></div>
+
+    <div class="hp-card" style="margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;font-weight:800;font-size:15px;">
+        <span>Level ${m.level}${levelNote}</span>
+        <span style="color:var(--ink-soft);white-space:nowrap;padding-left:8px;">${capped?'':`${m.xpFights}/${need} fights`}</span>
+      </div>
+      ${capped?'':`<div class="hpbar" style="margin-top:8px;height:9px;"><div class="hpfill" style="width:${Math.min(100, m.xpFights/need*100)}%;background:var(--gold);"></div></div>`}
+      ${waitNote ? `<div style="font-size:11px;font-weight:800;color:var(--gold);margin-top:5px;">${waitNote}</div>` : ''}
+      ${chargeCard}${storeCard}
+      <div style="display:flex;gap:20px;margin-top:12px;font-weight:800;">
+        <div>❤️ HP <span style="color:var(--jade-dark);">${maxHp}</span></div>
+        <div>⚔️ ATK <span style="color:var(--cinnabar-dark);">${monAtk(m)}</span></div>
+      </div>
+      <div style="font-size:12px;color:var(--ink-soft);font-weight:700;margin-top:8px;">
+        💪 Protein boosts: ${m.supplements||0} / ${suppCap}
+        ${atCap ? `<span style="color:var(--gold);">· maxed, final boost counted triple</span>` : ''}
+      </div>
+      ${nextIsFinal && !atCap ? `<div style="font-size:11px;font-weight:800;color:var(--gold);margin-top:4px;">⭐ The last boost is worth TRIPLE — finish the set!</div>` : ''}
+      ${(state.inventory.protein>0 && !atCap) ? `<button class="btn btn-jade" id="useProtein" style="margin-top:10px;">Use Protein Supplement (${state.inventory.protein} left)</button>` : ''}
+      ${crownBlock(m)}
+      ${companionPanel(m)}
+      ${stonePanel(m)}
+      ${elemPassivePanel(m)}
+      ${isDev() ? `<div class="dev-panel" style="margin-top:12px;">
+        <div class="dev-head">🛠️ Set level</div>
+        <div class="dev-btns" style="margin-top:6px;">
+          <button class="qty-btn sm" id="lvDown">−</button>
+          <input type="number" class="award-n" id="lvSet" value="${m.level}" min="1" max="${LEVEL_MAX}">
+          <button class="qty-btn sm" id="lvUp">+</button>
+          <button class="btn btn-jade sm-give" id="lvGo">Apply</button>
+        </div>
+        ${m.species === 'phoenix' ? `<div class="dev-btns" style="margin-top:6px;">
+          <button class="btn btn-ghost sm-give" id="sfToggle">🔥 Sacred Flame: ${state.sacredFlameGranted ? 'on' : 'off'}</button>
+        </div>` : ''}
+        ${m.species === 'forest_fairy' ? `<div class="dev-btns" style="margin-top:6px;">
+          <button class="btn btn-ghost sm-give" id="fgToggle">🌿 The Guardian's gift: ${state.forestBlessingGranted ? 'on' : 'off'}</button>
+        </div>` : ''}
+        ${state.party.includes(m) ? devCompanionRow(m) : ''}
+      </div>` : ''}
+    </div>
+
+    <div style="font-weight:800;font-size:14px;margin-bottom:8px;">Moves</div>
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      ${moves.map((mv,mi)=>`
+        <div class="move-row ${mv.unlocked?'tappable':''} ${mv.stone?'refinable':''}" data-mvinfo="${mi}" ${mv.stone?`data-mvstone="${mi}"`:''}
+          style="background:${mv.unlocked?'var(--paper-2)':'var(--paper-3)'};border:1px solid var(--line);border-radius:12px;padding:12px;${mv.unlocked?'':'opacity:0.7;'}">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div style="font-family:'Baloo 2',cursive;font-weight:700;font-size:15px;">
+              ${mv.unlocked?escapeHtml(mv.name):'???'}${mv.stone&&stonePlus(mv.stone)?`<span class="plus-mark">${UPGRADE_MARKS[stonePlus(mv.stone)].trim()}</span>`:''}
+            </div>
+            <div style="font-size:11px;font-weight:800;color:var(--ink-soft);">${mv.slot}</div>
+          </div>
+          <div style="font-size:12px;color:var(--ink-soft);font-weight:600;margin-top:3px;">
+            ${mv.unlocked ? statsMoveLine(mv, m)
+              : (mv.slot === 'Max' && (SPECIES[m.species]||{}).nerfedUntilCrowned)
+                ? `Locked until his core is returned and he is crowned`
+                : `Unlocks at Lv ${mv.unlock}`}
+          </div>
+          ${mv.unlocked ? `<div class="refine-hint">${mv.stone ? 'tap to read or refine' : 'tap to read'}</div>` : ''}
+        </div>
+      `).join('')}
+    </div>
+  `;
+  $('#backBtn').addEventListener('click', ()=>go('party'));
+  // naming: unnamed can be named anytime; a named monster can be renamed once,
+  // and only after progressing to a later region than where it was named.
+  const nameArea = $('#nameArea');
+  if(nameArea && isCuain(m)){
+    nameArea.innerHTML = `<div style="font-size:11px;color:var(--ink-soft);font-weight:600;">` +
+      `He will not answer to any other name. He is ${m.crowned ? 'Cuain' : 'the Whalelord'}.</div>`;
+  } else if(nameArea){
+    const unnamed = !m.nickname;
+    const bronze = (state.medals && state.medals.bronze) || 0;
+    const canRename = !unnamed && bronze > 0;      // renaming costs 1 Bronze Medal
+    if(unnamed || canRename){
+      nameArea.innerHTML = `
+        <div style="display:flex;gap:8px;">
+          <input type="text" id="nameInput" placeholder="${unnamed?'Give it a nickname':'New nickname'}" maxlength="16" style="flex:1;">
+          <button class="btn btn-jade" id="nameSave" style="width:auto;padding:12px 16px;">${unnamed?'Name':'Rename'}</button>
+        </div>
+        ${unnamed?'<div style="font-size:11px;color:var(--ink-soft);font-weight:600;margin-top:5px;">Naming is free the first time.</div>'
+                 :`<div style="font-size:11px;color:var(--gold);font-weight:700;margin-top:5px;">Costs 🥉 1 Bronze Medal (you have ${bronze}).</div>`}
+      `;
+      $('#nameSave').addEventListener('click', async ()=>{
+        const v = $('#nameInput').value.trim();
+        if(!v) return;
+        if(!unnamed){
+          if(((state.medals&&state.medals.bronze)||0) < 1){ toast('You need a Bronze Medal to rename.'); return; }
+          state.medals.bronze -= 1;
+        }
+        m.nickname = v;
+        m.namedRegion = state.progress.currentRegion;
+        await saveProfile();
+        toast(unnamed ? 'Name saved!' : 'Renamed! 🥉 1 Bronze Medal spent.');
+        renderStats();
+      });
+    } else if(!unnamed){
+      nameArea.innerHTML = `<div style="font-size:11px;color:var(--ink-soft);font-weight:600;">Earn a 🥉 Bronze Medal to rename this monster.</div>`;
+    }
+  }
+  screenEl.querySelectorAll('[data-mvinfo]').forEach(el=>el.addEventListener('click', ()=>{
+    const mv = moves[+el.dataset.mvinfo];
+    if(mv && mv.unlocked) openMoveInfo(mv, m);
+  }));
+  if(isDev()){
+    const f = $('#lvSet');
+    $('#lvDown').addEventListener('click', ()=>{ f.value = Math.max(1,(+f.value||1)-1); });
+    $('#lvUp').addEventListener('click',   ()=>{ f.value = Math.min(LEVEL_MAX,(+f.value||1)+1); });
+    $('#lvGo').addEventListener('click', async ()=>{
+      const lv = Math.max(1, Math.min(LEVEL_MAX, Math.floor(+f.value||1)));
+      m.level = lv;
+      // a crowned monster set past a ceiling gets the ceiling above it
+      if(canPassLimit(m) && lv >= CROWN_GATE)
+        m.ceiling = Math.min(LEVEL_MAX, Math.max(monCeiling(m), (Math.floor(lv / CEILING_STEP) + 1) * CEILING_STEP));
+      delete m.evoFloor; delete m.evoFloorLevel;      // let it settle at its true form
+      m.xpFights = 0;
+      m.currentHp = monMaxHp(m);
+      await saveProfile();
+      toast(`${displayName(m)} set to level ${lv}.`);
+      renderStats();
+    });
+  }
+  const sft = $('#sfToggle');
+  if(sft) sft.addEventListener('click', async ()=>{
+    state.sacredFlameGranted = !state.sacredFlameGranted;
+    await saveProfile();
+    toast(`Sacred Flame ${state.sacredFlameGranted ? 'granted' : 'taken away'} (dev).`);
+    renderStats();
+  });
+  const fgt = $('#fgToggle');                     // (3.19) the Forest Guardian's gift (dev)
+  if(fgt) fgt.addEventListener('click', async ()=>{
+    state.forestBlessingGranted = !state.forestBlessingGranted;
+    await saveProfile();
+    toast(`The Forest Guardian's gift ${state.forestBlessingGranted ? 'granted' : 'taken away'} (dev).`);
+    renderStats();
+  });
+  const dcs = $('#devComp');                      // companion pairs, phase 2 (dev only)
+  if(dcs) dcs.addEventListener('change', async ()=>{
+    const uid = dcs.value;
+    if(uid) m.companionUid = uid; else delete m.companionUid;
+    await saveProfile();
+    const c = companionOf(m);
+    toast(c ? `🤝 ${displayName(m)} now holds ${displayName(c)}'s core (dev).` : `${displayName(m)} holds no companion core (dev).`);
+    renderStats();
+  });
+  const so = $('#stoneOff');
+  if(so) so.addEventListener('click', async ()=>{
+    const st = stoneDef(so.dataset.stone);
+    detachStone(st.id);
+    await saveProfile();
+    toast(`${st.name} detached${stoneCharge(st.id) ? ` — it keeps its ${stoneCharge(st.id)} charge` : ''}.`);
+    renderStats();
+  });
+  const bb = $('#breakBtn');                      // the player's breakthrough (2.82)
+  if(bb) bb.addEventListener('click', ()=> doBreakthrough(m, renderStats));
+  const sn = $('#stoneOn');
+  if(sn) sn.addEventListener('click', ()=>{
+    const cur = stoneCarriedBy(m);
+    const opts = stonesFor(m).filter(st=> ownsStone(st.id) && (!cur || st.id !== cur.id));
+    if(opts.length === 1 && !cur) return giveStoneTo(opts[0].id, m, renderStats);
+    stoneChooser(`A stone for ${displayName(m)}`, opts, id=> giveStoneTo(id, m, renderStats));
+  });
+  const cb = $('#useCrown');
+  if(cb) cb.addEventListener('click', ()=> confirmCrown(m));
+  const tc = $('#toCompanions');                   // bonding for real (2.86)
+  if(tc) tc.addEventListener('click', ()=> go('companions'));
+  wireElemPassivePanel(m);                         // (3.67) its element passives
+  const up = $('#useProtein');
+  if(up) up.addEventListener('click', async ()=>{
+    if(state.inventory.protein<=0 || (m.supplements||0)>=suppCap) return;
+    const wasFinal = (m.supplements||0) === suppCap-1;
+    const beforeProtein = state.inventory.protein;
+    const beforeSupp = m.supplements||0;
+    const beforeHp = m.currentHp;
+    const beforeMax = monMaxHp(m);
+    m.supplements = beforeSupp+1;
+    state.inventory.protein--;
+    const afterMax = monMaxHp(m);
+    m.currentHp = Math.min(afterMax, m.currentHp + (afterMax-beforeMax));
+
+    const sov = showSyncingOverlay('Syncing…');
+    const ok = await saveProfile({ awaitCloud:true });
+    hideSyncingOverlay(sov);
+    if(!ok){
+      m.supplements = beforeSupp;
+      state.inventory.protein = beforeProtein;
+      m.currentHp = beforeHp;
+      showSyncFailure();
+      return;
+    }
+    playSfx('protein_use');
+    toast(wasFinal ? `${displayName(m)} maxed out! Final boost counted TRIPLE.` : `${displayName(m)} grew stronger!`);
+    renderStats();
+  });
+}
+/* ---------- storage: what is in it, and its filters (3.52) ----------
+   The designer: "Changes for storage: I want filters by element type and by
+   rarity please." Rarity is the species' tier — Wild, Starter, Elite,
+   Legendary, and Special (the Mouse, eggs, seeds, babies). A monster of two
+   types is found under either. ui.storageFilter keeps the choice while the
+   game is open. */
+const STORAGE_TIERS = [['wild', 'Wild'], ['starter', 'Starter'], ['elite', 'Elite'], ['legendary', 'Legendary'], ['special', 'Special']];
+function storedMonsters(){
+  const st = state.storage || [];
+  if(!companionsUnlocked()) return st.slice();
+  const withParty = new Set(bondedCompanions().map(c=> c.uid));
+  return st.filter(m=> !withParty.has(m.uid));
+}
+function storageMatches(m, f){
+  const sp = SPECIES[m.species] || {};
+  if(f.type && !(sp.types || []).includes(f.type)) return false;
+  if(f.tier && sp.tier !== f.tier) return false;
+  return true;
+}
+/* A stored leader's companion (stored too) straight after it. */
+function storageSorted(list){
+  const out = [], put = new Set();
+  list.forEach(m=>{
+    if(put.has(m.uid)) return;
+    const L = companionsUnlocked() ? leaderOf(m) : null;
+    if(L && list.includes(L) && !put.has(L.uid)) return;          // it comes with its leader
+    out.push(m); put.add(m.uid);
+    const c = companionsUnlocked() ? companionOf(m) : null;
+    if(c && list.includes(c) && !put.has(c.uid)){ out.push(c); put.add(c.uid); }
+  });
+  list.forEach(m=>{ if(!put.has(m.uid)){ out.push(m); put.add(m.uid); } });
+  return out;
+}
+/* (3.65) the same filter serves the companion chooser too: `pre` names its
+   controls (sf — storage, cf — the chooser) */
+function storageFilterHtml(stored, f, pre){
+  pre = pre || 'sf';
+  const types = Object.keys(TYPE_COLORS);
+  const nType = t=> stored.filter(m=> ((SPECIES[m.species] || {}).types || []).includes(t)).length;
+  const nTier = t=> stored.filter(m=> (SPECIES[m.species] || {}).tier === t).length;
+  const opt = (v, label, n, on)=> `<option value="${v}" ${on ? 'selected' : ''} ${n === 0 && !on ? 'disabled' : ''}>${label}${n != null ? ` (${n})` : ''}</option>`;
+  return `<div class="stor-filter">
+      <label class="sf-pick${f.type ? ' on' : ''}" ${f.type ? `style="--tc:${TYPE_COLORS[f.type] || '#888'}"` : ''}>${elemIcon(f.type || 'Universal', 18, { title:false })}<span>Type</span>
+        <select id="${pre}Type">${opt('', 'All types', null, !f.type)}${types.map(t=> opt(t, t, nType(t), f.type === t)).join('')}</select></label>
+      <label class="sf-pick${f.tier ? ' on' : ''}"><span>Rarity</span>
+        <select id="${pre}Tier">${opt('', 'All', null, !f.tier)}${STORAGE_TIERS.map(([t, l])=> opt(t, l, nTier(t), f.tier === t)).join('')}</select></label>
+      ${(f.type || f.tier) ? `<button class="sf-clear" id="${pre}Clear" title="Show them all">✕</button>` : ''}
+    </div>`;
+}
+function storFilterCss(){
+  if(document.getElementById('storFilterCss')) return;
+  const st = document.createElement('style');
+  st.id = 'storFilterCss';
+  st.textContent = `
+    .stor-filter{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:-2px 0 10px; }
+    .sf-pick{ display:flex; align-items:center; gap:5px; flex:1 1 120px; min-width:0; padding:4px 6px 4px 9px; border-radius:20px;
+      background:var(--paper); border:1.5px solid var(--line); font-size:11px; font-weight:800; color:var(--ink-soft); }
+    .sf-pick.on{ border-color:var(--tc, var(--gold)); background:rgba(201,154,63,.12); color:var(--ink); }
+    .sf-pick select{ flex:1; min-width:0; border:none; background:transparent; font:inherit; font-size:12px; font-weight:800; color:var(--ink); padding:2px 0; }
+    .sf-clear{ flex:0 0 auto; width:28px; height:28px; border-radius:50%; border:1.5px solid var(--line); background:var(--paper); font-weight:900; cursor:pointer; }`;
+  document.head.appendChild(st);
+}
+/* Wires a filter drawn by storageFilterHtml: `redraw` after each change. */
+function wireMonFilter(f, pre, redraw, root){
+  const q = id=> (root || document).querySelector('#' + id);
+  const ty = q(pre + 'Type'), ti = q(pre + 'Tier'), cl = q(pre + 'Clear');
+  if(ty) ty.addEventListener('change', ()=>{ f.type = ty.value; redraw(); });
+  if(ti) ti.addEventListener('change', ()=>{ f.tier = ti.value; redraw(); });
+  if(cl) cl.addEventListener('click', ()=>{ f.type = ''; f.tier = ''; redraw(); });
+}
+function wireStorageFilter(){
+  storFilterCss();
+  const f = ui.storageFilter || (ui.storageFilter = { type:'', tier:'' });
+  wireMonFilter(f, 'sf', renderStorage);
+}
+/* ---------- ELEMENT PASSIVES: the forge, the bag, a monster's slots (3.67) ----------
+   The data is in 02-core.js (ELEMENT_PASSIVES); what they do in battle, in
+   04-battle.js. Forged at the shop (Passive Upgrades) from stones of one
+   element in storage — (3.78) 2 Very High ones for its Very High slot
+   passive, 1 Ultra one for its Ultra slot one (5 and 7 High stones until
+   3.77) — the plain stones go first, refined ones last. Put on any
+   monster of that element, one in each slot, from its Stats page or straight
+   after forging; taken off again for a Void Stone and silver, back into the
+   bag. */
+function highStonesOf(el){ return (state.moveStones || []).filter(st=> st.tier === 'high' && st.type === el); }
+/* (3.78) What forges a slot's passive: its element's stones of that slot's tier. */
+function forgeStonesOf(el, slot){ const tier = ELEM_PASSIVE_COST[slot][0]; return (state.moveStones || []).filter(st=> st.tier === tier && st.type === el); }
+/* (3.79) Three ways to pay for one: 'stones' — its element's stones of the
+   slot's tier (2 Very High / 1 Ultra); 'high' — its element's High stones
+   (5 / 7, ELEM_PASSIVE_HIGH); 'tokens' — Selection Tokens (6 / 3). (`true`,
+   from before, means tokens.) */
+function forgeHow(how){ return (how === true || how === 'tokens') ? 'tokens' : how === 'high' ? 'high' : 'stones'; }
+function forgePoolOf(el, slot, how){ return forgeHow(how) === 'high' ? highStonesOf(el) : forgeStonesOf(el, slot); }
+function forgeNeed(slot, how){ const h = forgeHow(how); return h === 'high' ? ELEM_PASSIVE_HIGH[slot] : h === 'tokens' ? ELEM_PASSIVE_TOKENS[slot][1] : ELEM_PASSIVE_COST[slot][1]; }
+function forgeCan(el, slot, how){
+  const h = forgeHow(how);
+  return h === 'tokens' ? selTokens(ELEM_PASSIVE_TOKENS[slot][0]) >= ELEM_PASSIVE_TOKENS[slot][1] : forgePoolOf(el, slot, h).length >= forgeNeed(slot, h);
+}
+function forgeCanAny(){
+  return Object.keys(ELEMENT_PASSIVES).some(el=> ['vh', 'ultra'].some(s=> ['stones', 'high', 'tokens'].some(h=> forgeCan(el, s, h))));
+}
+/* its price, in words, for one way of paying */
+function forgePriceHtml(slot, el, how){
+  const h = forgeHow(how);
+  if(h === 'tokens') return elemPassiveTokenHtml(slot, 13);
+  if(h === 'high'){ const n = ELEM_PASSIVE_HIGH[slot]; return el ? `${n} ${escapeHtml(stoneName(el, 'high'))}` : `${n} High stones`; }
+  return forgeStonePrice(slot, el);
+}
+/* "2 Very High stones" — its price in stones, in words (`el`: of that element's names). */
+function forgeStonePrice(slot, el){
+  const [tier, n] = ELEM_PASSIVE_COST[slot];
+  return el ? `${n} ${escapeHtml(stoneName(el, tier))}` : `${n} ${stoneTierDef(tier).label} stone${n === 1 ? '' : 's'}`;
+}
+function elemPassivesAnywhere(){
+  return elemPassivesHeld().length > 0 || (state.party || []).concat(state.storage || []).some(m=> m.vhPassive || m.ultraPassive || m.vhPassive2 || m.ultraPassive2);
+}
+function elemForgeOpen(){ return (state.progress.currentRegion || 1) >= ELEM_FORGE_FROM || elemPassivesAnywhere() || (typeof r6Met === 'function' && r6Met()); }   // (3.75) or Selene met
+function elemPassiveLabel(el, slot){ const d = elemPassiveDef(el, slot); return d ? d.name : ''; }   // (3.70) no icons: "they are just passives"
+/* (3.76) What a slot passive costs: its element's stones, or Selection
+   Tokens ("allow very high passives to be bought for 2 very high tokens,
+   and ultra passives to be bought for 1 ultra token, in addition to the
+   current cost") — (3.78) 6 and 3, the shop's rate for the stones. */
+function elemPassiveTokenHtml(slot, px){
+  const [t, n] = ELEM_PASSIVE_TOKENS[slot];
+  return `${selTokenIcon(t, px || 13)} ${n} ${selTokenName(t, n)}`;
+}
+/* Who can take it: wherever elemPassivePlace (02-core.js) finds it a place —
+   an empty slot of a monster of its element; (3.76) on a Fairy, its Fairy
+   one first, then one more on top of it. */
+function elemPassiveTakers(el, slot){
+  return (state.party || []).concat(state.storage || []).filter(m=> !isPassenger(m) && !!elemPassivePlace(m, el, slot));
+}
+function elemPassiveWhoNote(el){
+  if(el === 'Fairy') return 'Any Fairy monster without its Fairy one there yet (what it holds there now goes on top of it).';
+  if(FAIRY_CANNOT.includes(el)) return `Any ${el} monster with that slot free.`;
+  return `Any ${el} monster with that slot free, or any Fairy with its Fairy one there and nothing on top of it yet.`;
+}
+function attachElemPassive(m, el, slot){
+  const place = elemPassivePlace(m, el, slot);
+  if(!m || !place || elemPassiveCount(el, slot) <= 0) return false;
+  const k = slot + 'Passive', k2 = slot + 'Passive2';
+  addElemPassive(el, slot, -1);
+  if(place === 'second') m[k2] = el;
+  else { if(m[k] && m[k] !== el) m[k2] = m[k]; m[k] = el; }    // a Fairy one goes in under what is there
+  saveProfile();
+  playSfx('power_up');
+  toast(place === 'second' ? `${elemPassiveLabel(el, slot)} — on top of ${displayName(m)}'s ${elemPassiveLabel('Fairy', slot)}.`
+    : m[k2] ? `${elemPassiveLabel(el, slot)} goes in under ${displayName(m)}'s ${elemPassiveLabel(m[k2], slot)}: both work now.`
+    : `${elemPassiveLabel(el, slot)} — ${displayName(m)}'s ${ELEM_PASSIVE_SLOTS[slot]} slot.`);
+  return true;
+}
+/* Taking one off (`second`: the one on top of a Fairy's). Its Fairy one off,
+   what was on top comes down into its place — and rests, if it is an
+   element the monster holds only as a Fairy's perk. */
+async function removeElemPassive(m, slot, after, second){
+  const k = slot + 'Passive', k2 = slot + 'Passive2';
+  const el = m && m[second ? k2 : k];
+  if(!el) return;
+  const R = ELEM_PASSIVE_REMOVE, med = state.medals || {};
+  if((state.inventory.voidStones || 0) < R.voidStones || (med.silver || 0) < R.silver) return toast(`Needs ${R.voidStones} Void Stone and ${R.silver} Silver Medals.`);
+  const snap = { v:state.inventory.voidStones || 0, s:med.silver || 0, a:m[k], b:m[k2] };
+  state.inventory.voidStones = snap.v - R.voidStones;
+  state.medals.silver = snap.s - R.silver;
+  if(second) delete m[k2];
+  else if(m[k2]){ m[k] = m[k2]; delete m[k2]; }
+  else delete m[k];
+  addElemPassive(el, slot, 1);
+  const sv = showSyncingOverlay('Syncing…');
+  const ok = await saveProfile({ awaitCloud:true });
+  hideSyncingOverlay(sv);
+  if(!ok){
+    state.inventory.voidStones = snap.v; state.medals.silver = snap.s;
+    if(snap.a) m[k] = snap.a; else delete m[k];
+    if(snap.b) m[k2] = snap.b; else delete m[k2];
+    addElemPassive(el, slot, -1); showSyncFailure(); return;
+  }
+  playSfx('stone_low');
+  toast(`${elemPassiveLabel(el, slot)} is back in your bag.`);
+  if(after) after();
+}
+/* Choosing who takes one. (3.79) Rarest first, and the highest level first
+   within each (byRarityThenLevel, 02-core.js). From the forge (`forge`:
+   { withTokens }), nothing is paid until a monster is chosen — the designer:
+   "When purchasing talents, clicking outside of the monster list should
+   cancel the purchase. Include one more button to cancel the purchase." A
+   monster forges it and puts it on; "Forge it for my bag" forges it for
+   later; Cancel, or a tap outside the list, buys nothing. */
+function chooseElemPassiveHolder(el, slot, after, forge){
+  const takers = byRarityThenLevel(elemPassiveTakers(el, slot));
+  const ov = document.createElement('div');
+  ov.className = 'ep-chooser';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(35,32,25,0.55);z-index:80;display:flex;align-items:flex-end;justify-content:center;cursor:pointer;';
+  const where = m=>{
+    const p = elemPassivePlace(m, el, slot), a = m[slot + 'Passive'];
+    return p === 'second' ? ` · on top of its ${escapeHtml(elemPassiveLabel('Fairy', slot))}` : (a && a !== el) ? ` · under its ${escapeHtml(elemPassiveLabel(a, slot))}` : '';
+  };
+  const price = forge ? forgePriceHtml(slot, el, forge.how) : '';
+  ov.innerHTML = `<div class="ep-chooser-box" style="background:var(--paper);border-radius:18px 18px 0 0;padding:20px;max-width:480px;width:100%;max-height:82vh;overflow-y:auto;cursor:auto;">
+    <div style="font-family:'Baloo 2',cursive;font-weight:700;font-size:17px;">${escapeHtml(elemPassiveLabel(el, slot))} — on whose ${ELEM_PASSIVE_SLOTS[slot]} slot?</div>
+    ${forge ? `<div style="font-size:12.5px;font-weight:700;margin:3px 0 2px;">It costs <b>${price}</b>. Nothing is spent until you choose.</div>` : ''}
+    <div style="font-size:12px;color:var(--ink-soft);font-weight:700;margin:2px 0 12px;">${escapeHtml(elemPassiveWhoNote(el))}</div>
+    ${takers.length ? takers.map((m, i)=> `<button class="btn btn-ghost ep-opt" data-i="${i}" style="margin-bottom:8px;display:flex;align-items:center;gap:10px;justify-content:flex-start;text-align:left;">
+        ${monPortrait(m.species, 36, { stage:monStage(m), crowned:isCrowned(m) })}
+        <span style="flex:1;min-width:0;">${escapeHtml(displayName(m))} · Lv ${m.level} <span style="font-size:10px;">${typeBadges(m.species)}</span><small style="opacity:.75;">${where(m)}</small></span>
+      </button>`).join('') : `<div class="comp-note" style="margin-bottom:10px;">No monster has room for it there yet.</div>`}
+    <button class="btn btn-ghost" id="epLater" style="margin-top:4px;">${forge ? 'Forge it for my bag' : 'Keep it in the bag'}</button>
+    ${forge ? `<button class="btn btn-ghost" id="epCancel" style="margin-top:8px;">Cancel</button>` : ''}
+  </div>`;
+  document.body.appendChild(ov);
+  const close = ()=>{ if(ov.parentNode) ov.parentNode.removeChild(ov); };
+  const done = ()=>{ if(after) after(); };
+  /* from the forge: pay now, then (a monster) put it on */
+  const buy = async m=>{ close(); if(await forgePay(el, slot, forge.how) && m) attachElemPassive(m, el, slot); done(); };
+  ov.querySelector('#epLater').addEventListener('click', ()=>{ if(forge) return buy(null); close(); done(); });
+  const cancel = ov.querySelector('#epCancel');
+  if(cancel) cancel.addEventListener('click', ()=>{ close(); toast('Cancelled — nothing was spent.'); done(); });
+  ov.addEventListener('click', e=>{
+    if(e.target !== ov) return;
+    close();
+    if(forge) toast('Cancelled — nothing was spent.');
+    done();
+  });
+  ov.querySelectorAll('.ep-opt').forEach(b=> b.addEventListener('click', ()=>{
+    const m = takers[+b.dataset.i];
+    if(forge) return buy(m);
+    close(); attachElemPassive(m, el, slot); done();
+  }));
+}
+/* Forging one: from its element's stones of the slot's tier in storage (the
+   plain ones first), or (3.76, `withTokens`) from Selection Tokens. (3.79)
+   With a monster that could take it, who gets it is asked first, and only
+   then is it paid for (chooseElemPassiveHolder); with none, straight to the
+   bag. `how`: 'stones', 'high' or 'tokens' (forgeHow). */
+async function forgeElemPassive(el, slot, after, how){
+  if(elemPassiveTakers(el, slot).length) return chooseElemPassiveHolder(el, slot, after, { how:forgeHow(how) });
+  if(await forgePay(el, slot, how) && after) after();
+}
+/* The paying: the stones (or tokens) go, the passive goes into the bag, and
+   the save must reach the cloud — or all of it is put back. True once done. */
+async function forgePay(el, slot, how){
+  const h = forgeHow(how);
+  let undo;
+  if(h === 'tokens'){
+    const [t, n] = ELEM_PASSIVE_TOKENS[slot];
+    if(selTokens(t) < n){ toast(`Needs ${n} ${selTokenName(t, n)}.`); return false; }
+    addSelTokens(t, -n);
+    undo = ()=> addSelTokens(t, n);
+  } else {
+    const tier = h === 'high' ? 'high' : ELEM_PASSIVE_COST[slot][0], need = forgeNeed(slot, h);
+    const pool = forgePoolOf(el, slot, h).slice().sort((a, b)=> stonePlus(a) - stonePlus(b));   // the plain ones first
+    if(pool.length < need){ toast(`Needs ${need} ${stoneName(el, tier)} in storage.`); return false; }
+    const used = new Set(pool.slice(0, need));
+    const snapshot = state.moveStones.slice();
+    state.moveStones = state.moveStones.filter(st=> !used.has(st));
+    undo = ()=>{ state.moveStones = snapshot; };
+  }
+  addElemPassive(el, slot, 1);
+  const sv = showSyncingOverlay('Forging…');
+  const ok = await saveProfile({ awaitCloud:true });
+  hideSyncingOverlay(sv);
+  if(!ok){ undo(); addElemPassive(el, slot, -1); showSyncFailure(); return false; }
+  playSfx('stone_high');
+  toast(`Forged ${elemPassiveLabel(el, slot)}!`);
+  return true;
+}
+/* The forge (the shop's Passive Upgrades): each element's two, what they
+   cost and what you hold. */
+function openPassiveForge(){
+  storageCss();
+  const ov = document.createElement('div');
+  ov.className = 'ep-forge';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(35,32,25,0.6);z-index:75;display:flex;align-items:flex-end;justify-content:center;';
+  const draw = ()=>{
+    const els = Object.keys(ELEMENT_PASSIVES);
+    ov.innerHTML = `<div style="background:var(--paper);border-radius:18px 18px 0 0;padding:20px;max-width:560px;width:100%;max-height:86vh;overflow-y:auto;">
+      <div style="font-family:'Baloo 2',cursive;font-weight:800;font-size:19px;">🌟 Passive Upgrades</div>
+      <div style="font-size:12px;color:var(--ink-soft);font-weight:700;margin:3px 0 12px;line-height:1.45;">
+        Forge an element's passive from its stones in storage — <b>${forgeStonePrice('vh')}</b> of its element for its Very High slot passive, <b>${forgeStonePrice('ultra')}</b> for its Ultra slot one, or <b>${ELEM_PASSIVE_HIGH.vh}</b> / <b>${ELEM_PASSIVE_HIGH.ultra} High stones</b> of its element — or from Selection Tokens: ${elemPassiveTokenHtml('vh')}, or ${elemPassiveTokenHtml('ultra')}.
+        It goes on any monster of that element, one in each slot. A Fairy holds its Fairy one first, and then one more of any element's but Steel's on top of it: both work.
+        <div style="margin-top:5px;">You have ${selTokenIcon('veryhigh', 13)} <b>${selTokens('veryhigh')}</b> · ${selTokenIcon('ultra', 13)} <b>${selTokens('ultra')}</b>.</div></div>
+      ${els.map(el=>{
+        return `<div class="ep-el" style="--tc:${TYPE_COLORS[el] || '#888'};">
+          <div class="ep-el-head">${elemIcon(el, 22)}<span class="type-badge" style="background:${TYPE_COLORS[el] || '#888'};">${escapeHtml(el)}</span>
+            <span>${escapeHtml(stoneName(el, 'high'))} ×${highStonesOf(el).length} · ${['vh', 'ultra'].map(s=> `${escapeHtml(stoneName(el, ELEM_PASSIVE_COST[s][0]))} ×${forgeStonesOf(el, s).length}`).join(' · ')} held</span></div>
+          ${['vh', 'ultra'].map(slot=>{
+            const d = elemPassiveDef(el, slot), [ct, need] = ELEM_PASSIVE_COST[slot], inBag = elemPassiveCount(el, slot);
+            const [tt, tn] = ELEM_PASSIVE_TOKENS[slot];
+            /* (3.79) its stones, its High stones (5 / 7), or tokens */
+            const btn = (how, price, data)=>{ const ok = forgeCan(el, slot, how);
+              return `<button class="btn ${ok ? 'btn-primary' : 'btn-ghost'} ep-forge-btn" data-el="${el}" data-slot="${slot}"${data} ${ok ? '' : 'disabled'}>Forge<br><small>${price}</small></button>`; };
+            return `<div class="ep-opt-row">
+              <div class="ep-txt"><b>${escapeHtml(d.name)}</b> <small>${ELEM_PASSIVE_SLOTS[slot]} slot${inBag ? ` · ${inBag} in your bag` : ''}</small><div>${d.text}</div></div>
+              <div class="ep-buy">
+                ${btn('stones', `${gemIcon(ct, 12)} ${need}`, '')}
+                ${btn('high', `${gemIcon('high', 12)} ${ELEM_PASSIVE_HIGH[slot]}`, ' data-high="1"')}
+                ${btn('tokens', `${selTokenIcon(tt, 11)} ${tn}`, ' data-tok="1"')}
+              </div>
+            </div>`; }).join('')}
+        </div>`; }).join('')}
+      <button class="btn btn-ghost" id="epClose" style="margin-top:6px;">Close</button>
+    </div>`;
+    ov.querySelector('#epClose').addEventListener('click', close);
+    ov.querySelectorAll('.ep-forge-btn:not([disabled])').forEach(b=> b.addEventListener('click', ()=>{
+      const el = b.dataset.el, slot = b.dataset.slot, d = elemPassiveDef(el, slot);
+      const how = b.dataset.tok ? 'tokens' : b.dataset.high ? 'high' : 'stones';
+      confirmDialogHtml(how === 'tokens' ? `Forge <b>${escapeHtml(d.name)}</b> for ${elemPassiveTokenHtml(slot, 14)}?`
+        : `Forge <b>${escapeHtml(d.name)}</b> from <b>${forgePriceHtml(slot, el, how)}</b>?${forgeNeed(slot, how) > 1 ? ' The plain ones go first.' : ' A plain one goes first.'}`,
+        ()=> forgeElemPassive(el, slot, draw, how), 'Forge');
+    }));
+  };
+  const close = ()=>{ if(ov.parentNode) ov.parentNode.removeChild(ov); if(ui.screen === 'shop') renderShop(); };
+  ov.addEventListener('click', e=>{ if(e.target === ov) close(); });
+  document.body.appendChild(ov);
+  draw();
+}
+/* A monster's two slots, on its Stats page — (3.76) a Fairy's with room for
+   two in each. */
+function elemPassivePanel(m){
+  if(!m || isPassenger(m)) return '';
+  const mine = elemPassiveElements(m);              // (3.71) a Fairy's: every element but Steel
+  const fairy = isFairyMon(m);
+  const has = ['vh', 'ultra'].some(s=> m[s + 'Passive'] || m[s + 'Passive2']);
+  if(!mine.length && !has) return '';
+  if(!elemForgeOpen()) return '';
+  const R = ELEM_PASSIVE_REMOVE;
+  const own = monTypes(m).filter(t=> t !== 'Fairy' && ELEMENT_PASSIVES[t]);
+  const canPut = slot=> elemPassivesHeld().filter(x=> x.slot === slot && elemPassivePlace(m, x.el, slot)).map(x=> x.el);
+  const price = slot=> `${forgeStonePrice(slot)} of its element, ${ELEM_PASSIVE_HIGH[slot]} High ones, or ${elemPassiveTokenHtml(slot, 12)}`;
+  const held = (slot, el, second)=>{
+    const d = elemPassiveDef(el, slot), on = elemPassivesIn(m, slot).includes(el);
+    const why = on ? '' : (fairy && !second && el !== 'Fairy' && !monTypes(m).includes(el)) ? ' <small>(it rests until its Fairy one goes in under it)</small>' : ' <small>(not its element now: it rests)</small>';
+    return `<div class="ep-slot${second ? ' ep-slot2' : ''}"><div class="ep-slot-k">${second ? '+ on top' : ELEM_PASSIVE_SLOTS[slot] + ' slot'}</div>
+      <div class="ep-slot-v"><b>${d ? escapeHtml(d.name) : escapeHtml(el)}</b>${why}<div>${d ? d.text : ''}</div></div>
+      <button class="btn btn-ghost ep-btn" data-eprm="${slot}${second ? ':2' : ''}">Take off<br><small>${voidIcon(12)} ${R.voidStones} + 🥈 ${R.silver}</small></button></div>`;
+  };
+  const row = slot=>{
+    const a = m[slot + 'Passive'], b = m[slot + 'Passive2'], can = canPut(slot);
+    const put = can.length ? `<button class="btn btn-primary ep-btn" data-epadd="${slot}">Put one on</button>` : '';
+    let html = (a ? held(slot, a, false) : '') + (b ? held(slot, b, true) : '');
+    if(!a){
+      const msg = can.length ? 'You have one for it in your bag.'
+        : fairy ? `Its Fairy one goes in first — forge it at the shop from ${price(slot)}. Then one more of any element but Steel stacks on top of it, and both work.${own.length ? ` Its ${own.map(escapeHtml).join(' or ')} one may also stand alone.` : ''}`
+        : `Forge one at the shop from ${forgeStonePrice(slot)} of ${mine.length > 1 ? 'one of its elements' : 'its element'} (${mine.map(escapeHtml).join(' or ')}), ${ELEM_PASSIVE_HIGH[slot]} High ones, or ${elemPassiveTokenHtml(slot, 12)}.`;
+      html += `<div class="ep-slot"><div class="ep-slot-k">${ELEM_PASSIVE_SLOTS[slot]} slot</div>
+        <div class="ep-slot-v"><span style="color:var(--ink-soft);">Empty</span><div>${msg}</div></div>${put}</div>`;
+    } else if(fairy && !b && (a === 'Fairy' || can.includes('Fairy'))){
+      html += `<div class="ep-slot ep-slot2"><div class="ep-slot-k">+ on top</div>
+        <div class="ep-slot-v"><span style="color:var(--ink-soft);">${a === 'Fairy' ? 'Room for one more' : 'Room for its Fairy one, under it'}</span><div>${can.length ? 'You have one for it in your bag.' : 'Any element\'s but Steel\'s — forge one at the shop.'}</div></div>${put}</div>`;
+    }
+    return html;
+  };
+  return `<div class="crown-panel ep-panel">
+    <div class="crown-title">🌟 Element passives</div>
+    ${row('vh')}${row('ultra')}
+  </div>`;
+}
+function wireElemPassivePanel(m){
+  screenEl.querySelectorAll('[data-eprm]').forEach(b=> b.addEventListener('click', ()=>{
+    const [slot, two] = b.dataset.eprm.split(':'), second = two === '2', R = ELEM_PASSIVE_REMOVE;
+    const el = m[slot + (second ? 'Passive2' : 'Passive')], top = !second && m[slot + 'Passive2'];
+    const rests = top && !monTypes(m).includes(top);
+    confirmDialogHtml(`Take <b>${escapeHtml(elemPassiveLabel(el, slot))}</b> off ${escapeHtml(displayName(m))}? It costs ${voidIcon(14)} <b>${R.voidStones}</b> Void Stone and 🥈 <b>${R.silver}</b> Silver Medals, and it goes back to your bag.` +
+      (top ? `<br><b>${escapeHtml(elemPassiveLabel(top, slot))}</b> comes down into its place${rests ? ', and rests until a Fairy one is under it again' : ''}.` : '') +
+      `<br><span style="font-size:12px;color:var(--ink-soft);">You have ${state.inventory.voidStones || 0} · ${(state.medals || {}).silver || 0}.</span>`,
+      ()=> removeElemPassive(m, slot, renderStats, second), 'Take off');
+  }));
+  screenEl.querySelectorAll('[data-epadd]').forEach(b=> b.addEventListener('click', ()=>{
+    const slot = b.dataset.epadd;
+    const can = elemPassiveElements(m).filter(t=> elemPassiveCount(t, slot) > 0 && elemPassivePlace(m, t, slot));   // (3.76) where it has room
+    if(can.length === 1){ attachElemPassive(m, can[0], slot); return renderStats(); }
+    const ov = document.createElement('div');
+    ov.className = 'ep-which';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(35,32,25,0.55);z-index:80;display:flex;align-items:flex-end;justify-content:center;';
+    ov.innerHTML = `<div style="background:var(--paper);border-radius:18px 18px 0 0;padding:20px;max-width:480px;width:100%;max-height:82vh;overflow-y:auto;">
+      <div style="font-family:'Baloo 2',cursive;font-weight:700;font-size:17px;margin-bottom:10px;">Which one?</div>
+      ${can.map(t=> `<button class="btn btn-ghost ep-pick" data-el="${t}" style="margin-bottom:8px;">${escapeHtml(elemPassiveLabel(t, slot))} <small style="opacity:.7;">${escapeHtml(t)}${elemPassivePlace(m, t, slot) === 'second' ? ' · on top' : ''}</small></button>`).join('')}
+      <button class="btn btn-ghost" id="epNo">Cancel</button></div>`;
+    document.body.appendChild(ov);
+    const close = ()=>{ if(ov.parentNode) ov.parentNode.removeChild(ov); };
+    ov.querySelector('#epNo').addEventListener('click', close);
+    ov.querySelectorAll('.ep-pick').forEach(x=> x.addEventListener('click', ()=>{ close(); attachElemPassive(m, x.dataset.el, slot); renderStats(); }));
+  }));
+}
+
+/* ---------- STORAGE (3.65: two pages, not two columns) ----------
+   The designer: "Have two tabs at the top, monsters on the left, items on
+   the right. Toggling to either now shows a full page UI … instead of shared
+   space. Skill stones in particular are messy." Monsters: the filters, and a
+   card each across the page. Items: what you hold to spend (medals, Skill,
+   Elite and Selection Tokens, the rest), the Element Stones, then the skill
+   stones — by tier, rarest first, one tile for each kind with ×N for its
+   copies, and a type filter of their own. ui.storageTab keeps the page while
+   the game is open; the shop opens Items, the Party page Monsters. */
+function renderStorage(){
+  setScreenBg('home');
+  $('#brandSub').textContent = 'Storage';
+  if(!Array.isArray(state.storage)) state.storage = [];
+  if(!Array.isArray(state.moveStones)) state.moveStones = [];
+  if(!state.inventory) state.inventory = { protein:0, strangeKey:false, tokens:0, eliteTokens:0 };
+  storageCss();
+  storFilterCss();
+  companionsCss();
+  /* (3.52) a companion whose leader is in the party is with the party now —
+     the Party page shows them side by side — so it is not listed here */
+  const stored = storedMonsters();
+  const tab = ui.storageTab === 'items' ? 'items' : 'mons';
+  screenEl.innerHTML = `
+    <div class="party-head-row">
+      <button class="back-link" id="backBtn" style="margin:0;">← ${ui.storageFrom==='shop'?'Shop':'Party'}</button>
+      <button class="btn btn-ghost storage-corner" id="toShopBtn">🏪 Shop</button>
+    </div>
+    <div class="screen-title" style="margin-top:6px;">Storage</div>
+    <div class="stor-tabs" role="tablist">
+      <button class="stor-tab${tab === 'mons' ? ' on' : ''}" data-tab="mons" role="tab" aria-selected="${tab === 'mons'}">🐾 Monsters <span>${stored.length}</span></button>
+      <button class="stor-tab${tab === 'items' ? ' on' : ''}" data-tab="items" role="tab" aria-selected="${tab === 'items'}">🎒 Items <span>${state.moveStones.length ? `💎 ${state.moveStones.length}` : ''}</span></button>
+    </div>
+    <div class="stor-page" id="storPage">${tab === 'mons' ? storageMonsPageHtml(stored) : storageItemsPageHtml()}</div>
+  `;
+  $('#backBtn').addEventListener('click', ()=>{ const t = ui.storageFrom==='shop'?'shop':'party'; ui.storageFrom=null; go(t); });
+  $('#toShopBtn').addEventListener('click', ()=>{ ui.storageFrom='storage'; go('shop'); });
+  screenEl.querySelectorAll('.stor-tab').forEach(b=> b.addEventListener('click', ()=>{
+    if(ui.storageTab === b.dataset.tab) return;
+    ui.storageTab = b.dataset.tab;
+    renderStorage();
+    window.scrollTo(0, 0);
+  }));
+  if(tab === 'mons'){
+    wireStorageFilter();
+    const list = $('#storageList');
+    list.querySelectorAll('[data-stats]').forEach(b=>b.addEventListener('click', ()=>{ ui.statsUid=b.dataset.stats; go('stats'); }));
+    list.querySelectorAll('[data-party]').forEach(b=>b.addEventListener('click', ()=> moveToParty(b.dataset.party)));
+  } else {
+    renderStoneList();
+    wireRecycleAll();
+    if(typeof recStorageWire === 'function') recStorageWire();   // (3.89) your records
+    if(typeof ptStorageWire === 'function') ptStorageWire();     // (4.38) your paintings
+    const os = $('#openStones');
+    if(os) os.addEventListener('click', ()=>go('elementStones'));
+    const sf = ui.stoneFilter || (ui.stoneFilter = { type:'' });
+    const ty = $('#stType'), cl = $('#stClear');
+    if(ty) ty.addEventListener('change', ()=>{ sf.type = ty.value; renderStorage(); });
+    if(cl) cl.addEventListener('click', ()=>{ sf.type = ''; renderStorage(); });
+  }
+}
+function storageMonsPageHtml(stored){
+  const f = ui.storageFilter || (ui.storageFilter = { type:'', tier:'' });
+  const shown = storageSorted(stored.filter(m=> storageMatches(m, f)));
+  const cards = shown.map(m=> `
+      <div class="party-card stor-mon">
+        <div class="party-head" style="gap:9px;">
+          ${monPortrait(m.species, 48, { stage:monStage(m), crowned:isCrowned(m) })}
+          <div style="flex:1;min-width:0;">
+            <div class="sm-name">${escapeHtml(displayName(m))}</div>
+            <div class="sm-lv">Lv ${m.level}</div>
+            <div class="sm-types">${typeIcons(m.species, 18)}</div>
+            ${storageCompanionLine(m)}
+          </div>
+        </div>
+        <div class="party-actions sm-actions">
+          <button class="mini-btn" data-stats="${m.uid}">📊 Stats</button>
+          <button class="mini-btn" data-party="${m.uid}">➕ Party</button>
+        </div>
+      </div>`).join('');
+  return `
+    ${stored.length ? `<div class="sm-filter-row">${storageFilterHtml(stored, f)}${shown.length !== stored.length ? `<div class="stor-count">${shown.length} of ${stored.length}</div>` : ''}</div>` : ''}
+    <div id="storageList" class="stor-mon-grid">${!stored.length ? `<div class="col-empty">No stored monsters.</div>`
+      : !shown.length ? `<div class="col-empty">No stored monsters like that.</div>` : cards}</div>`;
+}
+/* What you hold to spend, then the stones. */
+function storageItemsPageHtml(){
+  const inv = state.inventory || {}, med = state.medals || {};
+  const sf = ui.stoneFilter || (ui.stoneFilter = { type:'' });
+  const chip = (icon, n, label, always)=> (n || always) ? `<div class="wal-chip${n ? '' : ' none'}"><span class="wal-ic">${icon}</span><b>${n || 0}</b><small>${label}</small></div>` : '';
+  const others = [
+    chip('💪', inv.protein || 0, 'Protein'),
+    chip(typeof voidIcon === 'function' ? voidIcon(22) : '🕳️', inv.voidStones || 0, 'Void Stones'),
+    chip(crownIcon(22), inv.crowns || 0, 'Crowns'),
+  ].join('');
+  const types = Object.keys(TYPE_COLORS);
+  const nType = t=> state.moveStones.filter(st=> st.type === t).length;
+  return `
+    <div class="stor-wallet">
+      <div class="wal-row">
+        ${chip(medalIcon('bronze'), med.bronze || 0, 'Bronze', true)}
+        ${chip(medalIcon('silver'), med.silver || 0, 'Silver', true)}
+        ${chip(medalIcon('gold'), med.gold || 0, 'Gold', true)}
+      </div>
+      <div class="wal-row">
+        ${chip(tokenIcon(22), inv.tokens || 0, 'Skill Tokens', true)}
+        ${chip('⭐', inv.eliteTokens || 0, 'Elite Tokens')}
+      </div>
+      <div class="wal-head">Selection Tokens <span>${SELECTION_PER_PICK} of a kind buy a skill of its tier you choose, at the shop</span></div>
+      <div class="wal-row">
+        ${SELECTION_TIERS.map(t=> chip(selTokenIcon(t, 22), selTokens(t), stoneTierDef(t).label, true)).join('')}
+      </div>
+      ${others ? `<div class="wal-row">${others}</div>` : ''}
+      ${elemPassivesHeld().length ? `<div class="wal-head">Passive upgrades <span>put one on from a monster's Stats page</span></div>
+        <div class="wal-row">${elemPassivesHeld().map(x=> chip(elemIcon(x.el, 20), x.n, `${elemPassiveDef(x.el, x.slot).name} · ${ELEM_PASSIVE_SLOTS[x.slot]}`, true)).join('')}</div>` : ''}
+      ${typeof boostWalletHtml === 'function' ? boostWalletHtml() : ''}
+    </div>
+    ${heldStones().length ? `<button class="btn btn-ghost stone-page-btn" id="openStones">💠 Element Stones <span>${totalStones()} held</span></button>` : ''}
+    ${typeof recStorageHtml === 'function' ? (caCss(), recStorageHtml()) : ''}
+    ${typeof ptStorageHtml === 'function' ? ptStorageHtml() : ''}
+    <div class="stor-sec-head">💎 Skill Stones <span>${state.moveStones.length}</span></div>
+    ${state.moveStones.length ? `<div class="stor-filter">
+        <label class="sf-pick${sf.type ? ' on' : ''}" ${sf.type ? `style="--tc:${TYPE_COLORS[sf.type] || '#888'}"` : ''}>${elemIcon(sf.type || 'Universal', 18, { title:false })}<span>Type</span>
+          <select id="stType"><option value="" ${sf.type ? '' : 'selected'}>All types</option>${types.map(t=> `<option value="${t}" ${sf.type === t ? 'selected' : ''} ${nType(t) || sf.type === t ? '' : 'disabled'}>${t} (${nType(t)})</option>`).join('')}</select></label>
+        ${sf.type ? `<button class="sf-clear" id="stClear" title="Show them all">✕</button>` : ''}
+      </div>` : ''}
+    ${recycleAllBar()}
+    <div id="stoneList"></div>`;
+}
+let _storageCssDone = false;
+function storageCss(){
+  if(_storageCssDone || typeof document === 'undefined') return;
+  _storageCssDone = true;
+  const st = document.createElement('style');
+  st.id = 'storageCss';
+  st.textContent = `
+  .stor-tabs{ display:flex; gap:6px; margin:8px 0 12px; padding:4px; border-radius:16px; background:var(--paper-3); }
+  .stor-tab{ flex:1; display:flex; align-items:center; justify-content:center; gap:7px; padding:10px 8px; border:none; border-radius:12px;
+    background:transparent; font-family:'Baloo 2',cursive; font-weight:800; font-size:15px; color:var(--ink-soft); cursor:pointer; }
+  .stor-tab span{ font-family:'Nunito',sans-serif; font-size:12px; font-weight:900; opacity:.8; }
+  .stor-tab.on{ background:var(--paper); color:var(--ink); box-shadow:0 2px 0 var(--line); }
+  body.has-bg .stor-tabs{ background:rgba(35,32,25,.16); backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px); }
+  body.has-bg .stor-tab.on{ background:rgba(250,244,228,.92); }
+  .sm-filter-row{ display:flex; align-items:center; gap:8px; }
+  .sm-filter-row .stor-filter{ flex:1; }
+  .stor-count{ flex:0 0 auto; font-size:12px; font-weight:800; color:var(--ink-soft); margin:-2px 0 10px; }
+  .stor-mon-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(168px, 1fr)); gap:8px; }
+  .stor-mon-grid .col-empty{ grid-column:1/-1; }
+  .party-card.stor-mon{ padding:10px; margin:0; display:flex; flex-direction:column; }
+  .stor-mon .party-head{ flex:1; align-items:flex-start; }
+  .stor-mon .sm-name{ font-family:'Baloo 2',cursive; font-weight:800; font-size:14px; line-height:1.15; }
+  .stor-mon .sm-lv{ font-size:12px; color:var(--ink-soft); font-weight:800; }
+  .stor-mon .sm-types{ font-size:10px; margin-top:3px; }
+  .stor-mon .sm-actions{ margin-top:8px; padding-top:8px; }
+  .stor-mon .sm-actions .mini-btn{ font-size:11.5px; padding:7px 6px; }
+  .stor-wallet{ background:var(--paper-2); border:1px solid var(--line); border-radius:14px; padding:10px; margin-bottom:10px; }
+  body.has-bg .stor-wallet{ background:rgba(244,236,216,.34); border-color:rgba(35,32,25,.22); backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px); }
+  .wal-row{ display:grid; grid-template-columns:repeat(auto-fill, minmax(96px, 1fr)); gap:6px; }
+  .wal-row + .wal-row, .wal-row + .wal-head{ margin-top:6px; }
+  .wal-head{ font-family:'Baloo 2',cursive; font-weight:800; font-size:13px; margin:10px 2px 5px; }
+  .wal-head span{ display:block; font-family:'Nunito',sans-serif; font-size:11px; font-weight:700; color:var(--ink-soft); }
+  .wal-chip{ display:flex; align-items:center; gap:6px; padding:6px 8px; border-radius:11px; background:var(--paper); border:1px solid var(--line); min-width:0; }
+  .wal-chip.none{ opacity:.55; }
+  .wal-chip .wal-ic{ flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; font-size:18px; line-height:1; }
+  .wal-chip .wal-ic img{ width:22px; height:22px; object-fit:contain; }
+  .wal-chip b{ font-family:'Baloo 2',cursive; font-size:16px; line-height:1; }
+  .wal-chip small{ flex:1; min-width:0; font-size:10.5px; font-weight:800; color:var(--ink-soft); line-height:1.1; }
+  .stor-sec-head{ display:flex; justify-content:space-between; align-items:center; font-family:'Baloo 2',cursive; font-weight:800; font-size:15px; margin:4px 2px 8px; }
+  .stor-sec-head span{ font-size:12px; color:var(--ink-soft); font-weight:800; }
+  body.has-bg .stor-sec-head{ text-shadow:0 1px 2px rgba(255,255,255,.9); }
+  .stone-group-head{ align-items:center; justify-content:flex-start; font-size:11px; padding:4px 8px; }
+  .stone-group-head .gem-wrap{ margin-right:5px; vertical-align:middle; }
+  .stone-group-head > span:last-child{ margin-left:auto; }
+  .stone-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(132px, 1fr)); gap:6px; }
+  .stone-tile{ position:relative; display:flex; flex-direction:column; align-items:flex-start; gap:4px; min-width:0; padding:8px 9px 8px 10px;
+    border-radius:11px; border:1px solid var(--line); border-left:5px solid var(--tc, var(--line)); background:var(--paper); text-align:left;
+    cursor:pointer; font:inherit; color:var(--ink); }
+  .stone-tile:active{ transform:translateY(1px); }
+  .stone-tile .type-badge{ font-size:9px; padding:2px 6px; }
+  .stone-tile .st-top{ display:flex; align-items:center; gap:4px; }
+  .stone-tile .st-name{ font-family:'Baloo 2',cursive; font-weight:700; font-size:13px; line-height:1.15; padding-right:22px; }
+  .stone-tile .st-count{ position:absolute; top:6px; right:7px; min-width:22px; padding:1px 5px; border-radius:9px; background:var(--ink); color:#fff;
+    font-size:11px; font-weight:900; text-align:center; }
+  .stone-tile.tier-ultra{ box-shadow:0 0 0 1px rgba(224,85,63,.35), 0 0 10px rgba(224,85,63,.25); }
+  .stone-tile.tier-veryhigh{ box-shadow:0 0 0 1px rgba(224,168,60,.3), 0 0 8px rgba(224,168,60,.22); }
+  .sel-token{ position:relative; display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; border-radius:50%; vertical-align:middle;
+    background:radial-gradient(circle at 35% 30%, #fffdf3, #e8dcbc 55%, #b9a77c); box-shadow:inset 0 0 0 1.5px rgba(120,96,48,.75), 0 1px 1px rgba(0,0,0,.2); }
+  .sel-token .gem{ width:62%; height:62%; }
+  .ware-price .ware-or{ display:block; font-size:11px; font-weight:800; color:var(--ink-soft); }
+  /* (3.67) the forge and a monster's passive slots */
+  .ep-el{ border:1px solid var(--line); border-left:5px solid var(--tc); border-radius:12px; padding:10px; margin-bottom:10px; background:var(--paper-2); }
+  .ep-el-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:12px; font-weight:800; color:var(--ink-soft); margin-bottom:6px; }
+  .ep-opt-row{ display:flex; align-items:center; gap:10px; padding:7px 0; border-top:1px dashed var(--line); }
+  .ep-opt-row:first-of-type{ border-top:none; }
+  .ep-txt{ flex:1; min-width:0; font-size:12px; line-height:1.4; }
+  .ep-txt b{ font-family:'Baloo 2',cursive; font-size:14px; }
+  .ep-txt small{ font-size:10.5px; font-weight:800; color:var(--ink-soft); }
+  .btn.ep-forge-btn, .btn.ep-btn{ flex:0 0 auto; width:auto; min-width:78px; padding:8px 10px; font-size:12px; margin:0; line-height:1.15; }
+  .btn.ep-forge-btn small, .btn.ep-btn small{ font-size:10px; font-weight:800; }
+  .ep-panel{ background:linear-gradient(135deg, rgba(90,140,200,.13), rgba(201,154,63,.12)); border-color:rgba(90,120,170,.45); }
+  .ep-slot{ display:flex; align-items:center; gap:10px; margin-top:8px; padding-top:8px; border-top:1px dashed var(--line); }
+  .ep-slot-k{ flex:0 0 68px; font-size:11px; font-weight:800; color:var(--ink-soft); }
+  .ep-slot-v{ flex:1; min-width:0; font-size:12px; line-height:1.4; }
+  .ep-slot-v b{ font-family:'Baloo 2',cursive; font-size:14px; }
+  .ep-buy{ display:flex; flex-direction:column; gap:4px; flex:0 0 auto; }
+  .ep-buy .btn.ep-forge-btn{ padding:5px 8px; min-width:74px; }   /* (3.79) three ways to pay now */
+  .ep-slot2{ margin-top:0; padding-top:6px; border-top:none; padding-left:14px; }
+  .ep-slot2 .ep-slot-k{ flex-basis:54px; color:var(--accent, #8a5cb8); }
+  .ep-dot{ display:inline-block; width:16px; height:16px; border-radius:50%; vertical-align:middle; box-shadow:inset 0 0 0 2px rgba(255,255,255,.55), 0 0 0 1px rgba(35,32,25,.35); }
+  .sel-token.tier-ultra{ box-shadow:inset 0 0 0 1.5px rgba(143,42,28,.8), 0 0 5px rgba(224,85,63,.6); }
+  .sel-token.tier-veryhigh{ box-shadow:inset 0 0 0 1.5px rgba(169,118,29,.85), 0 0 4px rgba(224,168,60,.6); }
+  .sel-token.tier-high{ box-shadow:inset 0 0 0 1.5px rgba(31,92,140,.8), 0 1px 1px rgba(0,0,0,.2); }
+  `;
+  document.head.appendChild(st);
+}
+try{ storageCss(); }catch(e){}
+
+/* Low and Mid stones pile up fast, so they can be cleared in one go. */
+/* A shelf of the elemental stones you hold, showing who carries each and
+   letting you take it back without hunting through the party. */
+/* A page of its own: what the stones do, then a row per stone you hold. */
+function renderElementStones(){
+  $('#brandSub').textContent = 'Element Stones';
+  setScreenBg('home');
+  const held = heldStones();
+  const all = state.party.concat(state.storage);
+  const canCarry = (st, m)=> stoneFits(st, m) && (!isPassenger(m) || isCuain(m));
+
+  screenEl.innerHTML = `
+    <button class="back-link" id="backBtn">← Storage</button>
+    <div class="screen-title">Element Stones <span style="font-size:13px;color:var(--ink-soft);">${held.length} of ${ELEMENTAL_STONES.length} found</span></div>
+    <div class="stone-intro">
+      <b>Carry one.</b> A stone attaches to a monster of its type and gives it
+      <b>1.5× experience</b> from every fight — a stone helps a monster that is
+      falling behind far more than one already grown. The four Triune Stones fit
+      any monster of their triangle's three types. Each stone is carried by one
+      monster at a time, and a monster carries one stone.
+      ${levelCap() > CROWN_GATE ? `<br><br><b>Break through.</b> Past level ${CROWN_GATE}, a crowned monster stops at a
+      ceiling every ${CEILING_STEP} levels. There, every fight charges the stone it carries instead
+      of its level; when the charge is full it breaks through and the next ${CEILING_STEP} levels open —
+      <b>${breakthroughNeed(CROWN_GATE + CEILING_STEP)}</b> at ${CROWN_GATE + CEILING_STEP}, then more at each ceiling,
+      up to <b>${breakthroughNeed(LEVEL_MAX - CEILING_STEP)}</b> at ${LEVEL_MAX - CEILING_STEP}.
+      The charge stays on the stone: move it, and a breakthrough takes only what it needs.
+      ${levelCap() < LEVEL_MAX ? `Here the level cap is ${levelCap()}: a crowned monster at that ceiling still charges
+      its stone, and breaks through in a region that lets it grow.` : ''}
+      <br><br><b>Stored at ${CROWN_GATE}.</b> A monster stopped at ${CROWN_GATE} for now — waiting for its Crown or its core
+      with its bar full, or a wild one at the end of its road — stores every fight on the stone it carries, for a
+      breakthrough later.` : ''}
+    </div>
+
+    ${held.length ? held.map(st=>{
+      const holderUid = stoneHolder(st.id);
+      const mon = holderUid && all.find(m=>m.uid===holderUid);
+      const eligible = all.filter(m=> canCarry(st, m));
+      const ch = stoneCharge(st.id);
+      const charging = mon && chargesStone(mon);
+      const storing = mon && !charging && storesAtHundred(mon);      // (3.01) stopped at 100
+      return `<div class="es-row">
+        <div class="es-icon">${stoneIcon(st, 54)}</div>
+        <div class="es-body">
+          <div class="es-name">${escapeHtml(st.name)}${ch || charging ? ` <span style="font-size:12px;color:#6a4ab0;">⚡ ${ch}${charging ? ` / ${breakthroughNeed(monCeiling(mon))}` : ''}</span>` : ''}</div>
+          ${st.triangle ? `<div class="es-sub">Fits ${escapeHtml(st.typeText)}</div>` : ''}
+          <div class="es-sub">${mon
+            ? `Carried by <b>${escapeHtml(displayName(mon))}</b> · Lv ${mon.level}${breakthroughReady(mon) ? ' · <b>ready to break through</b>' : charging ? ' · charging' : storing ? ' · storing its fights' : ''}`
+            : (eligible.length ? `${eligible.length} monster${eligible.length>1?'s':''} can carry it`
+                               : `No ${escapeHtml(st.typeText)} monster to carry it yet`)}</div>
+        </div>
+        <div class="es-actions" style="display:flex;flex-direction:column;gap:6px;">
+          ${mon ? `<button class="btn btn-ghost es-btn" data-detach="${st.id}">Detach</button>` : ''}
+          <button class="btn ${mon ? 'btn-ghost' : 'btn-primary'} es-btn" data-attach="${st.id}" ${eligible.length?'':'disabled'}>${mon ? 'Move' : 'Attach'}</button>
+        </div>
+      </div>`;
+    }).join('') : `<div class="phase-flag">You haven't found any Element Stones yet.</div>`}
+  `;
+  $('#backBtn').addEventListener('click', ()=>{ ui.storageTab = 'items'; go('storage'); });   // (3.65) back to its Items page
+  screenEl.querySelectorAll('[data-detach]').forEach(b=>b.addEventListener('click', async ()=>{
+    const st = stoneDef(b.dataset.detach);
+    detachStone(st.id);
+    await saveProfile();
+    toast(`${st.name} detached${stoneCharge(st.id) ? ` — it keeps its ${stoneCharge(st.id)} charge` : ''}.`);
+    renderElementStones();
+  }));
+  screenEl.querySelectorAll('[data-attach]').forEach(b=>b.addEventListener('click', ()=>{
+    const st = stoneDef(b.dataset.attach);
+    const eligible = all.map((m,i)=>({m,i})).filter(o=> canCarry(st, o.m) && stoneHolder(st.id) !== o.m.uid);
+    monsterChooser(`Give the ${st.name} to…`, eligible, i=> giveStoneTo(st.id, all[i], renderElementStones));
+  }));
+}
+
+function recycleAllBar(){
+  const counts = { low:0, mid:0 };
+  state.moveStones.forEach(st=>{ if(counts[st.tier]!==undefined) counts[st.tier]++; });
+  const total = counts.low + counts.mid;
+  if(total === 0) return '';
+  const back = counts.low*RECYCLE_RETURN.low + counts.mid*RECYCLE_RETURN.mid;
+  return `<button class="btn btn-ghost recycle-all" id="recycleAll">
+    ♻️ Recycle all Low &amp; Mid (${total}) → ${tokenIcon(14)} ${back}
+  </button>`;
+}
+function wireRecycleAll(){
+  const b = $('#recycleAll');
+  if(!b) return;
+  b.addEventListener('click', ()=>{
+    const doomed = state.moveStones.filter(st=>st.tier==='low' || st.tier==='mid');
+    if(!doomed.length) return;
+    const refined = doomed.filter(st=>stonePlus(st) > 0).length;
+    const back = doomed.reduce((n,st)=>n + (RECYCLE_RETURN[st.tier]||0), 0);
+    confirmDialogHtml(
+      `Recycle <b>${doomed.length}</b> Low and Mid stone${doomed.length>1?'s':''} for ${tokenIcon(15)} <b>${back}</b>?` +
+      (refined ? `<br><br><b style="color:var(--cinnabar-dark);">${refined} of them ${refined>1?'have been':'has been'} refined</b> — that work is lost too.` : '') +
+      `<br><br>Stones already taught to a monster are not touched.`,
+      async ()=>{
+        const snapshot = { stones:state.moveStones.slice(), tokens:state.inventory.tokens };
+        state.moveStones = state.moveStones.filter(st=>!(st.tier==='low' || st.tier==='mid'));
+        state.inventory.tokens = (state.inventory.tokens||0) + back;
+        const sv = showSyncingOverlay('Recycling…');
+        const ok = await saveProfile({ awaitCloud:true });
+        hideSyncingOverlay(sv);
+        if(!ok){ state.moveStones = snapshot.stones; state.inventory.tokens = snapshot.tokens; showSyncFailure(); return; }
+        playSfx('stone_roll');
+        toast(`Recycled ${doomed.length} stones for ${back} tokens.`);
+        renderStorage();
+      });
+  });
+}
+
+/* (3.65) The stones by tier, rarest first; within a tier one tile for each
+   kind — its type, its name, its refinement — with ×N for the copies, in
+   the types' order. A tile opens one of them (they are alike). */
+function stoneKindKey(st){ return st.tier + '|' + st.type + '|' + st.name + '|' + stonePlus(st); }
+function renderStoneList(){
+  const el = $('#stoneList');
+  if(!el) return;
+  if(state.moveStones.length===0){
+    el.innerHTML = `<div class="col-empty">No skill stones yet.</div>`;
+    return;
+  }
+  const f = ui.stoneFilter || { type:'' };
+  const list = state.moveStones.filter(st=> !f.type || st.type === f.type);
+  if(!list.length){
+    el.innerHTML = `<div class="col-empty">No ${escapeHtml(f.type)} skill stones.</div>`;
+    return;
+  }
+  const order = ['ultra','veryhigh','high','mid','low'];
+  const types = Object.keys(TYPE_COLORS);
+  el.innerHTML = order.map(t=>{
+    const of = list.filter(st=> st.tier === t);
+    if(!of.length) return '';
+    const kinds = [];
+    of.forEach(st=>{
+      const k = stoneKindKey(st);
+      let g = kinds.find(x=> x.k === k);
+      if(!g) kinds.push(g = { k, st, n:0 });
+      g.n++;
+    });
+    kinds.sort((a, b)=> (types.indexOf(a.st.type) - types.indexOf(b.st.type)) || (stonePlus(b.st) - stonePlus(a.st)) || String(a.st.name).localeCompare(String(b.st.name)));
+    const def = stoneTierDef(t);
+    return `<div class="stone-group">
+      <div class="stone-group-head tier-${t}">${gemIcon(t, 18)}${def.label}<span>${of.length}</span></div>
+      <div class="stone-grid">
+        ${kinds.map(g=> `<button class="stone-tile tier-${t}" data-stone="${g.st.uid}" style="--tc:${TYPE_COLORS[g.st.type] || '#888'};">
+            <span class="st-top">${elemIcon(g.st.type, 18)}<span class="type-badge" style="background:${TYPE_COLORS[g.st.type] || '#888'};">${escapeHtml(g.st.type)}</span></span>
+            <span class="st-name">${escapeHtml(g.st.name)}${stonePlus(g.st) ? `<span class="plus-mark">${UPGRADE_MARKS[stonePlus(g.st)].trim()}</span>` : ''}</span>
+            ${g.n > 1 ? `<span class="st-count">×${g.n}</span>` : ''}
+          </button>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
+  el.querySelectorAll('[data-stone]').forEach(c=> c.addEventListener('click', ()=> openStoneDetail(c.dataset.stone)));
+}
+
+/* gacha spin with a short suspense reveal */
+/* ---------- Commit-before-reveal helpers ----------
+   Used only for economy actions where a reload-before-sync could be exploited
+   (see any spend/roll/recycle below). Nothing is shown until the cloud has
+   confirmed the write, so there's nothing to reload away from. */
+function showSyncingOverlay(label){
+  const ov = document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;z-index:90;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(35,32,25,0.55);gap:12px;';
+  ov.innerHTML = `<div style="font-size:38px;">☁️</div><div style="font-family:'Baloo 2',cursive;font-weight:700;font-size:15px;color:#fff;">${escapeHtml(label||'Syncing…')}</div>`;
+  document.body.appendChild(ov);
+  return ov;
+}
+function hideSyncingOverlay(ov){ if(ov && ov.parentNode) document.body.removeChild(ov); }
+function showSyncFailure(){
+  toast("☁️ Couldn't confirm online — check your connection and try again.");
+}
+
+async function doStoneRoll(){
+  if((state.inventory.tokens||0) < TOKENS_PER_ROLL) return;
+  const beforeTokens = state.inventory.tokens;
+  state.inventory.tokens -= TOKENS_PER_ROLL;
+  const stone = newMoveStone();
+  state.moveStones.push(stone);
+  await stoneSaveReveal([stone], 'Rolling…', ()=>{ state.inventory.tokens = beforeTokens; state.moveStones.pop(); });
+}
+
+/* ============================================================
+   (3.78) THE STONE REVEAL — the designer: "remove the jackpot emoticon, and
+   instead show a banner with the different elemental symbols … cycling in
+   a circle in the centre of the screen while the random skills load and the
+   file is saved. then, when the save and loading is ready, flash from the
+   centre of the screen in the middle of the ring of cycling element
+   symbols, into whiteout, into the glowing element with the stone name.
+   give the glow according to the tier of the stone. When multi-select … of
+   10 or more is purchased, organise and present the stones in tiers
+   starting from the bottom of the page. play the appropriate fanfare once
+   per tier, and flash the stones one by one from left to right, going past
+   the edge of the screen if too many belong in the tier. allow the tier
+   row to be scrolled left and right … progress from bottom to top of the
+   page, with ultra tier at the top."
+   stoneRing: the twelve symbols turning round the middle of the screen,
+   each brightening in turn, while the save is made (stoneSaveReveal).
+   revealStones: the flash out of its middle into white, then the stones as
+   their elements' symbols, glowing in their tier's colour (TIER_GLOW).
+   One: its name and what it does. Two to nine: one row, lowest tier first,
+   flashing in one by one — each tier's fanfare as its first stone comes.
+   Ten or more: a row for each tier from the bottom of the screen up, Ultra
+   at the top; its fanfare once as the row begins, its stones flashing in
+   from left to right, the row scrolling on past the edge (and sideways by
+   hand). Skip shows them all at once.
+   ============================================================ */
+const REVEAL = { ringMs:1100, flashMs:520, whiteMs:650, cardMs:150, rowGap:420, many:10,
+  /* (3.83) the two top tiers: their beam, the held breath before the reveal; an Ultra's flash out of the ring */
+  beamMs:{ veryhigh:950, ultra:1700 }, holdMs:{ veryhigh:500, ultra:800 }, ultraFlashMs:1050, ultraOutMs:1600 };
+const REVEAL_BIG = ['veryhigh', 'ultra'];
+const REVEAL_TIERS = ['low', 'mid', 'high', 'veryhigh', 'ultra'];
+const revealWait = ms=> new Promise(r=> setTimeout(r, ms));
+function stoneRevealCss(){
+  if(document.getElementById('stoneRevealCss')) return;
+  const st = document.createElement('style');
+  st.id = 'stoneRevealCss';
+  st.textContent = `
+  .sr-ov{ position:fixed; inset:0; z-index:85; overflow:hidden; background:radial-gradient(circle at center,#fff7e0,#d9cdae); }
+  .sr-stage{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; transition:opacity .2s; }
+  .sr-ov.shown .sr-stage{ opacity:0; pointer-events:none; }
+  .sr-ring{ position:absolute; left:50%; top:50%; width:0; height:0; --r:min(34vw, 132px); animation:srTurn 3.6s linear infinite; }
+  .sr-sym{ position:absolute; left:0; top:0; width:0; height:0; transform:rotate(var(--a)) translateY(calc(-1 * var(--r))); }
+  .sr-up{ position:absolute; left:-23px; top:-23px; width:46px; height:46px; animation:srTurnBack 3.6s linear infinite; }
+  .sr-up .elem-ic{ display:block; animation:srPulse 1.2s ease-in-out infinite; animation-delay:var(--d); }
+  .sr-label{ position:relative; z-index:1; font-family:'Baloo 2',cursive; font-weight:800; font-size:20px; color:var(--ink-soft); text-align:center; max-width:46vw; }
+  @keyframes srTurn{ to{ transform:rotate(360deg); } }
+  @keyframes srTurnBack{ from{ transform:rotate(calc(-1 * var(--a))); } to{ transform:rotate(calc(-1 * var(--a) - 360deg)); } }
+  @keyframes srPulse{ 0%,100%{ transform:scale(.9); filter:brightness(.92); } 50%{ transform:scale(1.32); filter:brightness(1.15) drop-shadow(0 0 8px rgba(255,255,255,.95)); } }
+  .sr-flash{ position:absolute; left:50%; top:50%; width:24px; height:24px; margin:-12px 0 0 -12px; border-radius:50%; background:#fff;
+    opacity:0; transform:scale(0); pointer-events:none; z-index:5; }
+  .sr-ov.flash .sr-flash{ animation:srFlash .52s cubic-bezier(.5,0,.9,.45) forwards; }
+  .sr-ov.white-out .sr-flash{ animation:srWhite .65s ease-out forwards; }
+  @keyframes srFlash{ 0%{ opacity:.95; transform:scale(0); } 100%{ opacity:1; transform:scale(150); } }
+  @keyframes srWhite{ from{ opacity:1; transform:scale(150); } to{ opacity:0; transform:scale(150); } }
+  .sr-out{ position:absolute; inset:0; z-index:3; display:none; flex-direction:column; align-items:center; justify-content:center; padding:18px 12px; box-sizing:border-box; }
+  .sr-ov.shown .sr-out{ display:flex; }
+  .sr-gem{ position:relative; display:inline-flex; align-items:center; justify-content:center; isolation:isolate; }
+  .sr-gem.tier-low{ --glow:${TIER_GLOW.low}; } .sr-gem.tier-mid{ --glow:${TIER_GLOW.mid}; } .sr-gem.tier-high{ --glow:${TIER_GLOW.high}; }
+  .sr-gem.tier-veryhigh{ --glow:${TIER_GLOW.veryhigh}; } .sr-gem.tier-ultra{ --glow:${TIER_GLOW.ultra}; }
+  .sr-gem::before{ content:''; position:absolute; inset:-34%; border-radius:50%; z-index:-1; background:radial-gradient(circle closest-side, var(--glow), transparent);
+    animation:srHalo 2.4s ease-in-out infinite; }
+  .sr-gem.tier-low::before, .sr-gem.tier-mid::before{ opacity:.55; animation:none; }
+  .sr-gem > .elem-ic{ filter:drop-shadow(0 0 6px var(--glow)) drop-shadow(0 0 16px var(--glow)); }
+  .sr-gem.tier-low > .elem-ic, .sr-gem.tier-mid > .elem-ic{ filter:drop-shadow(0 0 4px var(--glow)); }
+  .sr-gem.tier-veryhigh::after, .sr-gem.tier-ultra::after{ content:''; position:absolute; inset:-62%; border-radius:50%; z-index:-2;
+    background:repeating-conic-gradient(from 0deg, var(--glow) 0deg 5deg, transparent 5deg 20deg);
+    -webkit-mask:radial-gradient(circle, #000 24%, transparent 68%); mask:radial-gradient(circle, #000 24%, transparent 68%);
+    opacity:.5; animation:srRays 10s linear infinite; }
+  .sr-gem.tier-ultra::after{ opacity:.75; animation-duration:5.5s; }
+  @keyframes srHalo{ 0%,100%{ transform:scale(.92); opacity:.78; } 50%{ transform:scale(1.08); opacity:1; } }
+  @keyframes srRays{ to{ transform:rotate(360deg); } }
+  .sr-one{ display:flex; flex-direction:column; align-items:center; text-align:center; gap:2px; }
+  .sr-one .sr-gem{ margin:34px 0 30px; }
+  .sr-name{ font-family:'Baloo 2',cursive; font-weight:800; font-size:24px; margin-top:6px; }
+  .sr-meta{ font-size:12px; color:var(--ink-soft); font-weight:700; margin-top:8px; }
+  .sr-one .btn, .sr-actions .btn{ width:auto; padding:12px 30px; }
+  .sr-one .btn{ margin-top:14px; }
+  .sr-many{ width:100%; max-width:760px; height:100%; display:flex; flex-direction:column; gap:6px; }
+  .sr-many.few{ height:auto; }
+  .sr-title{ font-family:'Baloo 2',cursive; font-weight:800; font-size:20px; text-align:center; color:var(--ink); }
+  .sr-rows{ flex:1; min-height:0; display:flex; flex-direction:column-reverse; justify-content:flex-start; gap:4px; overflow-y:auto; }
+  .sr-row{ opacity:0; transition:opacity .25s; }
+  .sr-row.lit{ opacity:1; }
+  .sr-row-head{ display:flex; align-items:center; gap:6px; font-family:'Baloo 2',cursive; font-weight:800; font-size:14px; color:var(--ink); padding:0 6px; }
+  .sr-row-head span{ color:var(--ink-soft); font-size:12px; }
+  .sr-strip{ display:flex; gap:8px; overflow-x:auto; overflow-y:hidden; padding:10px 8px 12px; -webkit-overflow-scrolling:touch; scrollbar-width:thin; }
+  .sr-strip.wrap{ flex-wrap:wrap; justify-content:center; overflow:visible; }
+  .sr-card{ position:relative; flex:0 0 auto; width:88px; display:flex; flex-direction:column; align-items:center; gap:7px; padding:9px 4px 7px; box-sizing:border-box;
+    border-radius:14px; background:rgba(255,253,246,.78); box-shadow:0 2px 8px rgba(60,40,10,.14); opacity:0; transform:scale(.4); }
+  .sr-card.on{ animation:srCardIn .45s cubic-bezier(.2,1.4,.4,1) forwards; }
+  .sr-card.on::after{ content:''; position:absolute; inset:0; border-radius:14px; background:#fff; pointer-events:none; animation:srCardFlash .45s ease-out forwards; }
+  .sr-card.now{ opacity:1; transform:none; animation:none; }
+  .sr-card.now::after{ display:none; }
+  .sr-card .sr-gem::before{ inset:-28%; }
+  .sr-cname{ font-family:'Baloo 2',cursive; font-weight:800; font-size:11px; line-height:1.15; text-align:center; color:var(--ink); min-height:25px; }
+  .sr-cname small{ display:block; font-family:'Nunito',sans-serif; font-size:9px; font-weight:800; color:var(--ink-soft); }
+  @keyframes srCardIn{ from{ opacity:0; transform:scale(.4); } to{ opacity:1; transform:scale(1); } }
+  @keyframes srCardFlash{ from{ opacity:1; } to{ opacity:0; } }
+  .sr-actions{ display:flex; gap:10px; justify-content:center; padding:6px 0 4px; }
+  /* (3.83) the designer: "when ultra is drawn … a prolonged special flash with waves of red-gold sparkles
+     compared to the usual whiteout colour … for the very high tier, flash a silver beam horizontally across
+     the tier and reveal only the silhouette before a delayed reveal and fanfare … For ultra, flash a
+     prolonged golden beam across the tier and silhouette before a delayed reveal and fanfare" */
+  .sr-ov.ultra .sr-flash{ background:radial-gradient(circle, #fffbe6 0%, #ffe27c 9%, #ffb63e 20%, #ff6c3a 32%, #d93228 44%, #9c1820 100%); }
+  .sr-ov.ultra.flash .sr-flash{ animation:srFlash ${REVEAL.ultraFlashMs}ms cubic-bezier(.45,0,.85,.5) forwards; }
+  .sr-ov.ultra.white-out .sr-flash{ animation:srWhite ${REVEAL.ultraOutMs}ms ease-out forwards; }
+  .sr-sparks{ position:absolute; left:50%; top:50%; width:0; height:0; z-index:6; pointer-events:none; }
+  .sr-spark{ position:absolute; left:0; top:0; width:0; height:0; opacity:0; transform:rotate(var(--a));
+    animation:srSpark var(--t, 1.3s) cubic-bezier(.16,.72,.3,1) var(--d) forwards; }
+  .sr-spark b{ position:absolute; left:-.5em; top:-.5em; width:1em; height:1em; line-height:1em; text-align:center; font-style:normal;
+    font-size:calc(28px * var(--s)); animation:srTwinkle .32s ease-in-out infinite alternate; animation-delay:var(--d); }
+  .sr-spark.gold b{ color:#ffe066; text-shadow:0 0 6px #ffb02e, 0 0 16px rgba(255,190,60,.95), 0 0 2px #fff; }
+  .sr-spark.red b{ color:#ff5a3c; text-shadow:0 0 6px #ff2e1e, 0 0 16px rgba(255,70,40,.9), 0 0 2px #ffd0c0; }
+  @keyframes srSpark{ 0%{ opacity:0; transform:rotate(var(--a)) translateY(0); } 12%{ opacity:1; }
+    78%{ opacity:1; } 100%{ opacity:0; transform:rotate(var(--a)) translateY(calc(-1 * var(--r))); } }
+  @keyframes srTwinkle{ from{ transform:scale(.7) rotate(0deg); } to{ transform:scale(1.15) rotate(25deg); } }
+  .sr-dim{ position:absolute; inset:0; z-index:2; pointer-events:none; opacity:0; transition:opacity .35s ease;
+    background:radial-gradient(ellipse at center, rgba(34,24,62,.86) 0%, rgba(14,9,30,.94) 60%, rgba(6,4,14,.97) 100%); }
+  .sr-ov.hush .sr-dim{ opacity:1; }
+  .sr-ov.hush .sr-title, .sr-ov.hush .sr-row-head{ color:#f3eeff; text-shadow:0 1px 3px rgba(0,0,0,.8); }
+  .sr-ov.hush .sr-row-head span{ color:#d2c8f0; }
+  .sr-row, .sr-many{ position:relative; }
+  .sr-beam{ position:absolute; left:0; right:0; height:var(--bh, 30px); margin-top:calc(var(--bh, 30px) / -2); z-index:4; pointer-events:none;
+    transform-origin:left center; transform:scaleX(0); opacity:0; border-radius:50%; }
+  .sr-beam.silver{ background:linear-gradient(180deg, transparent 0%, rgba(150,170,200,.55) 30%, #f6f9ff 47%, #ffffff 50%, #f6f9ff 53%, rgba(150,170,200,.55) 70%, transparent 100%);
+    box-shadow:0 0 18px 4px rgba(214,228,255,.75); }
+  .sr-beam.gold{ background:linear-gradient(180deg, transparent 0%, rgba(232,150,40,.6) 28%, #ffe58a 46%, #fffbe8 50%, #ffe58a 54%, rgba(232,150,40,.6) 72%, transparent 100%);
+    box-shadow:0 0 24px 7px rgba(255,196,70,.85), 0 0 60px 14px rgba(255,120,50,.35); --bh:38px; }
+  .sr-beam::after{ content:''; position:absolute; top:0; bottom:0; width:18%; left:-18%; border-radius:50%;
+    background:radial-gradient(ellipse at center, #fff 0%, rgba(255,255,255,.7) 35%, transparent 70%); opacity:0; }
+  .sr-beam.go{ animation:srBeam var(--bt) cubic-bezier(.3,.6,.3,1) forwards; }
+  .sr-beam.go::after{ animation:srGlint calc(var(--bt) * .45) linear forwards; }
+  .sr-beam.gold.go::after{ animation:srGlint calc(var(--bt) * .45) linear 2 forwards; }
+  @keyframes srBeam{ 0%{ transform:scaleX(0); opacity:1; } 45%{ transform:scaleX(1); opacity:1; } 72%{ transform:scaleX(1); opacity:1; }
+    100%{ transform:scaleX(1) scaleY(.2); opacity:0; } }
+  @keyframes srGlint{ 0%{ left:-18%; opacity:1; } 100%{ left:100%; opacity:1; } }
+  /* the silhouette: the symbol's shape in black on a disc lit white by the beam, no colour yet */
+  .sr-card.sil .sr-gem > .elem-ic, .sr-one.sil .sr-gem > .elem-ic{ filter:grayscale(1) brightness(2.2) contrast(6) drop-shadow(0 0 6px var(--beamGlow)) drop-shadow(0 0 16px var(--beamGlow)) !important; }
+  .sr-card.sil, .sr-one.sil{ --beamGlow:rgba(220,232,255,.95); }
+  .sr-card.sil[data-tier="ultra"], .sr-one.sil.tier-ultra{ --beamGlow:rgba(255,196,70,1); }
+  .sr-ov.hush .sr-card{ background:rgba(255,253,246,.12); box-shadow:0 0 0 1px rgba(255,255,255,.14); }
+  .sr-ov.hush .sr-card.lift, .sr-ov .sr-card.lift{ transition:background .4s; }
+  .sr-card.sil .sr-gem::before, .sr-card.sil .sr-gem::after, .sr-one.sil .sr-gem::before, .sr-one.sil .sr-gem::after{ opacity:0 !important; animation:none; }
+  .sr-card.sil .sr-cname{ visibility:hidden; }
+  .sr-one.sil > :not(.sr-gem){ visibility:hidden; }
+  .sr-card.lift{ opacity:1; animation:srLift .55s cubic-bezier(.2,1.6,.4,1) both; }
+  .sr-card.lift::after{ content:''; position:absolute; inset:0; border-radius:14px; background:#fff; pointer-events:none; animation:srLiftFlash .6s ease-out forwards; }
+  .sr-card.lift .sr-cname{ animation:srRise .45s ease-out both; }
+  .sr-one.lift .sr-gem{ animation:srLift .65s cubic-bezier(.2,1.6,.4,1) both; }
+  .sr-one.lift > :not(.sr-gem){ animation:srRise .5s ease-out both; }
+  @keyframes srLift{ 0%{ transform:scale(.82); } 55%{ transform:scale(1.14); } 100%{ transform:scale(1); } }
+  @keyframes srLiftFlash{ from{ opacity:1; } to{ opacity:0; } }
+  @keyframes srRise{ from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:none; } }
+  @media (prefers-reduced-motion: reduce){
+    .sr-ring, .sr-up, .sr-up .elem-ic, .sr-gem::before, .sr-gem::after, .sr-spark b{ animation:none !important; }
+  }
+  /* (3.97) on the starry sky (cosmicSky): its words light, its cards glass */
+  .cosmic-sky{ position:absolute; inset:0; width:100%; height:100%; display:block; z-index:0; pointer-events:none; }
+  .sr-ov.cosmic{ background:#06051a; }
+  .sr-ov.cosmic .sr-stage, .sr-ov.cosmic .sr-out{ z-index:3; }
+  .sr-ov.cosmic .sr-label, .sr-ov.cosmic .sr-title, .sr-ov.cosmic .sr-row-head, .sr-ov.cosmic .sr-name{ color:#f6f1ff; text-shadow:0 1px 3px rgba(0,0,0,.85); }
+  .sr-ov.cosmic .sr-meta, .sr-ov.cosmic .sr-row-head span{ color:#d6ccf2; }
+  .sr-ov.cosmic .sr-card{ background:rgba(255,253,246,.13); box-shadow:0 0 0 1px rgba(255,255,255,.16), 0 4px 14px rgba(0,0,0,.35); }
+  .sr-ov.cosmic .sr-cname{ color:#f6f1ff; } .sr-ov.cosmic .sr-cname small{ color:#cfc6ef; }
+  .sr-ov.cosmic .btn-ghost{ background:rgba(255,255,255,.12); color:#f6f1ff; border-color:rgba(255,255,255,.3); }
+  .sr-one-acts{ display:flex; gap:10px; justify-content:center; }
+  .shop-overlay.cosmic{ background:#06051a; }
+  .shop-overlay.cosmic .shop-ov-top, .shop-overlay.cosmic .shop-ov-body{ position:relative; z-index:1; }
+  .shop-overlay.cosmic .qty-card, .shop-overlay.cosmic .pick-card{ background:rgba(250,246,236,.9); box-shadow:0 10px 40px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.25); }`;
+  document.head.appendChild(st);
+}
+/* (3.97) the designer: "I like your starry sky so much I want to have it as the backdrop of all zone's random skill
+   stone pull. It gives a cosmic feel. Can you use the starry background for all screens in the random skill stone
+   pulls and even for the selects and random elites?" — Region 6's drawn sky (18-rift.js), on a canvas of its own
+   behind a reveal or a purchase card, in every region. It stops, and gives its pixels back, once the screen goes. */
+function cosmicSky(host){
+  if(!host || typeof riftSkyNew !== 'function') return null;
+  const cv = document.createElement('canvas');
+  cv.className = 'cosmic-sky';
+  cv.setAttribute('aria-hidden', 'true');
+  host.insertBefore(cv, host.firstChild);
+  host.classList.add('cosmic');
+  const sky = riftSkyNew(cv, 'page');
+  if(typeof riftSkyRun === 'function') riftSkyRun(sky);
+  return sky;
+}
+function stoneRing(label){
+  stoneRevealCss();
+  playSfx('stone_roll');
+  const ov = document.createElement('div');
+  ov.className = 'sr-ov';
+  const types = Object.keys(TYPE_COLORS).filter(t=> ELEMENT_SYMBOLS[t]);    // the twelve
+  const n = types.length;
+  ov.innerHTML = `<div class="sr-stage">
+      <div class="sr-ring">${types.map((t, i)=> `<span class="sr-sym" style="--a:${(360 / n * i).toFixed(2)}deg;"><span class="sr-up" style="--d:${(-(n - i) * 1.2 / n).toFixed(2)}s;">${elemIcon(t, 46, { title:false })}</span></span>`).join('')}</div>
+      <div class="sr-label">${escapeHtml(label || 'Rolling…')}</div>
+    </div>
+    <div class="sr-dim"></div>
+    <div class="sr-out"></div>
+    <div class="sr-flash"></div>`;
+  cosmicSky(ov);
+  document.body.appendChild(ov);
+  return { el:ov, t0:Date.now() };
+}
+function closeRing(ring){
+  if(ring && ring.el && ring.el.parentNode) ring.el.parentNode.removeChild(ring.el);
+  fadeOutSfx('stone_roll', 250);
+}
+/* The stones are in state; the ring turns while the save is made. A save
+   that fails takes them back (`rollback`). */
+async function stoneSaveReveal(stones, label, rollback, thenScreen){
+  const ring = stoneRing(label);
+  const ok = await saveProfile({ awaitCloud:true });
+  if(!ok){ closeRing(ring); if(rollback) rollback(); showSyncFailure(); return false; }
+  revealStones(stones, { ring, thenScreen });
+  return true;
+}
+/* Shared reveal for every way a stone can be obtained (already saved). */
+function showStoneReveal(stone, spinLabel, thenScreen){ return revealStones([stone], { label:spinLabel, thenScreen }); }
+function srPlus(st){ return stonePlus(st) ? `<span class="plus-mark">${UPGRADE_MARKS[stonePlus(st)].trim()}</span>` : ''; }
+function srOneHtml(stone, label, skip){
+  const t = stoneTierDef(stone.tier);
+  return `<div class="sr-one tier-${stone.tier}">
+      <div class="sr-gem tier-${stone.tier}">${elemIcon(stone.type, 128, { title:false })}</div>
+      <div class="stone-tier-big tier-${stone.tier}">${t.label}</div>
+      <div class="sr-name">${escapeHtml(stone.name)}${srPlus(stone)}</div>
+      <div><span class="type-badge" style="background:${TYPE_COLORS[stone.type] || '#888'}">${escapeHtml(stone.type)}</span></div>
+      <div class="sr-meta">${t.mult != null ? t.mult + '× ATK' : 'Status move'} · ${t.words} words</div>
+      <div class="sr-one-acts">${skip ? `<button class="btn btn-ghost" id="srSoloSkip">Skip</button>` : ''}<button class="btn btn-primary" id="rollOk">${label || 'Nice!'}</button></div>
+    </div>`;
+}
+function srCardHtml(st, i){
+  return `<div class="sr-card" data-tier="${st.tier}" data-i="${i}"><span class="sr-gem tier-${st.tier}">${elemIcon(st.type, 54, { title:false })}</span>
+    <span class="sr-cname">${escapeHtml(st.name)}${srPlus(st)}<small>${escapeHtml(st.type)}</small></span></div>`;
+}
+function srSort(stones){
+  const types = Object.keys(TYPE_COLORS);
+  return stones.slice().sort((a, b)=> (REVEAL_TIERS.indexOf(a.tier) - REVEAL_TIERS.indexOf(b.tier)) || (types.indexOf(a.type) - types.indexOf(b.type)));
+}
+function srManyHtml(sorted, many){
+  const actions = `<div class="sr-actions"><button class="btn btn-ghost" id="srSkip">Skip</button><button class="btn btn-primary" id="rollOk" style="display:none;">Nice!</button></div>`;
+  const title = `<div class="sr-title">${sorted.length} skill stones!</div>`;
+  if(!many) return `<div class="sr-many few">${title}<div class="sr-strip wrap">${sorted.map((st, i)=> srCardHtml(st, i)).join('')}</div>${actions}</div>`;
+  const rows = REVEAL_TIERS.map(t=>{
+    const of = sorted.map((st, i)=> [st, i]).filter(([st])=> st.tier === t);
+    if(!of.length) return '';
+    return `<div class="sr-row" data-tier="${t}"><div class="sr-row-head">${gemIcon(t, 16)} ${escapeHtml(stoneTierDef(t).label)} <span>×${of.length}</span></div>
+      <div class="sr-strip">${of.map(([st, i])=> srCardHtml(st, i)).join('')}</div></div>`;
+  }).join('');
+  return `<div class="sr-many">${title}<div class="sr-rows">${rows}</div>${actions}</div>`;
+}
+/* (3.83) waves of red-gold sparkles out of `host`'s middle (the screen's, by default) */
+function srSparks(host, o){
+  o = Object.assign({ waves:3, per:18, r:[34, 52], unit:'vmax', gap:.34, t:1.3 }, o || {});
+  const box = document.createElement('div');
+  box.className = 'sr-sparks';
+  let h = '';
+  for(let w = 0; w < o.waves; w++) for(let i = 0; i < o.per; i++){
+    const a = (360 / o.per) * i + w * (180 / o.per) + (Math.random() * 10 - 5);
+    const r = o.r[0] + Math.random() * (o.r[1] - o.r[0]);
+    const d = w * o.gap + Math.random() * .1;
+    h += `<span class="sr-spark ${(i + w) % 3 === 0 ? 'red' : 'gold'}" style="--a:${a.toFixed(1)}deg;--r:${r.toFixed(1)}${o.unit};--d:${d.toFixed(2)}s;--t:${o.t}s;--s:${(.6 + Math.random() * .8).toFixed(2)};"><b>✦</b></span>`;
+  }
+  box.innerHTML = h;
+  host.appendChild(box);
+  setTimeout(()=>{ if(box.parentNode) box.parentNode.removeChild(box); }, Math.round((o.waves * o.gap + o.t + .3) * 1000));
+  return box;
+}
+/* (3.83) the beam across a tier: `host` (positioned), at `top` px in it */
+function srBeam(host, tier, top, ms){
+  const b = document.createElement('div');
+  b.className = 'sr-beam ' + (tier === 'ultra' ? 'gold' : 'silver');
+  b.style.top = Math.round(top) + 'px';
+  b.style.setProperty('--bt', ms + 'ms');
+  host.appendChild(b);
+  void b.offsetWidth;
+  b.classList.add('go');
+  setTimeout(()=>{ if(b.parentNode) b.parentNode.removeChild(b); }, ms + 60);
+  return b;
+}
+async function revealStones(stones, opts){
+  opts = opts || {};
+  stones = (stones || []).filter(Boolean);
+  if(!stones.length) return;
+  const ring = opts.ring || stoneRing(opts.label);
+  const ov = ring.el;
+  /* (3.83) an Ultra in the draw: the flash out of the ring goes red-gold, longer, in waves of sparkles */
+  const ultra = stones.some(st=> st.tier === 'ultra');
+  await revealWait(Math.max(0, REVEAL.ringMs - (Date.now() - ring.t0)));
+  fadeOutSfx('stone_roll', 500);                   // the spin eases out as the flash comes
+  if(ultra){ ov.classList.add('ultra'); srSparks(ov); }
+  ov.classList.add('flash');                         // out of the ring's middle, into white (red-gold, for an Ultra)
+  await revealWait(ultra ? REVEAL.ultraFlashMs : REVEAL.flashMs);
+  const out = ov.querySelector('.sr-out');
+  const finish = ()=>{
+    if(ov.parentNode) ov.parentNode.removeChild(ov);
+    const then = opts.thenScreen;
+    if(then === 'shop'){ ui.shopNote = stones.length > 1 ? `${stones.length} stones sent to Storage — open it to equip.` : 'Sent to Storage — open it to equip.'; renderShop(); }
+    else if(then && then.startsWith('deck:')){ toast('Sent to Storage — open it to equip.'); refreshWalk(); }   // (3.89) bought on a walk (the castle's stall): stay there
+    else if(then === 'storage'){ ui.storageFrom = 'shop'; ui.storageTab = 'items'; go('storage'); }
+    /* (3.65) the new stone, on storage's Items page */
+    else { ui.storageTab = 'items'; if(ui.screen === 'shop') ui.storageFrom = 'shop'; if(ui.screen === 'storage') renderStorage(); else go('storage'); }
+  };
+  const settle = Math.round((ultra ? REVEAL.ultraOutMs * .4 : REVEAL.whiteMs * .6));
+  let skipped = false;
+  const bigReveal = (tier, cards, lines, appear)=> srBigReveal(ov, tier, cards, lines, appear, ()=> skipped);
+  if(stones.length === 1){
+    const st = stones[0];
+    out.innerHTML = srOneHtml(st);
+    ov.classList.add('shown', 'white-out');          // the white fades, the stone glowing in it
+    out.querySelector('#rollOk').addEventListener('click', finish);
+    if(!REVEAL_BIG.includes(st.tier)){ playStoneSfx(st.tier); return; }
+    const one = out.querySelector('.sr-one'), gem = one.querySelector('.sr-gem');
+    one.classList.add('sil');
+    gem.style.visibility = 'hidden';
+    await revealWait(settle);
+    const oRect = out.getBoundingClientRect(), g = gem.getBoundingClientRect();
+    await bigReveal(st.tier, [one], [{ host:out, top:g.top - oRect.top + g.height / 2 }], ()=>{ gem.style.visibility = ''; });
+    return;
+  }
+  const sorted = srSort(stones), many = stones.length >= REVEAL.many;
+  out.innerHTML = srManyHtml(sorted, many);
+  ov.classList.add('shown', 'white-out');
+  const skip = out.querySelector('#srSkip'), okBtn = out.querySelector('#rollOk');
+  okBtn.addEventListener('click', finish);
+  skip.addEventListener('click', ()=>{
+    skipped = true;
+    ov.classList.remove('hush');
+    ov.querySelectorAll('.sr-beam, .sr-sparks').forEach(x=> x.remove());
+    ov.querySelectorAll('.sr-card.sil').forEach(c=> c.classList.remove('sil'));
+  });
+  const show = (card, strip)=>{
+    card.classList.add(skipped ? 'now' : 'on');
+    if(strip && strip.scrollWidth > strip.clientWidth){
+      const want = card.offsetLeft + card.offsetWidth + 12 - strip.clientWidth;
+      if(want > strip.scrollLeft) strip.scrollLeft = want;     // on past the edge
+    }
+  };
+  await revealWait(settle);
+  /* (3.97) the designer: "Single pull ultra and very high moves look genuinely exciting now. Can we preserve these
+     for the 10 pull too? Show all the way to high moves, then pause and pull up the individual reveal screens for
+     very high and ultra moves consecutively which are full screen. After all of these have been shown, go back to
+     the display of all moves that were pulled." The Very High and Ultra cards wait, unlit; then each has the single
+     draw's whole screen (srSoloReveal), one after another; then back here, every card lit. */
+  const solo = [];
+  if(many){
+    for(const row of out.querySelectorAll('.sr-row')){              // low first: the bottom row
+      if(!ov.parentNode) return;
+      row.classList.add('lit');
+      const tier = row.dataset.tier, strip = row.querySelector('.sr-strip');
+      const cards = [...strip.querySelectorAll('.sr-card')];
+      if(REVEAL_BIG.includes(tier) && !skipped){
+        cards.forEach(c=> solo.push({ card:c, strip }));            // their turn comes, each on its own screen
+        continue;
+      } else {
+        if(!skipped) playStoneSfx(tier);                              // its fanfare, once
+        for(const card of cards){
+          if(!skipped) await revealWait(REVEAL.cardMs);
+          show(card, strip);
+        }
+      }
+      if(!skipped) await revealWait(REVEAL.rowGap);
+    }
+  } else {
+    const strip = out.querySelector('.sr-strip'), box = out.querySelector('.sr-many');
+    const groups = [];
+    for(const card of strip.querySelectorAll('.sr-card')){
+      const g = groups[groups.length - 1];
+      if(g && g.tier === card.dataset.tier) g.cards.push(card); else groups.push({ tier:card.dataset.tier, cards:[card] });
+    }
+    for(const g of groups){
+      if(!ov.parentNode) return;
+      if(REVEAL_BIG.includes(g.tier) && !skipped){
+        g.cards.forEach(c=> solo.push({ card:c, strip:null }));      // (3.97) each on its own screen, after the rest
+        continue;
+      }
+      if(!skipped){ playStoneSfx(g.tier); await revealWait(220); }
+      for(const card of g.cards){
+        if(!skipped) await revealWait(REVEAL.cardMs + 90);
+        show(card, null);
+      }
+    }
+  }
+  if(solo.length){
+    if(!skipped){
+      await revealWait(450);                                          // the held breath: here they come
+      for(let i = 0; i < solo.length && !skipped; i++){
+        if(!ov.parentNode) return;
+        const st = sorted[+solo[i].card.dataset.i];
+        const how = await srSoloReveal(st, i < solo.length - 1 ? 'Next ▸' : 'See them all', i < solo.length - 1);
+        if(how === 'skip') skipped = true;
+      }
+    }
+    if(!ov.parentNode) return;
+    solo.forEach(({ card, strip })=>{ card.classList.add('now', 'lift'); if(strip && strip.scrollWidth > strip.clientWidth) strip.scrollLeft = strip.scrollWidth; });
+    if(!skipped) playStoneSfx(solo[solo.length - 1].card.dataset.tier);
+  }
+  skip.style.display = 'none';
+  okBtn.style.display = '';
+}
+/* (3.83) a Very High or Ultra group: the lights go down, the beam crosses it (`lines`: where), its stones
+   coming as silhouettes as the beam passes; a held breath; then the reveal, and the tier's fanfare.
+   (3.97) out of revealStones, for the single screens too (srSoloReveal) */
+async function srBigReveal(ov, tier, cards, lines, appear, isSkipped){
+  const skipped = ()=> !!(isSkipped && isSkipped());
+  const ms = REVEAL.beamMs[tier];
+  ov.classList.add('hush');
+  await revealWait(240);
+  lines.forEach(l=> srBeam(l.host, tier, l.top, ms));
+  const sweep = ms * .45;
+  for(let i = 0; i < cards.length; i++){
+    if(!skipped()) await revealWait(Math.round(sweep / cards.length * (i === 0 ? .5 : 1)));
+    if(!ov.parentNode) return;
+    if(!skipped()) cards[i].classList.add('sil');
+    appear(cards[i]);
+  }
+  if(!skipped()) await revealWait(Math.round(ms - sweep * (1 - .5 / cards.length)) + REVEAL.holdMs[tier]);
+  if(!ov.parentNode) return;
+  cards.forEach(c=>{ c.classList.remove('sil'); if(!skipped()) c.classList.add('lift'); });
+  ov.classList.remove('hush');
+  if(!skipped()){
+    playStoneSfx(tier);
+    /* an Ultra's own burst of red-gold, out of each one as it lights */
+    if(tier === 'ultra') cards.forEach(c=>{
+      const host = lines[0].host, hr = host.getBoundingClientRect(), r = (c.querySelector('.sr-gem') || c).getBoundingClientRect();
+      const sp = srSparks(host, { waves:2, per:14, r:[50, 120], unit:'px', gap:.22, t:.9 });
+      sp.style.left = Math.round(r.left - hr.left + r.width / 2) + 'px'; sp.style.top = Math.round(r.top - hr.top + r.height / 2) + 'px';
+    });
+    await revealWait(560);
+  }
+}
+/* (3.97) One Very High or Ultra stone of a bigger draw, on the whole screen as a single draw shows it: the flash
+   (red-gold and sparkling for an Ultra), its silhouette under the beam, the held breath, the reveal and fanfare.
+   Resolves 'next' or 'skip' (the rest of them shown at once). */
+async function srSoloReveal(st, label, canSkip){
+  stoneRevealCss();
+  const ov = document.createElement('div');
+  ov.className = 'sr-ov sr-solo';
+  ov.innerHTML = `<div class="sr-dim"></div><div class="sr-out"></div><div class="sr-flash"></div>`;
+  cosmicSky(ov);
+  document.body.appendChild(ov);
+  const ultra = st.tier === 'ultra';
+  if(ultra){ ov.classList.add('ultra'); srSparks(ov); }
+  void ov.offsetWidth;
+  ov.classList.add('flash');
+  await revealWait(ultra ? REVEAL.ultraFlashMs : REVEAL.flashMs);
+  const out = ov.querySelector('.sr-out');
+  out.innerHTML = srOneHtml(st, label, canSkip);
+  ov.classList.add('shown', 'white-out');
+  const one = out.querySelector('.sr-one'), gem = one.querySelector('.sr-gem');
+  one.classList.add('sil');
+  gem.style.visibility = 'hidden';
+  const done = new Promise(res=>{
+    out.querySelector('#rollOk').addEventListener('click', ()=>{ ov.remove(); res('next'); });
+    const sk = out.querySelector('#srSoloSkip');
+    if(sk) sk.addEventListener('click', ()=>{ ov.remove(); res('skip'); });
+  });
+  await revealWait(Math.round(ultra ? REVEAL.ultraOutMs * .4 : REVEAL.whiteMs * .6));
+  if(ov.parentNode){
+    const oRect = out.getBoundingClientRect(), g = gem.getBoundingClientRect();
+    await srBigReveal(ov, st.tier, [one], [{ host:out, top:g.top - oRect.top + g.height / 2 }], ()=>{ gem.style.visibility = ''; }, ()=> !ov.parentNode);
+  }
+  return done;
+}
+
+/* Elite spin: 5 Elite Skill Tokens, guaranteed High or better. */
+async function doEliteRoll(){
+  if((state.inventory.eliteTokens||0) < ELITE_ROLL_COST) return;
+  const beforeElite = state.inventory.eliteTokens;
+  state.inventory.eliteTokens -= ELITE_ROLL_COST;
+  const stone = newEliteStone();
+  state.moveStones.push(stone);
+  await stoneSaveReveal([stone], 'Elite spin!', ()=>{ state.inventory.eliteTokens = beforeElite; state.moveStones.pop(); });   // (3.78) the ring turns while it saves
+}
+
+/* Shop: spend Elite Skill Tokens on a guaranteed, self-chosen stone. */
+function openEliteShop(){
+  const elite = state.inventory.eliteTokens||0;
+  const ov = document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(35,32,25,0.6);z-index:75;display:flex;align-items:flex-end;justify-content:center;';
+  ov.innerHTML = `<div style="background:var(--paper);border-radius:18px 18px 0 0;padding:20px;max-width:480px;width:100%;max-height:80vh;overflow-y:auto;">
+    <div style="font-family:'Baloo 2',cursive;font-weight:800;font-size:19px;">🏪 Elite Shop</div>
+    <div style="font-size:12px;color:var(--ink-soft);font-weight:700;margin:3px 0 14px;">You have <b>⭐ ${elite}</b> Elite Skill Tokens. Pick exactly the skill you want.</div>
+    <button class="btn ${elite>=ELITE_SHOP_HIGH?'btn-primary':'btn-ghost'}" id="buyH" ${elite>=ELITE_SHOP_HIGH?'':'disabled'} style="margin-bottom:8px;">
+      Choose any <b>High</b> skill — ${ELITE_SHOP_HIGH} tokens
+    </button>
+    <button class="btn ${elite>=ELITE_SHOP_VERYHIGH?'btn-primary':'btn-ghost'}" id="buyVH" ${elite>=ELITE_SHOP_VERYHIGH?'':'disabled'} style="margin-bottom:8px;">
+      Choose any <b>Very High</b> skill — ${ELITE_SHOP_VERYHIGH} tokens
+    </button>
+    <button class="btn ${elite>=ELITE_SHOP_ULTRA?'btn-primary':'btn-ghost'}" id="buyU" ${elite>=ELITE_SHOP_ULTRA?'':'disabled'} style="margin-bottom:8px;">
+      Choose any <b>Ultra</b> skill — ${ELITE_SHOP_ULTRA} tokens
+    </button>
+    <div style="font-size:11px;color:var(--ink-soft);font-weight:600;line-height:1.5;margin:8px 0 12px;">
+      Elite Skill Tokens come from mastery: every 10 phrases written correctly ${MASTERY_CHECKPOINTS.elite} times earns one.
+    </div>
+    <button class="btn btn-ghost" id="shopClose">Close</button>
+  </div>`;
+  document.body.appendChild(ov);
+  const close=()=>{ if(ov.parentNode) document.body.removeChild(ov); };
+  ov.querySelector('#shopClose').addEventListener('click', close);
+  ov.addEventListener('click', e=>{ if(e.target===ov) close(); });
+  const h = ov.querySelector('#buyH'), vh = ov.querySelector('#buyVH'), u = ov.querySelector('#buyU');
+  if(elite>=ELITE_SHOP_HIGH) h.addEventListener('click', ()=>{ close(); pickShopStone('high', ELITE_SHOP_HIGH); });
+  if(elite>=ELITE_SHOP_VERYHIGH) vh.addEventListener('click', ()=>{ close(); pickShopStone('veryhigh', ELITE_SHOP_VERYHIGH); });
+  if(elite>=ELITE_SHOP_ULTRA)    u .addEventListener('click', ()=>{ close(); pickShopStone('ultra',    ELITE_SHOP_ULTRA); });
+}
+
+function pickShopStone(tierId, cost){
+  const t = stoneTierDef(tierId);
+  const ov = document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(35,32,25,0.6);z-index:76;display:flex;align-items:flex-end;justify-content:center;';
+  ov.innerHTML = `<div style="background:var(--paper);border-radius:18px 18px 0 0;padding:20px;max-width:480px;width:100%;max-height:80vh;overflow-y:auto;">
+    <div style="font-family:'Baloo 2',cursive;font-weight:800;font-size:18px;">Choose a ${t.label} skill</div>
+    <div style="font-size:12px;color:var(--ink-soft);font-weight:700;margin:3px 0 12px;">Costs ${cost} Elite Skill Tokens.</div>
+    ${stoneTypePool().map(tp=>`
+      <button class="btn btn-ghost shop-opt" data-type="${tp}" style="margin-bottom:8px;display:flex;align-items:center;gap:10px;justify-content:flex-start;text-align:left;">
+        ${elemIcon(tp, 24)}<span class="type-badge" style="background:${TYPE_COLORS[tp]};">${tp}</span>
+        <span style="flex:1;font-weight:700;">${escapeHtml(stoneName(tp,tierId))}</span>
+      </button>`).join('')}
+    <button class="btn btn-ghost" id="pickCancel">Cancel</button>
+  </div>`;
+  document.body.appendChild(ov);
+  const close=()=>{ if(ov.parentNode) document.body.removeChild(ov); };
+  ov.querySelector('#pickCancel').addEventListener('click', close);
+  ov.addEventListener('click', e=>{ if(e.target===ov) close(); });
+  ov.querySelectorAll('.shop-opt').forEach(b=>b.addEventListener('click', async ()=>{
+    const type = b.dataset.type;
+    if((state.inventory.eliteTokens||0) < cost){ toast('Not enough Elite Skill Tokens.'); close(); return; }
+    close();
+    const beforeElite = state.inventory.eliteTokens;
+    state.inventory.eliteTokens -= cost;
+    const stone = { uid:'s'+Date.now()+Math.floor(Math.random()*1000), tier:tierId, type, name:stoneName(type,tierId) };
+    state.moveStones.push(stone);
+    await stoneSaveReveal([stone], 'Purchased!', ()=>{ state.inventory.eliteTokens = beforeElite; state.moveStones.pop(); });   // (3.78)
+  }));
+}
+
+/* stone detail: Use / Recycle / Back */
+/* The refinement panel inside a stone's detail card. */
+function upgradePanel(st){
+  if(st.tier === 'veryhigh'){
+    return `<div class="upg-panel muted">Very High skills cannot be refined yet.</div>`;
+  }
+  if(stonePlus(st) >= 2){
+    return `<div class="upg-panel done">✦ Fully refined</div>`;
+  }
+  const cost = upgradeCost(st);
+  const check = canUpgradeStone(st);
+  const nextMark = UPGRADE_MARKS[stonePlus(st)+1].trim();
+  const cur = stoneMult(st);
+  const nextSt = Object.assign({}, st, { plus: stonePlus(st)+1 });
+  const nxt = stoneMult(nextSt);
+  const preview = st.tier==='ultra'
+    ? (()=>{ const a=ultraHitRange(st), b=ultraHitRange(nextSt);
+             return `${cur}× / ${a.min}–${a.max} hits → <b>${nxt}× / ${b.min}–${b.max} hits</b>`; })()
+    : `${cur}× → <b>${nxt}×</b>`;
+  return `<div class="upg-panel">
+    <div class="upg-head">Refine to <b>${nextMark}</b></div>
+    <div class="upg-preview">${preview}</div>
+    <div class="upg-cost">Costs a duplicate ${escapeHtml(st.type)} ${stoneTierDef(st.tier).label} stone
+      + ${curIcon(cost.cur)} ${cost.n}</div>
+    ${check.ok
+      ? `<button class="btn btn-primary" id="upgBtn" style="margin-top:9px;">Refine</button>`
+      : `<div class="upg-why">${escapeHtml(check.why)}</div>`}
+  </div>`;
+}
+
+async function doUpgradeStone(st, closeFn){
+  const check = canUpgradeStone(st);
+  if(!check.ok) return toast(check.why);
+  const snapshot = { medals:Object.assign({},state.medals), stones:state.moveStones.slice() };
+  // spend the medals and consume the duplicate
+  if(check.cost.cur==='gold' || check.cost.cur==='silver') state.medals[check.cost.cur] -= check.cost.n;
+  const di = state.moveStones.indexOf(check.dup);
+  if(di>=0) state.moveStones.splice(di,1);
+  st.plus = stonePlus(st) + 1;
+
+  const sv = showSyncingOverlay('Refining…');
+  const ok = await saveProfile({ awaitCloud:true });
+  hideSyncingOverlay(sv);
+  if(!ok){ state.medals = snapshot.medals; state.moveStones = snapshot.stones; st.plus = stonePlus(st)-1; showSyncFailure(); return; }
+
+  playSfx('stone_'+(st.tier==='ultra'?'ultra':st.tier));
+  toast(`${st.name} refined to ${UPGRADE_MARKS[stonePlus(st)].trim()}!`);
+  if(closeFn) closeFn();
+}
+
+function openStoneDetail(uid){
+  const s = state.moveStones.find(x=>x.uid===uid);
+  if(!s) return;
+  const t = stoneTierDef(s.tier);
+  const isUltra = s.tier==='ultra';
+  const held = state.moveStones.filter(x=> stoneKindKey(x) === stoneKindKey(s)).length;   // (3.65) a tile stands for them all
+  const ov = document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(35,32,25,0.55);z-index:75;display:flex;align-items:center;justify-content:center;padding:22px;';
+  ov.innerHTML = `<div style="background:var(--paper);border-radius:18px;padding:20px;max-width:340px;width:100%;box-shadow:0 12px 40px var(--shadow);">
+    <div style="text-align:center;">
+      <div class="stone-tier-big tier-${s.tier}">${t.label}</div>
+      <div style="font-family:'Baloo 2',cursive;font-weight:800;font-size:20px;margin-top:6px;">
+        ${escapeHtml(s.name)}${stonePlus(s) ? `<span class="plus-mark big">${UPGRADE_MARKS[stonePlus(s)].trim()}</span>` : ''}</div>
+      <div style="margin-top:5px;"><span class="type-badge" style="background:${TYPE_COLORS[s.type]}">${s.type}</span></div>
+      <div style="font-size:12px;color:var(--ink-soft);font-weight:700;margin-top:8px;line-height:1.5;">
+        ${(()=>{ const m = stoneMult(s);
+                 if(m==null) return 'Status move';
+                 if(s.tier==='ultra'){ const r=ultraHitRange(s); return `${m}× ATK · ${r.min}–${r.max} hits`; }
+                 return `${m}× ATK`; })()} · ${t.words} words<br>
+        ${stoneDescription(s)}
+      </div>
+      <div style="font-size:11px;color:var(--ink-soft);font-weight:700;margin-top:8px;">
+        Teachable to <b>${s.type}</b>-type monsters${isUltra?' · adds a 5th move button':' · replaces the '+(s.tier==='high'?'Power1':'Basic')+' move'}
+        ${held > 1 ? `<br>You hold <b>${held}</b> of these.` : ''}
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:16px;">
+      <button class="btn btn-primary" id="stUse">Use</button>
+      <button class="btn btn-ghost" id="stRecycle">Recycle → ${recycleRewardHtml(s.tier)}</button>
+      <button class="btn btn-ghost" id="stBack">Back</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  const close=()=>{ if(ov.parentNode) document.body.removeChild(ov); };
+  ov.querySelector('#stBack').addEventListener('click', close);
+  ov.addEventListener('click', e=>{ if(e.target===ov) close(); });
+  ov.querySelector('#stRecycle').addEventListener('click', ()=>{
+    close();
+    /* (3.65) High, Very High and Ultra: one Selection Token of the tier
+       (recycleReward); Low and Mid: Skill Tokens, as before */
+    const got = recycleRewardHtml(s.tier);
+    confirmDialogHtml(`Recycle <b>${escapeHtml(s.name)}</b> for ${got}? This destroys the stone.` +
+      (recycleReward(s.tier).sel ? `<br><br><span style="font-size:12px;color:var(--ink-soft);">${SELECTION_PER_PICK} ${escapeHtml(selTokenName(s.tier, 2))} buy any ${escapeHtml(t.label)} skill you choose, at the shop.</span>` : ''),
+      async ()=>{
+      const i = state.moveStones.findIndex(x=>x.uid===uid);
+      if(i<0) return;
+      const removed = state.moveStones.splice(i,1)[0];
+      payRecycle(s.tier);
+
+      const sov = showSyncingOverlay('Syncing…');
+      const ok = await saveProfile({ awaitCloud:true });
+      hideSyncingOverlay(sov);
+      if(!ok){
+        state.moveStones.splice(i,0,removed);
+        payRecycle(s.tier, -1);
+        showSyncFailure();
+        return;
+      }
+      const r = recycleReward(s.tier);
+      toast(r.sel ? `Recycled for ${r.n} ${selTokenName(r.sel, r.n)} (${selTokens(r.sel)} held).` : `Recycled for ${r.n} tokens.`);
+      renderStorage();
+    }, 'Recycle');
+  });
+  ov.querySelector('#stUse').addEventListener('click', ()=>{ close(); chooseStoneRecipient(s); });
+}
+
+/* Tooltips are generated from the same table that drives the mechanics, so a
+   refined stone always describes what it actually does. The old hard-coded
+   strings had drifted badly — they still mentioned Giga Drain and a 3-5 turn
+   Ice Tomb long after both had changed. */
+function stoneDescription(s){
+  const plus = stonePlus(s);
+  const mark = UPGRADE_MARKS[plus].trim();
+  if(s.tier === 'veryhigh'){
+    const d = veryHighDef(s.type, plus);
+    if(!d) return '';
+    const head = `<b>${escapeHtml(d.name)}${mark ? ' '+mark : ''}</b>`;
+    const dur  = d.turns ? ` · ${d.turns} turns` : '';
+    return `${head}${dur}<br>${d.text}<br><i>Once a battle — the recharge meter brings it back.</i>`;   // (3.42) shorter
+  }
+  if(s.tier === 'ultra'){
+    const r = ultraHitRange(s);
+    const m = stoneMult(s);
+    return `Hits <b>${r.min}–${r.max}</b> times at random enemies for ${m}× ATK each.` +
+           `<br><i>Once a battle — the recharge meter brings it back.</i>`;
+  }
+  if(s.tier === 'high'){
+    return `Hits <b>2 different enemies</b> for ${stoneMult(s)}× ATK each.`;
+  }
+  return `Replaces the Basic move: ${stoneMult(s)}× ATK.`;
+}
+
+
+/* pick which owned monster of the matching type learns the stone */
+function chooseStoneRecipient(s){
+  const all = [...state.party, ...state.storage];
+  const eligible = all.filter(m=>!isPassenger(m) && SPECIES[m.species].types.includes(s.type));
+  if(eligible.length===0){
+    toast(`You have no ${s.type}-type monsters yet.`);
+    return;
+  }
+  const isUltra = s.tier==='ultra';
+  const ov = document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(35,32,25,0.55);z-index:75;display:flex;align-items:flex-end;justify-content:center;';
+  ov.innerHTML = `<div style="background:var(--paper);border-radius:18px 18px 0 0;padding:20px;max-width:480px;width:100%;max-height:75vh;overflow-y:auto;">
+    <div style="font-family:'Baloo 2',cursive;font-weight:700;font-size:17px;margin-bottom:4px;">Teach ${escapeHtml(s.name)} to…</div>
+    <div style="font-size:12px;color:var(--ink-soft);font-weight:700;margin-bottom:12px;">${isUltra?'Adds a 5th move button.':`Replaces the monster's ${s.tier==='high'?'Power1':'Basic'} move.`}</div>
+    ${eligible.map(m=>{
+      // Look at the slot THIS stone will occupy — High goes to Power1, so it
+      // never displaces a Basic-slot skill and shouldn't warn about one.
+      const cur = isUltra ? m.ultraStone : (s.tier==='high' ? m.power1Stone : m.equippedStone);
+      return `<button class="btn btn-ghost st-opt" data-uid="${m.uid}" style="margin-bottom:8px;display:flex;align-items:center;gap:10px;justify-content:flex-start;text-align:left;">
+        ${monPortrait(m.species,36,{stage:monStage(m),crowned:isCrowned(m)})}
+        <span style="flex:1;">${escapeHtml(displayName(m))} · Lv ${m.level}
+        ${cur?`<br><span style="font-size:11px;color:var(--cinnabar);">replaces ${escapeHtml(cur.name)}</span>`:''}</span>
+      </button>`;
+    }).join('')}
+    <button class="btn btn-ghost" id="stCancel" style="margin-top:4px;">Cancel</button>
+  </div>`;
+  document.body.appendChild(ov);
+  const close=()=>{ if(ov.parentNode) document.body.removeChild(ov); };
+  ov.querySelector('#stCancel').addEventListener('click', close);
+  ov.addEventListener('click', e=>{ if(e.target===ov) close(); });
+  ov.querySelectorAll('.st-opt').forEach(b=> b.addEventListener('click', async ()=>{
+    const uid = b.dataset.uid;
+    const mon = all.find(m=>m.uid===uid);
+    const replaced = isUltra ? mon.ultraStone : (s.tier==='high' ? mon.power1Stone : mon.equippedStone);
+    const doIt = async ()=>{
+      // Carry the refinement across — a ✦ stone taught plainly would silently
+      // throw away the medals and duplicates that bought it.
+      const taught = { uid:s.uid, tier:s.tier, type:s.type, name:s.name, plus:stonePlus(s) };
+      if(isUltra) mon.ultraStone = taught;
+      else if(s.tier==='high') mon.power1Stone = taught;
+      else        mon.equippedStone = taught;
+      const i = state.moveStones.findIndex(x=>x.uid===s.uid);
+      if(i>=0) state.moveStones.splice(i,1);
+      await saveProfile();
+      close();
+      playStoneSfx(s.tier);
+      toast(`${displayName(mon)} learned ${s.name}!`);
+      renderStorage();
+    };
+    if(replaced){
+      close();
+      confirmDialog(`${displayName(mon)} already knows ${replaced.name}. Replace it? The old move is lost.`, doIt);
+    } else {
+      await doIt();
+    }
+  }));
+}
+
+function moveToParty(uid, letGo){
+  const idx = state.storage.findIndex(m=>m.uid===uid);
+  if(idx<0) return;
+  /* A companion comes from storage, never the party (2.86): bringing one in
+     ends its bond — asked first, and only undone if the move happens. */
+  const lead = leaderOf(state.storage[idx]);
+  if(lead && !letGo){
+    const c = state.storage[idx];
+    return confirmDialogHtml(`<b>${escapeHtml(displayName(c))}</b> is <b>${escapeHtml(displayName(lead))}</b>'s companion. ` +
+      `Bring it into the party? ${escapeHtml(displayName(lead))} lets go of its core — a companion comes from storage.`,
+      ()=> moveToParty(uid, lead), 'Bring it');
+  }
+  const release = ()=>{ if(letGo && letGo.companionUid === uid) delete letGo.companionUid; };
+  if(slottedCount()<6){
+    const [m]=state.storage.splice(idx,1);
+    state.party.push(m);
+    release();
+    saveProfile();
+    toast(`${displayName(m)} joined your party.`);
+    renderStorage();
+  } else {
+    /* An egg, a seed or a baby rides along in its own slot — it is not one of
+       the six. Offering it here let a passenger be swapped OUT of the party
+       and lost, which is not something the player should be able to do. */
+    const options = state.party.map((m,i)=>({m,i})).filter(o=>!isFixedMember(o.m));
+    if(!options.length){ toast('Nobody in your party can be swapped out.'); return; }
+    monsterChooser('Party is full — swap out…', options, (i)=>{
+      const stored = state.storage.splice(idx,1)[0];
+      const removed = state.party.splice(i,1,stored)[0];
+      state.storage.push(removed);
+      release();
+      saveProfile();
+      toast(`${displayName(stored)} swapped in for ${displayName(removed)}.`);
+      renderStorage();
+    });
+  }
+}
+
+/* ---------- SCREEN: monster index ---------- */
+/* (4.29) The designer: "Could we remove uncatchable monsters from the index please? Eggs, seeds, cyborg, ghost guardian,
+   mindcat and the tribal guardians and ancestors as well as royalty as well as the aliens should not be on the list,
+   though maybe they can be put as a separate tab, 'encountered'." The index is what can be caught — and so collected;
+   the rest, once met, are on a tab of their own. Not caught by anyone: an egg, a seed; the jungle's aliens, the royals,
+   the ancestors and the guardians (noCatch), the future's bosses, Cyborg, the Padrino's Ghost Guardian and Mindcat, and
+   the Water Dragon you only ever fight beside (its twin, the one you raise, is caught). */
+const INDEX_UNCATCHABLE = ['cyborg', 'ghost_guardian', 'mindcat', 'water_dragon'];
+function indexCatchable(sp){
+  const s = SPECIES[sp];
+  return !!s && !(s.noCatch || s.isEgg || s.isSeed || s.future || s.royal || s.alien || s.ancestor || s.guardianOf || INDEX_UNCATCHABLE.includes(sp));
+}
+/* (4.29) "when the guardians are peacefully talked to, they don't appear on the encountered list because they're not
+   battled": everyone met, fought or not — the encountered, what you have, and (from the save, for meetings before
+   4.29 too) the guardians whose villages you found and the court once you have met it */
+function indexMet(){
+  const met = new Set([...(state.encounteredSpecies || []), ...(state.caughtSpecies || [])]);
+  const r6s = state.progress && state.progress.region6;
+  if(r6s && typeof JG_TRIBES !== 'undefined'){
+    const q = r6s.quest || {}, j = r6s.jungle || {};
+    Object.keys(JG_TRIBES).forEach(k=>{ if((q.found && q.found[k]) || (j.met && j.met[k])) met.add(JG_TRIBES[k].guardian); });
+    if(r6s.castle && r6s.castle.met && r6s.castle.met.court){ met.add('fairy_king'); met.add('fairy_dauphin'); }
+  }
+  return met;
+}
+/* met, as it happens (a guardian over its wall, a royal spoken to) */
+function noteMet(sp){
+  if(!state || !SPECIES[sp]) return;
+  state.encounteredSpecies = state.encounteredSpecies || [];
+  if(!state.encounteredSpecies.includes(sp)){ state.encounteredSpecies.push(sp); saveProfile(); }
+}
+function renderMonsterIndex(){
+  setScreenBg('home');
+  $('#brandSub').textContent = 'Monster Index';
+  indexCss();
+  const met = indexMet(), tab = ui.indexTab === 'met' ? 'met' : 'all';
+  const all = Object.keys(SPECIES).filter(indexCatchable);
+  const others = Object.keys(SPECIES).filter(sp=> !indexCatchable(sp) && met.has(sp));
+  const card = sp=>{
+    const known = met.has(sp), caught = state.caughtSpecies.includes(sp);
+    return `
+        <div class="mon-index-card ${known?'':'unknown'}" ${known?`data-sp="${sp}"`:''}>
+          ${known ? monPortrait(sp,48) : `<div class="mon-portrait" style="width:48px;height:48px;border-radius:11px;background:var(--paper-3);color:var(--ink-soft);font-size:22px;display:flex;align-items:center;justify-content:center;">?</div>`}
+          <div style="margin-top:6px;font-family:'Baloo 2',cursive;font-weight:700;font-size:13px;">${known?SPECIES[sp].name:'???'}</div>
+          ${known?`<div style="font-size:10px;">${typeBadges(sp)}</div>`:''}
+          ${caught && tab === 'all'?'<div class="caught-dot">✓ Caught</div>':''}
+        </div>`;
+  };
+  const list = tab === 'met' ? others : all;
+  screenEl.innerHTML = `
+    <button class="back-link" id="backBtn">← Home</button>
+    ${(state.progress.currentRegion === 4 && typeof expeditionBar === 'function') ? expeditionBar() : ''}
+    <div class="screen-title">Monster Index</div>
+    <div class="idx-tabs" role="tablist">
+      <button class="idx-tab${tab === 'all' ? ' on' : ''}" data-tab="all" role="tab" aria-selected="${tab === 'all'}">Monsters</button>
+      <button class="idx-tab${tab === 'met' ? ' on' : ''}" data-tab="met" role="tab" aria-selected="${tab === 'met'}">Encountered</button>
+    </div>
+    <div class="screen-sub">${tab === 'met' ? `${others.length} met who cannot be caught` : `${all.filter(sp=> met.has(sp)).length} / ${all.length} monsters discovered`}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">${list.map(card).join('')}</div>
+  `;
+  $('#backBtn').addEventListener('click', ()=>go('home'));
+  screenEl.querySelectorAll('.idx-tab').forEach(b=> b.addEventListener('click', ()=>{ ui.indexTab = b.dataset.tab; renderMonsterIndex(); }));
+  screenEl.querySelectorAll('[data-sp]').forEach(c=> c.addEventListener('click', ()=>{ ui.indexSpecies=c.dataset.sp; go('indexDetail'); }));
+}
+function indexCss(){
+  if(document.getElementById('indexCss')) return;
+  const st = document.createElement('style');
+  st.id = 'indexCss';
+  st.textContent = `
+  .idx-tabs{ display:flex; gap:6px; padding:4px; margin:10px 0 12px; background:var(--paper-3); border-radius:14px; }
+  .idx-tab{ flex:1; border:0; border-radius:11px; padding:9px 8px; background:transparent; color:var(--ink-soft); cursor:pointer;
+    font-family:'Baloo 2', cursive; font-weight:700; font-size:15px; }
+  .idx-tab.on{ background:var(--paper); color:var(--ink); box-shadow:0 2px 0 var(--paper-2), 0 1px 4px rgba(35,32,25,.12); }
+  .idx-tab:focus-visible{ outline:2px solid var(--jade); outline-offset:2px; }
+  `;
+  document.head.appendChild(st);
+}
+function renderIndexDetail(){
+  const sp = ui.indexSpecies;
+  if(!sp || !SPECIES[sp]) return go('monsterIndex');
+  const s = SPECIES[sp];
+  $('#brandSub').textContent = s.name;
+  const evoText = s.evo && s.evo.length ? `Evolves at Lv ${s.evo.join(', ')}` : 'Does not evolve';
+  screenEl.innerHTML = `
+    <button class="back-link" id="backBtn">← Index</button>
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;">
+      ${monPortrait(sp,72)}
+      <div>
+        <div style="font-family:'Baloo 2',cursive;font-weight:800;font-size:20px;">${s.name}</div>
+        <div style="margin:4px 0;">${typeBadges(sp)}</div>
+        <div style="font-size:12px;color:var(--ink-soft);font-weight:700;">${s.tier[0].toUpperCase()+s.tier.slice(1)} · ${evoText}</div>
+      </div>
+    </div>
+    <div style="font-weight:800;font-size:14px;margin-bottom:8px;">Moves</div>
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      ${MOVES[sp].filter(mv=>mv[1]!=null).map(mv=>`
+        <div style="background:var(--paper-2);border:1px solid var(--line);border-radius:12px;padding:12px;">
+          <div style="display:flex;justify-content:space-between;">
+            <div style="font-family:'Baloo 2',cursive;font-weight:700;">${mv[1]}</div>
+            <div style="font-size:11px;font-weight:800;color:var(--ink-soft);">${mv[0]}</div>
+          </div>
+          <div style="font-size:12px;color:var(--ink-soft);font-weight:600;margin-top:3px;">${mv[2]!=null?mv[2]+'× ATK':'Support'} · ${mv[3]} · spell ${mv[4]} · Lv ${mv[5]}</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+  $('#backBtn').addEventListener('click', ()=>go('monsterIndex'));
+}
+
